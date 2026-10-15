@@ -50,10 +50,10 @@
     const meId = room ? room.me.id : "me";
     u.innerHTML = `<div class="pt-card">
       <div style="font-size:38px">${opts.icon || "🎉"}</div><h2>${esc(opts.title)}</h2>
-      <div class="pt-sub">${isHost ? "Позови друзей одной ссылкой — заходят сколько угодно до " + opts.max + ". Пустые места займут боты." : "Ты в комнате. Ждём, пока хозяин начнёт игру."}</div>
+      <div class="pt-sub">${isHost ? "Позови друзей одной ссылкой — заходят сколько угодно до " + opts.max + "." + (opts.noBots ? "" : " Пустые места займут боты.") : "Ты в комнате. Ждём, пока хозяин начнёт игру."}</div>
       ${isHost ? `<div class="pt-row">${opts.modes.map((x) => `<button class="pt-chip ${x.id === state.mode ? "on" : ""}" data-mode="${x.id}">${x.name}</button>`).join("")}</div>
-      <div class="pt-row" style="align-items:center"><b style="font-size:14px">Боты:</b>
-        <button class="pt-chip" data-bot="-1">−</button><b>${state.bots}</b><button class="pt-chip" data-bot="1">+</button></div>` : ""}
+      ${opts.noBots ? "" : `<div class="pt-row" style="align-items:center"><b style="font-size:14px">Боты:</b>
+        <button class="pt-chip" data-bot="-1">−</button><b>${state.bots}</b><button class="pt-chip" data-bot="1">+</button></div>`}` : ""}
       <div class="pt-list">${preview.players.map((p) => `<div class="pt-p" data-pid="${p.id}"><span class="pt-dot" style="background:${p.color}"></span>${esc(p.name)}${p.id === meId ? " (ты)" : ""}
         <small>${m.teams ? TEAMNAMES[p.team] + (isHost && !p.bot ? " ⇄" : "") : ""}</small></div>`).join("")}</div>
       <div class="pt-st">${state.status || ""}</div>
@@ -66,7 +66,7 @@
 
   function lobby(room, opts, isHost) {
     return new Promise((resolve) => {
-      const state = { mode: opts.modes[0].id, bots: opts.bots != null ? opts.bots : 2, teams: {}, status: "" };
+      const state = { mode: opts.modes[0].id, bots: opts.noBots ? 0 : opts.bots != null ? opts.bots : 2, teams: {}, status: "" };
       const draw = () => {
         const humans = room ? room.players.length : 1;
         state.bots = Math.max(0, Math.min(state.bots, opts.max - humans));
@@ -82,7 +82,9 @@
         const inv = u.querySelector("[data-inv]");
         if (inv) inv.onclick = () => share(room, opts);
         const go = u.querySelector("[data-go]");
+        if (go && opts.minHumans && (room ? room.players.length : 1) < opts.minHumans) { go.disabled = true; go.style.opacity = .5; go.textContent = `Нужно минимум ${opts.minHumans} игрока — позови друзей`; }
         if (go) go.onclick = () => {
+          if (go.disabled) return;
           const cfg = build(room ? room.players : [{ id: "me", name: T.playerName() === "Друг" ? "Ты" : T.playerName() }], opts, state.mode, state.bots, state.teams);
           if (room) { room.lock(); room.send("start", cfg); }
           hide(); resolve(withMe(cfg, room));

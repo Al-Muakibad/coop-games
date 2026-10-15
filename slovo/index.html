@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Объясни слово</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: linear-gradient(#ffd8a8, #ffeccc); }
+  #play { position: fixed; inset: 0; display: flex; flex-direction: column; padding: calc(10px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)); gap: 10px; }
+  #scores { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .sc { padding: 5px 10px; border: 2.5px solid var(--ink); border-radius: 999px; background: #fff; font-weight: 900; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+  .sc.on { box-shadow: 0 0 0 3px #ff7a2f; }
+  .sc i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); display: inline-block; }
+  #timer { text-align: center; font-size: 46px; font-weight: 900; color: var(--ink); line-height: 1; }
+  #timer.low { color: #dc2626; animation: pulse .5s infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.08); } }
+  #who { text-align: center; font-weight: 800; color: var(--muted); font-size: 15px; }
+  #card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; border: 3px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 var(--ink); padding: 16px; text-align: center; min-height: 0; }
+  #word { font-size: clamp(30px, 11vw, 56px); font-weight: 900; color: var(--ink); word-break: break-word; line-height: 1.1; }
+  #wsub { margin-top: 10px; color: var(--muted); font-weight: 700; font-size: 15px; }
+  #acts { display: flex; gap: 10px; }
+  #acts .btn { flex: 1; margin: 0; font-size: 19px; padding: 18px 8px; }
+  .btn.ok { background: #22c55e; color: #fff; }
+  .btn.skip { background: #fff; }
+  #pick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+  #pick button { padding: 9px 12px; border: 2.5px solid var(--ink); border-radius: 12px; background: #fff7ea; font: inherit; font-weight: 800; }
+  #list { max-height: 40vh; overflow: auto; width: 100%; text-align: left; margin-top: 8px; }
+  #list div { display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 1px dashed #e7d7c3; font-weight: 700; }
+  #list button { border: 0; background: none; font-size: 18px; }
+  .chips { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 6px 0; }
+  .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; background: #fff; font: inherit; font-weight: 800; font-size: 14px; }
+  .chip.on { background: #ffd34d; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="play" class="hidden">
+  <div id="scores"></div>
+  <div id="timer">60</div>
+  <div id="who"></div>
+  <div id="card"><div id="word"></div><div id="wsub"></div><div id="pick"></div><div id="list"></div></div>
+  <div id="acts"></div>
+</div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🗣️💬</div>
+    <h1>Объясни слово</h1>
+    <p class="sub">Объясняй слово, не называя его, — команда угадывает вслух. 60 секунд на ход. Кто первым наберёт очки — победил.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-party">🎉 Каждый со своего телефона<small>Слово видит только тот, кто объясняет. Для компании рядом или по видеосвязи</small></button>
+      <button class="btn" id="m-one">📱 На одном телефоне<small>Передавайте телефон по кругу</small></button>
+    </div>
+    <div id="one-setup" class="hidden">
+      <p class="sub" style="margin:10px 0 0">Сколько команд?</p>
+      <div class="chips" id="c-teams"><button class="chip on" data-v="2">2</button><button class="chip" data-v="3">3</button><button class="chip" data-v="4">4</button></div>
+      <p class="sub" style="margin:6px 0 0">До скольки очков?</p>
+      <div class="chips" id="c-target"><button class="chip" data-v="20">20</button><button class="chip on" data-v="30">30</button><button class="chip" data-v="50">50</button></div>
+      <button class="btn primary" id="one-go">▶ Начать</button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="words.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
