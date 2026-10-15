@@ -10,7 +10,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -67,13 +67,18 @@
 
   <section data-sec="friends">
   <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
+  <a class="game" href="./tanchiki/">
+    <div class="icon" style="background:#f5c518">🪖</div>
+    <div class="info"><b>Танчики</b><span>Защити штаб от волн танков. Кирпич ломается, бонусы, уровни.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">👥 кооп онлайн</i></div>
+  </a>
   <a class="game" href="./sniper/">
     <div class="icon" style="background:#7ec8ff">🎯</div>
     <div class="info"><b>Снайпер: прятки</b><span>Один бегает между стенами, другой ищет в прицел. Монеты и улучшения.</span>
       <i class="tag">⚔️ онлайн</i> <i class="tag">🤖 бот</i></div>
   </a>
   <a class="game" href="./tanki/">
-    <div class="icon" style="background:#b6e388">🛡️</div>
+    <div class="icon" style="background:#b6e388">💣</div>
     <div class="info"><b>Артиллерия</b><span>Дуэль пушек: угол, сила, ветер. Снаряды роют землю.</span>
       <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ онлайн</i></div>
   </a>
@@ -91,6 +96,11 @@
 
   <section data-sec="solo" class="hidden">
   <p class="secnote">Играй сам и кидай друзьям вызов на свой рекорд.</p>
+  <a class="game" href="./tanchiki/">
+    <div class="icon" style="background:#f5c518">🪖</div>
+    <div class="info"><b>Танчики</b><span>Защити штаб от волн танков. Кирпич ломается, бонусы, уровни.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">🙋 соло</i></div>
+  </a>
   <a class="game" href="./g2048/">
     <div class="icon" style="background:#ffb98a">🧩</div>
     <div class="info"><b>2048</b><span>Свайпай и сливай плитки. Дойдёшь до 2048?</span>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Танчики</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #1a1a1a; color: #fff; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; padding-top: calc(8px + env(safe-area-inset-top)); }
+  #top { width: var(--fw); display: flex; justify-content: space-between; align-items: center; font-weight: 900; font-size: 14px; margin-bottom: 6px; gap: 8px; }
+  #top .pill { background: #2a2a2a; border: 2px solid #000; border-radius: 10px; padding: 3px 8px; white-space: nowrap; }
+  #game { width: var(--fw); height: var(--fw); image-rendering: pixelated; border: 3px solid #555; border-radius: 4px; background: #000; display: block; }
+  #enemies { width: var(--fw); display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; min-height: 16px; }
+  #enemies i { width: 12px; height: 12px; background: #c0c7d0; border-radius: 2px; box-shadow: inset 0 0 0 2px #6b7280; }
+  #pad { position: fixed; left: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 150px; height: 150px; border-radius: 50%; background: rgba(255,255,255,.08); border: 3px solid #444; touch-action: none; }
+  #pad::before, #pad::after { content: ""; position: absolute; background: rgba(255,255,255,.12); border-radius: 8px; }
+  #pad::before { left: 50px; top: 8px; width: 44px; height: 128px; } #pad::after { top: 50px; left: 8px; height: 44px; width: 128px; }
+  #knob { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: #f5c518; border: 3px solid #000; left: 44px; top: 44px; transition: left .05s, top .05s; z-index: 2; }
+  #fire { position: fixed; right: 20px; bottom: calc(34px + env(safe-area-inset-bottom)); width: 112px; height: 112px; border-radius: 50%; border: 4px solid #000; background: #e5484d; color: #fff; font-weight: 900; font-size: 18px; box-shadow: 0 5px 0 #000; font-family: inherit; touch-action: none; }
+  #fire.on { transform: translateY(4px); box-shadow: 0 1px 0 #000; }
+  #msg { position: fixed; left: 0; right: 0; top: 30%; text-align: center; font-size: 34px; font-weight: 900; color: #fff; -webkit-text-stroke: 4px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; padding: 0 12px; }
+  #msg.on { opacity: 1; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .card { color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="top"><span class="pill" id="t-lv">Уровень 1</span><span class="pill" id="t-lives">🟡 ❤3</span><span class="pill" id="t-score">0</span></div>
+  <canvas id="game"></canvas>
+  <div id="enemies"></div>
+</div>
+<div id="pad"><div id="knob"></div></div>
+<button id="fire">ОГОНЬ</button>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🪖🧱</div>
+    <h1>Танчики</h1>
+    <p class="sub">Защити штаб от волн вражеских танков. Кирпич ломается, бетон — нет, через воду не проехать, в кустах можно спрятаться. Сбивай мигающие танки — из них выпадают бонусы.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-coop">👥 Вдвоём онлайн<small>Позови друга — защищайте штаб вместе</small></button>
+      <button class="btn" id="m-solo">🙋 Играть одному<small>Классика: ты против волн танков</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">💥</div>
+    <h2 id="end-title">Штаб уничтожен</h2>
+    <div class="score" id="end-score">0</div>
+    <div class="breakdown" id="end-sub"></div>
+    <div class="status" id="end-status" style="margin-top:8px;font-weight:700;color:var(--muted)"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/lobby.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
