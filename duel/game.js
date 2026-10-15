@@ -66,6 +66,7 @@
 
   // ---------- комната ----------
   async function createRoom() {
+    window.Stats && Stats.event("invite_create", {});
     mode = "online"; phase = "room"; screen("screen-room");
     $("room-emoji").textContent = "📡"; $("room-title").textContent = "Создаём комнату"; $("room-sub").textContent = "";
     $("room-status").innerHTML = `<span class="dotsa">Подключаемся к серверу</span>`;
@@ -103,6 +104,7 @@
   function bindRoom() {
     room.on("peer", (p) => {
       opp = p.name || "Друг"; room.send("name", { name: me });
+      window.Stats && Stats.event(room.isHost ? "invite_accepted" : "invite_join", {});
       $("room-emoji").textContent = "✅"; $("room-title").textContent = `${opp} в игре!`; $("room-status").textContent = "Начинаем…";
       T.haptic("notify", "success");
       if (room.isHost) setTimeout(() => { if (room && room.peer) hostStart(); }, 1200);
@@ -173,6 +175,7 @@
   function beginMatch() {
     score = { me: 0, opp: 0 }; stats = { best: null, rounds: 0 }; order = []; rematch = { me: false, opp: false };
     screen(null); show("board", true); board();
+    window.Stats && Stats.gameStart({ mode });
   }
 
   function beginRound(d) {
@@ -217,6 +220,7 @@
   function endMatch() {
     phase = "end"; R = null;
     const win = score.me > score.opp;
+    window.Stats && Stats.gameEnd({ mode, win, me: score.me, opp: score.opp, rounds: stats.rounds, best_ms: stats.best });
     $("end-emoji").textContent = win ? "🏆" : "😤";
     $("end-title").textContent = win ? "Ты победил!" : `Победил ${opp}`;
     $("end-score").textContent = `${score.me} : ${score.opp}`;

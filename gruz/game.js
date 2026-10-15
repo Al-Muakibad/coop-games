@@ -378,6 +378,7 @@
     state = "settle";
     show(scrStart, false); show(scrEnd, false); show(hud, true); show(controls, true);
     renderCargoHud(); updateHud();
+    window.Stats && Stats.gameStart({ challenge: !!challenge });
   }
   function beginPlay() { state = "play"; haptic("impact", "medium"); }
 
@@ -404,6 +405,7 @@
     document.getElementById("end-verdict").textContent = verdict;
     document.getElementById("best-end").textContent = `Твой рекорд: ${best}`;
     lastScore = score;
+    window.Stats && Stats.gameEnd({ score, reason, dist, alive, beat_challenge: challenge ? score > challenge.score : undefined });
     show(hud, false); show(controls, false);
     setTimeout(() => show(scrEnd, true), 500);
     haptic("notify", reason === "time" ? "success" : "warning");

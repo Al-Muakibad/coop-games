@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Морской бой</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: linear-gradient(#0e4d8a, #0a2f57); color: #fff; overflow-y: auto; touch-action: manipulation; }
+  main { max-width: 440px; margin: 0 auto; padding: calc(10px + env(safe-area-inset-top)) 12px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .names { width: 100%; display: flex; justify-content: space-between; font-weight: 900; font-size: 15px; }
+  .names span:last-child { text-align: right; }
+  #turn { font-weight: 900; font-size: 20px; padding: 6px 16px; border-radius: 999px; border: 3px solid #000; background: #ffd34d; color: var(--ink); box-shadow: 0 4px 0 #000; }
+  #turn.their { background: #c7d2e6; }
+  .label { align-self: flex-start; font-weight: 800; opacity: .85; font-size: 14px; margin-top: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; background: #062440; border: 3px solid #000; border-radius: 10px; padding: 3px; box-shadow: 0 5px 0 #000; }
+  .grid.big { width: min(94vw, 420px, 56vh); }
+  .grid.small { width: min(62vw, 270px, 33vh); }
+  .c { aspect-ratio: 1; border-radius: 3px; background: #1b6fb8; display: grid; place-items: center; font-size: min(4.2vw, 18px); line-height: 1; user-select: none; }
+  .grid.small .c { font-size: min(2.8vw, 12px); }
+  .c.ship { background: #9aa7b8; box-shadow: inset 0 0 0 2px #4b5563; }
+  .c.miss { background: #2a5f8f; color: #bcd7f2; }
+  .c.hit { background: #f59e0b; }
+  .c.sunk { background: #7f1d1d; }
+  .c.last { outline: 3px solid #fff; outline-offset: -2px; }
+  .grid.target .c:not(.miss):not(.hit):not(.sunk) { cursor: pointer; }
+  .grid.target .c:not(.miss):not(.hit):not(.sunk):active { background: #ffd34d; }
+  .grid.off { opacity: .55; }
+  .btns { display: flex; gap: 10px; width: 100%; }
+  .btns .btn { margin: 0; }
+  .fleet { font-size: 13px; opacity: .9; text-align: center; min-height: 18px; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .card { color: var(--ink); }
+</style>
+</head>
+<body>
+<main id="main" class="hidden">
+  <div class="names"><span id="nm-me">Ты</span><span id="nm-opp">Соперник</span></div>
+  <div id="turn">Расстановка</div>
+  <div class="label" id="lbl-enemy">Поле соперника</div>
+  <div class="grid big" id="g-enemy"></div>
+  <div class="fleet" id="fleet-enemy"></div>
+  <div class="label" id="lbl-me">Твой флот</div>
+  <div class="grid small" id="g-me"></div>
+  <div class="btns" id="setup-btns"><button class="btn" id="b-shuffle">🔀 Перемешать</button><button class="btn primary" id="b-ready">✅ В бой</button></div>
+</main>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🚢💥</div>
+    <h1>Морской бой</h1>
+    <p class="sub">Классика 1 на 1. Каждый на своём телефоне: расставь флот и топи корабли друга. Попал — стреляешь ещё раз.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-invite">⚔️ Позвать друга<small>Онлайн по приглашению</small></button>
+      <button class="btn" id="m-bot">🤖 Против бота<small>Адмирал Бот не прощает ошибок</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div class="status" id="end-status" style="margin-top:8px;font-weight:700;color:var(--muted)"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/lobby.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

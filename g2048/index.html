@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>2048</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #fff3dc; display: flex; flex-direction: column; align-items: center; }
+  .top { width: min(92vw, 420px); margin-top: calc(14px + env(safe-area-inset-top)); display: flex; gap: 10px; align-items: center; }
+  .top h1 { margin: 0; font-size: 40px; flex: 1; }
+  .box { background: var(--ink); color: #fff; border-radius: 12px; padding: 6px 12px; text-align: center; min-width: 74px; }
+  .box small { display: block; font-size: 11px; font-weight: 800; opacity: .7; letter-spacing: 1px; }
+  .box b { font-size: 22px; }
+  #challenge { width: min(92vw, 420px); margin-top: 10px; }
+  #board { position: relative; width: min(92vw, 420px); aspect-ratio: 1; margin-top: 12px; background: #c9ab8b; border: 4px solid var(--ink);
+    border-radius: 18px; box-shadow: 0 6px 0 var(--ink); touch-action: none; }
+  .cell { position: absolute; border-radius: 10px; background: rgba(255,255,255,.28); }
+  .tile { position: absolute; border-radius: 10px; display: grid; place-items: center; font-weight: 900; color: var(--ink);
+    transition: left .1s, top .1s; border: 2.5px solid var(--ink); }
+  .tile.new { animation: pop .15s; } .tile.merged { animation: bump .15s; }
+  @keyframes pop { from { transform: scale(.3); } } @keyframes bump { 50% { transform: scale(1.15); } }
+  .hint { margin-top: 14px; color: var(--muted); font-weight: 700; font-size: 14px; }
+  .row2 { width: min(92vw, 420px); display: flex; gap: 10px; margin-top: 12px; }
+  .row2 .btn { margin: 0; }
+</style>
+</head>
+<body>
+<div class="top"><h1>2048</h1><div class="box"><small>СЧЁТ</small><b id="score">0</b></div><div class="box"><small>РЕКОРД</small><b id="best">0</b></div></div>
+<div id="challenge" class="challenge hidden"></div>
+<div id="board"></div>
+<div class="hint">Свайпай — одинаковые плитки сливаются. Дойди до 2048!</div>
+<div class="row2"><button class="btn" id="b-new">Заново</button><button class="btn primary" id="b-share">Вызов другу</button></div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🧩</div>
+    <h2 id="end-title">Ходов больше нет</h2>
+    <div class="score" id="end-score">0</div>
+    <div class="verdict" id="end-verdict"></div>
+    <button class="btn primary" id="e-share">Бросить вызов другу</button>
+    <button class="btn" id="e-again">Ещё раз</button>
+    <button class="btn ghost" id="e-menu">Другие игры</button>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

@@ -408,7 +408,7 @@
       $("shop-list").querySelectorAll("button[data-k]").forEach((b) => b.onclick = () => {
         const k = b.dataset.k, price = PRICE[wallet[k]];
         if (wallet.coins < price) return;
-        wallet.coins -= price; wallet[k]++; saveWallet(); T.haptic("notify", "success"); render();
+        wallet.coins -= price; wallet[k]++; saveWallet(); T.haptic("notify", "success"); window.Stats && Stats.event("buy_upgrade", { item: k, level: wallet[k], price }); render();
       });
     };
     render();
@@ -416,6 +416,7 @@
 
   // ---------- онлайн-комната ----------
   async function createRoom() {
+    window.Stats && Stats.event("invite_create", {});
     phase = "room"; screen("screen-room");
     $("room-emoji").textContent = "📡"; $("room-title").textContent = "Создаём комнату";
     $("room-sub").textContent = ""; $("room-status").innerHTML = `<span class="dots">Подключаемся к серверу</span>`;
@@ -455,6 +456,7 @@
   function bindRoom() {
     room.on("peer", (p) => {
       opp.name = p.name || "Друг";
+      window.Stats && Stats.event(room.isHost ? "invite_accepted" : "invite_join", {});
       room.send("info", { name: me.name, up: me.up });
       $("room-emoji").textContent = "✅"; $("room-title").textContent = `${opp.name} в игре!`; $("room-status").textContent = "Начинаем…";
       T.haptic("notify", "success");
@@ -519,6 +521,7 @@
     match = { hp: { me: 100, opp: 100 }, earned: 0, hits: 0, survived: 0, picks: 0 };
     rematch = { me: false, opp: false };
     screen(null); show("hud", true); hud();
+    window.Stats && Stats.gameStart({ mode, up: me.up });
   }
 
   function startPos() {
@@ -541,6 +544,7 @@
     hud();
     T.haptic("impact", "medium");
     if (mode === "bot") bot.beginRound();
+    window.Stats && Stats.state({ round: d.n, hide: iH, hp: match.hp.me });
   }
 
   function goLive() {
@@ -605,6 +609,7 @@
     const a = match.hp.me, b = match.hp.opp, win = a > b, draw = a === b;
     const bonus = draw ? 15 : win ? 30 : 10;
     const total = match.earned + bonus;
+    window.Stats && Stats.gameEnd({ mode, win, draw, hp_me: a, hp_opp: b, hits: match.hits, survived: match.survived, coins: total });
     wallet.coins += total; saveWallet();
     $("end-emoji").textContent = draw ? "🤝" : win ? "🏆" : "💀";
     $("end-title").textContent = draw ? "Ничья" : win ? "Победа!" : `Победил ${opp.name}`;

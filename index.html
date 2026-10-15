@@ -6,10 +6,11 @@
 <title>Кооп-игры</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="shared/tg.js"></script>
+<script src="shared/stats.js"></script>
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -45,6 +46,11 @@
   .tag { display:inline-block; margin-top:6px; padding:2px 8px; border-radius:999px; background:#fff0c9; border:2px solid var(--ink); font-size:12px; font-weight:800; }
   .tag.new { background:var(--accent); color:#fff; }
   .best { color:var(--accent); font-weight:800; font-size:13px; margin-top:4px; }
+  .tabs { display:flex; gap:8px; margin:0 0 12px; background:rgba(255,255,255,.5); padding:5px; border-radius:16px; border:3px solid var(--ink); }
+  .tab { flex:1; padding:10px; border:0; border-radius:11px; background:transparent; font:inherit; font-weight:900; font-size:16px; color:var(--ink); }
+  .tab.on { background:var(--accent); color:#fff; box-shadow:0 3px 0 var(--ink); }
+  .secnote { margin:0 4px 12px; color:var(--muted); font-size:14px; line-height:1.35; }
+  .hidden { display:none !important; }
   .foot { display:flex; gap:10px; margin-top:6px; }
   .foot button { flex:1; padding:12px; border-radius:14px; border:3px solid var(--ink); background:#fff; font:inherit; font-weight:800; font-size:15px; color:var(--ink); box-shadow:0 4px 0 var(--ink); }
 </style>
@@ -54,18 +60,46 @@
   <header>
     <div class="logo">🎮</div>
     <h1>Кооп-игры</h1>
-    <p>Короткие игры, чтобы рубиться с друзьями.<br>Новая — каждую неделю в канале.</p>
+    <p>Мини-игры прямо в Telegram.<br>Новые — каждую неделю в канале.</p>
   </header>
 
+  <div class="tabs"><button class="tab on" data-t="friends">👥 С друзьями</button><button class="tab" data-t="solo">🙋 Для одного</button></div>
+
+  <section data-sec="friends">
+  <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
   <a class="game" href="./sniper/">
     <div class="icon" style="background:#7ec8ff">🎯</div>
-    <div class="info"><b>Снайпер: прятки</b><span>Онлайн-батл 1 на 1: один бегает между стенами, другой ищет в прицел.</span>
+    <div class="info"><b>Снайпер: прятки</b><span>Один бегает между стенами, другой ищет в прицел. Монеты и улучшения.</span>
+      <i class="tag">⚔️ онлайн</i> <i class="tag">🤖 бот</i></div>
+  </a>
+  <a class="game" href="./tanki/">
+    <div class="icon" style="background:#b6e388">🛡️</div>
+    <div class="info"><b>Танчики</b><span>Артиллерийская дуэль: угол, сила, ветер. Снаряды роют землю.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ онлайн</i></div>
+  </a>
+  <a class="game" href="./morboy/">
+    <div class="icon" style="background:#8ec5ff">🚢</div>
+    <div class="info"><b>Морской бой</b><span>Классика: расставь флот и топи корабли друга.</span>
       <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ онлайн</i></div>
   </a>
   <a class="game" href="./duel/">
     <div class="icon" style="background:#ffd34d">⚡</div>
-    <div class="info"><b>Дуэль</b><span>Онлайн 1 на 1: кто быстрее нажмёт — тот и прав.</span>
-      <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ онлайн</i></div>
+    <div class="info"><b>Дуэль</b><span>Кто быстрее нажмёт — 5 видов раундов на реакцию.</span>
+      <i class="tag">⚔️ онлайн</i> <i class="tag">🤖 бот</i></div>
+  </a>
+  </section>
+
+  <section data-sec="solo" class="hidden">
+  <p class="secnote">Играй сам и кидай друзьям вызов на свой рекорд.</p>
+  <a class="game" href="./g2048/">
+    <div class="icon" style="background:#ffb98a">🧩</div>
+    <div class="info"><b>2048</b><span>Свайпай и сливай плитки. Дойдёшь до 2048?</span>
+      <i class="tag new">НОВОЕ</i> <div class="best" data-key="g2048_best"></div></div>
+  </a>
+  <a class="game" href="./zmeyka/">
+    <div class="icon" style="background:#a8d672">🐍</div>
+    <div class="info"><b>Змейка</b><span>Классика: ешь яблоки, расти, не кусай хвост.</span>
+      <i class="tag new">НОВОЕ</i> <div class="best" data-key="zmeyka_best"></div></div>
   </a>
   <a class="game" href="./bashnya/">
     <div class="icon" style="background:#9ee6c8">🏗️</div>
@@ -77,6 +111,7 @@
     <div class="info"><b>Хрупкий груз</b><span>60 секунд, кочки и шаткая гора коробок.</span>
       <div class="best" data-key="fragile_best"></div></div>
   </a>
+  </section>
 
   <div class="foot">
     <button id="share">Позвать друга</button>
@@ -89,6 +124,14 @@
   document.getElementById("channel").onclick = TG.openChannel;
   document.getElementById("share").onclick = () =>
     TG.openLink(`https://t.me/share/url?url=${encodeURIComponent("https://t.me/" + TG.BOT + "?startapp")}&text=${encodeURIComponent("Го рубиться в мини-игры прямо в Телеге 🎮")}`);
+  function tab(t) {
+    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+    document.querySelectorAll("section[data-sec]").forEach((s) => s.classList.toggle("hidden", s.dataset.sec !== t));
+    try { localStorage.setItem("hub_tab", t); } catch (_) {}
+  }
+  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => { tab(b.dataset.t); TG.haptic("select"); Stats.event("hub_tab", { tab: b.dataset.t }); });
+  try { const t = localStorage.getItem("hub_tab"); if (t) tab(t); } catch (_) {}
+  document.querySelectorAll("a.game").forEach((a) => a.addEventListener("click", () => Stats.event("hub_pick", { pick: a.getAttribute("href").replace(/[./]/g, "") })));
   document.querySelectorAll(".best[data-key]").forEach((el) =>
     TG.loadBest(el.dataset.key, (b) => { if (b > 0) el.textContent = "Твой рекорд: " + b; }));
 </script>

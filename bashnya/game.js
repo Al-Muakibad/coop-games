@@ -101,6 +101,7 @@
     }
     if (s > best) { if (best > 0) verdict = (verdict ? verdict + " · " : "") + "Новый рекорд!"; best = s; T.saveBest(BEST_KEY, best); }
     document.getElementById("end-verdict").textContent = verdict;
+    window.Stats && Stats.gameEnd({ score: s, perfects, beat_challenge: challenge ? s > challenge.score : undefined });
     document.getElementById("best-end").textContent = `Твой рекорд: ${best}`;
     show("hud", false); show("hint", false); show("screen-end", true);
   }
@@ -227,6 +228,7 @@
     document.getElementById("hud-score").textContent = "0";
     document.getElementById("hud-combo").textContent = "";
     show("screen-start", false); show("screen-end", false); show("hud", true); show("hint", true);
+    window.Stats && Stats.gameStart({ challenge: !!challenge });
   }
   canvas.addEventListener("pointerdown", (e) => {
     e.preventDefault();

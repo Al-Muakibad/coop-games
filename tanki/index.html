@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Танчики</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #20304f; }
+  #hud { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + env(safe-area-inset-top)) 10px 0; color: #fff; pointer-events: none; z-index: 3; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .pl { flex: 1; min-width: 0; } .pl.r { text-align: right; }
+  .nm { font-weight: 900; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  .bar { height: 14px; border: 2px solid #000; border-radius: 4px; background: #14203d; overflow: hidden; margin-top: 3px; }
+  .bar i { display: block; height: 100%; transition: width .4s; } .pl.r .bar i { margin-left: auto; }
+  #wind { font-weight: 900; font-size: 15px; background: rgba(0,0,0,.45); border: 2px solid #fff; border-radius: 10px; padding: 4px 8px; text-align: center; min-width: 72px; }
+  #turn { text-align: center; margin-top: 8px; font-weight: 900; font-size: 18px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #aiminfo { text-align: center; font-weight: 800; font-size: 14px; margin-top: 2px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; min-height: 18px; }
+  #controls { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 12px calc(14px + env(safe-area-inset-bottom)); display: flex; gap: 8px; align-items: flex-end; z-index: 3; }
+  .wp { flex: 1; border: 3px solid #000; border-radius: 14px; background: #fff7ea; font-weight: 900; font-size: 13px; padding: 8px 4px; box-shadow: 0 4px 0 #000; font-family: inherit; }
+  .wp.on { background: #ffd34d; } .wp:disabled { opacity: .4; }
+  .wp b { display: block; font-size: 20px; }
+  #fire { flex: 0 0 96px; height: 96px; border-radius: 50%; border: 4px solid #000; background: #e5484d; color: #fff; font-weight: 900; font-size: 18px; box-shadow: 0 5px 0 #000; font-family: inherit; }
+  #fire:disabled { opacity: .45; }
+  #msg { position: fixed; left: 0; right: 0; top: 36%; text-align: center; font-size: 30px; font-weight: 900; color: #fff; -webkit-text-stroke: 3px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 4; }
+  #msg.on { opacity: 1; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="hud" class="hidden">
+  <div class="row">
+    <div class="pl"><div class="nm" id="n1"></div><div class="bar"><i id="h1" style="background:#3b82f6;width:100%"></i></div></div>
+    <div id="wind">💨 0</div>
+    <div class="pl r"><div class="nm" id="n2"></div><div class="bar"><i id="h2" style="background:#ef4444;width:100%"></i></div></div>
+  </div>
+  <div id="turn"></div>
+  <div id="aiminfo"></div>
+</div>
+<div id="msg"></div>
+<div id="controls" class="hidden">
+  <button class="wp on" data-w="std"><b>💣</b>Снаряд ∞</button>
+  <button class="wp" data-w="tri"><b>🎆</b>Тройной <span id="c-tri">2</span></button>
+  <button class="wp" data-w="big"><b>☢️</b>Мега <span id="c-big">1</span></button>
+  <button id="fire">ОГОНЬ</button>
+</div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🛡️💥</div>
+    <h1>Танчики</h1>
+    <p class="sub">Артиллерийская дуэль 1 на 1. Тяни пальцем — выбери угол и силу, учитывай ветер. Снаряды роют землю!</p>
+    <div class="modes">
+      <button class="btn primary" id="m-invite">⚔️ Позвать друга<small>Онлайн, ходите по очереди</small></button>
+      <button class="btn" id="m-bot">🤖 Против бота<small>Бот-артиллерист</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div class="status" id="end-status" style="margin-top:8px;font-weight:700;color:var(--muted)"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/lobby.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
