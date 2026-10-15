@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Башня</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #9ee6c8; }
+  #hud { position: fixed; top: calc(14px + env(safe-area-inset-top)); left: 0; right: 0; text-align: center; pointer-events: none; }
+  #hud-score { font-size: 64px; font-weight: 900; color: #fff; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; line-height: 1; }
+  #hud-combo { margin-top: 4px; font-weight: 900; font-size: 18px; color: #fff; -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; min-height: 22px; }
+  #hint { position: fixed; bottom: calc(40px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center;
+    font-weight: 800; color: var(--ink); opacity: .7; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="hud" class="hidden"><div id="hud-score">0</div><div id="hud-combo"></div></div>
+<div id="hint" class="hidden">Тапни в любом месте</div>
+
+<div id="screen-start" class="screen">
+  <div class="card">
+    <div class="logo">🏗️</div>
+    <h1>Башня</h1>
+    <p class="sub">Этаж едет туда-сюда. Тап — и он падает.<br>Что свисает — срезается. Насколько высоко построишь?</p>
+    <div id="challenge" class="challenge hidden"></div>
+    <div class="rules">Точное попадание — <b>«Идеально!»</b><br>3 идеальных подряд — этаж становится шире</div>
+    <button class="btn primary" id="btn-start">Строить</button>
+    <div class="best" id="best-start"></div>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏙️</div>
+    <h2 id="end-title">Башня готова</h2>
+    <div class="score" id="end-score">0</div>
+    <div class="breakdown" id="end-breakdown"></div>
+    <div class="verdict" id="end-verdict"></div>
+    <button class="btn primary" id="btn-challenge">Бросить вызов другу</button>
+    <button class="btn" id="btn-again">Ещё раз</button>
+    <button class="btn ghost" id="btn-menu">Другие игры</button>
+    <div class="best" id="best-end"></div>
+  </div>
+</div>
+
+<script src="../shared/tg.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

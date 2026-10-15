@@ -411,20 +411,8 @@
   let lastScore = 0;
 
   // ---------- рекорд ----------
-  function saveBest() {
-    try { localStorage.setItem("fragile_best", String(best)); } catch (_) {}
-    try { if (tg && tg.CloudStorage) tg.CloudStorage.setItem("best", String(best)); } catch (_) {}
-  }
-  function loadBest(cb) {
-    try { best = parseInt(localStorage.getItem("fragile_best") || "0", 10) || 0; } catch (_) {}
-    try {
-      if (tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast("6.9")) {
-        tg.CloudStorage.getItem("best", (err, v) => { if (!err && v) best = Math.max(best, parseInt(v, 10) || 0); cb(); });
-        return;
-      }
-    } catch (_) {}
-    cb();
-  }
+  function saveBest() { window.TG.saveBest("fragile_best", best); }
+  function loadBest(cb) { window.TG.loadBest("fragile_best", (b) => { best = b; cb(); }); }
 
   // ---------- вызов другу ----------
   function b64url(str) {
@@ -443,21 +431,9 @@
     const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
     return (u && (u.first_name || u.username)) || "Друг";
   }
-  function parseChallenge() {
-    let p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
-    if (!p) p = new URLSearchParams(location.search).get("tgWebAppStartParam") || new URLSearchParams(location.search).get("c");
-    if (!p) return null;
-    const m = /^c(\d{1,6})x([A-Za-z0-9_-]{0,80})$/.exec(p);
-    if (!m) return null;
-    let name = "Друг";
-    try { name = unb64url(m[2]).slice(0, 24) || "Друг"; } catch (_) {}
-    return { score: parseInt(m[1], 10), name };
-  }
+  function parseChallenge() { return window.TG.readChallenge(); }
   function shareChallenge() {
-    const link = `https://t.me/${CFG.botUsername}?startapp=c${lastScore}x${b64url(playerName().slice(0, 24))}`;
-    const text = `Я довёз «Хрупкий груз» на ${lastScore} очков 📦🚚 Побьёшь?`;
-    const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
-    if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank");
+    window.TG.shareChallenge("gruz", lastScore, `Я довёз «Хрупкий груз» на ${lastScore} очков 📦🚚 Побьёшь?`);
   }
   function openChannel() {
     if (tg && tg.openTelegramLink) tg.openTelegramLink(CFG.channelUrl); else window.open(CFG.channelUrl, "_blank");
@@ -469,14 +445,7 @@
   document.getElementById("btn-challenge").addEventListener("click", shareChallenge);
   document.getElementById("btn-channel").addEventListener("click", openChannel);
 
-  if (tg) {
-    try {
-      tg.ready(); tg.expand();
-      if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
-      if (tg.setHeaderColor) tg.setHeaderColor("#8fd3ff");
-      if (tg.setBackgroundColor) tg.setBackgroundColor("#ffe7b8");
-    } catch (_) {}
-  }
+  window.TG.init({ header: "#8fd3ff", bg: "#ffe7b8", back: "../" });
 
   challenge = parseChallenge();
   if (challenge) {

@@ -1,8 +1,13 @@
-# Хрупкий груз
+# Кооп-игры
 
-Мини-игра для Telegram (Mini App) канала «Кооп с друзьями».
-Довези шаткую гору груза по кочкам за 60 секунд.
+Мини-игры для Telegram-канала [«Кооп с друзьями»](https://t.me/coop_s_druzyami).
+Открываются в боте [@hrupkiy_gruz_bot](https://t.me/hrupkiy_gruz_bot) (Main Mini App = корень этого сайта).
 
-- Физика: [Matter.js](https://brm.io/matter-js/) 0.19 (MIT)
-- Хостинг: GitHub Pages
-- Без сервера: рекорд хранится в Telegram CloudStorage, вызов другу — через ссылку `startapp`
+| Игра | Папка | Ссылка |
+|---|---|---|
+| Хрупкий груз | `gruz/` | t.me/hrupkiy_gruz_bot?startapp=gruz |
+| Башня | `bashnya/` | t.me/hrupkiy_gruz_bot?startapp=bashnya |
+| Дуэль (вдвоём на одном телефоне) | `duel/` | t.me/hrupkiy_gruz_bot?startapp=duel |
+
+Корневой `index.html` — меню игр и маршрутизация по `startapp=<игра>[-c<очки>x<имя>]`.
+Общий код: `shared/tg.js` (Telegram, рекорды, вызов другу), `shared/ui.css`.

@@ -3,57 +3,89 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Хрупкий груз</title>
+<title>Кооп-игры</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css">
+<script src="shared/tg.js"></script>
+<script>
+  // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
+  (function () {
+    const GAMES = ["gruz", "bashnya", "duel"];
+    const tg = window.TG.tg;
+    let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
+      new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
+    if (!p) return;
+    let done = false;
+    try { done = sessionStorage.getItem("routed") === p; sessionStorage.setItem("routed", p); } catch (_) {}
+    if (done) return;
+    let game = p, ch = "";
+    if (/^c\d/.test(p)) { game = "gruz"; ch = p; }            // старые ссылки «Хрупкого груза»
+    else { const i = p.indexOf("-"); if (i > 0) { game = p.slice(0, i); ch = p.slice(i + 1); } }
+    if (GAMES.indexOf(game) < 0) return;
+    location.replace(`./${game}/` + (ch ? `?c=${encodeURIComponent(ch)}` : ""));
+  })();
+</script>
+<style>
+  :root { --ink:#2b1d14; --paper:#fff7ea; --accent:#ff7a2f; --muted:#8a7462; --bg:#ffe7b8; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; min-height:100vh; background: linear-gradient(#8fd3ff, var(--bg) 55%); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+  main { max-width:440px; margin:0 auto; padding:calc(18px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { text-align:center; margin-bottom:16px; }
+  header .logo { font-size:40px; }
+  h1 { margin:4px 0 2px; font-size:30px; font-weight:900; letter-spacing:-0.5px; }
+  header p { margin:0; color:var(--muted); font-size:15px; }
+  .game { display:flex; gap:14px; align-items:center; width:100%; text-align:left; margin-bottom:14px; padding:14px;
+    background:var(--paper); border:3px solid var(--ink); border-radius:20px; box-shadow:0 6px 0 var(--ink);
+    color:var(--ink); font:inherit; cursor:pointer; text-decoration:none; }
+  .game:active { transform:translateY(4px); box-shadow:0 2px 0 var(--ink); }
+  .icon { flex:0 0 64px; height:64px; border-radius:16px; border:3px solid var(--ink); display:grid; place-items:center; font-size:34px; }
+  .info { flex:1; min-width:0; }
+  .info b { display:block; font-size:19px; font-weight:900; }
+  .info span { display:block; color:var(--muted); font-size:14px; line-height:1.35; margin-top:2px; }
+  .tag { display:inline-block; margin-top:6px; padding:2px 8px; border-radius:999px; background:#fff0c9; border:2px solid var(--ink); font-size:12px; font-weight:800; }
+  .tag.new { background:var(--accent); color:#fff; }
+  .best { color:var(--accent); font-weight:800; font-size:13px; margin-top:4px; }
+  .foot { display:flex; gap:10px; margin-top:6px; }
+  .foot button { flex:1; padding:12px; border-radius:14px; border:3px solid var(--ink); background:#fff; font:inherit; font-weight:800; font-size:15px; color:var(--ink); box-shadow:0 4px 0 var(--ink); }
+</style>
 </head>
 <body>
-<canvas id="game"></canvas>
+<main>
+  <header>
+    <div class="logo">🎮</div>
+    <h1>Кооп-игры</h1>
+    <p>Короткие игры, чтобы рубиться с друзьями.<br>Новая — каждую неделю в канале.</p>
+  </header>
 
-<div id="hud" class="hidden">
-  <div class="hud-row">
-    <div class="pill" id="hud-time">60</div>
-    <div class="pill" id="hud-dist">0 м</div>
+  <a class="game" href="./duel/">
+    <div class="icon" style="background:#ffd34d">⚡</div>
+    <div class="info"><b>Дуэль</b><span>Вдвоём на одном телефоне. Кто быстрее нажмёт — тот и прав.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">👥 на двоих</i></div>
+  </a>
+  <a class="game" href="./bashnya/">
+    <div class="icon" style="background:#9ee6c8">🏗️</div>
+    <div class="info"><b>Башня</b><span>Один тап — один этаж. Промахнулся — срезало.</span>
+      <i class="tag new">НОВОЕ</i> <div class="best" data-key="bashnya_best"></div></div>
+  </a>
+  <a class="game" href="./gruz/">
+    <div class="icon" style="background:#ffb98a">📦</div>
+    <div class="info"><b>Хрупкий груз</b><span>60 секунд, кочки и шаткая гора коробок.</span>
+      <div class="best" data-key="fragile_best"></div></div>
+  </a>
+
+  <div class="foot">
+    <button id="share">Позвать друга</button>
+    <button id="channel">Канал</button>
   </div>
-  <div class="cargo-row" id="hud-cargo"></div>
-</div>
-
-<div id="controls" class="hidden">
-  <button class="ctl" id="btn-back" aria-label="Назад">◀</button>
-  <button class="ctl gas" id="btn-gas" aria-label="Газ">▶</button>
-</div>
-
-<div id="screen-start" class="screen">
-  <div class="card">
-    <div class="logo">📦🚚</div>
-    <h1>Хрупкий груз</h1>
-    <p class="sub">60 секунд. Кочки. Шаткая гора коробок.<br>Довези как можно дальше и ничего не урони.</p>
-    <div id="challenge" class="challenge hidden"></div>
-    <div class="rules">
-      <div><b>▶</b> газ &nbsp;·&nbsp; <b>◀</b> назад и тормоз</div>
-      <div>Очки = метры + 30 за каждый уцелевший груз</div>
-    </div>
-    <button class="btn primary" id="btn-start">Поехали</button>
-    <div class="best" id="best-start"></div>
-  </div>
-</div>
-
-<div id="screen-end" class="screen hidden">
-  <div class="card">
-    <div class="logo" id="end-emoji">🏁</div>
-    <h2 id="end-title">Финиш</h2>
-    <div class="score" id="end-score">0</div>
-    <div class="breakdown" id="end-breakdown"></div>
-    <div class="verdict" id="end-verdict"></div>
-    <button class="btn primary" id="btn-challenge">Бросить вызов другу</button>
-    <button class="btn" id="btn-again">Ещё раз</button>
-    <button class="btn ghost" id="btn-channel">Канал «Кооп с друзьями»</button>
-    <div class="best" id="best-end"></div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
-<script src="config.js"></script>
-<script src="game.js"></script>
+</main>
+<script>
+  TG.init({ header: "#8fd3ff", bg: "#ffe7b8" });
+  if (TG.tg && TG.tg.BackButton) try { TG.tg.BackButton.hide(); } catch (_) {}
+  document.getElementById("channel").onclick = TG.openChannel;
+  document.getElementById("share").onclick = () =>
+    TG.openLink(`https://t.me/share/url?url=${encodeURIComponent("https://t.me/" + TG.BOT + "?startapp")}&text=${encodeURIComponent("Го рубиться в мини-игры прямо в Телеге 🎮")}`);
+  document.querySelectorAll(".best[data-key]").forEach((el) =>
+    TG.loadBest(el.dataset.key, (b) => { if (b > 0) el.textContent = "Твой рекорд: " + b; }));
+</script>
 </body>
 </html>
