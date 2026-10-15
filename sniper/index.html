@@ -16,7 +16,28 @@
   .av { width: 44px; height: 44px; border-radius: 10px; border: 3px solid #fff; display: grid; place-items: center; font-weight: 900; font-size: 20px; flex: 0 0 44px; box-shadow: 0 3px 0 rgba(0,0,0,.5); }
   .pl .info { flex: 1; min-width: 0; }
   .nm { font-weight: 900; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
-  .bar { height: 14px; border-radius: 4px; background: #14203d; border: 2px solid #000; margin-top: 3px; overflow: hidden; }
+  .bar { position: relative; height: 16px; border-radius: 5px; background: #14203d; border: 2px solid #000; margin-top: 3px; overflow: hidden; }
+  .hpn { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; font-weight: 900; color: #fff; -webkit-text-stroke: 2px #000; paint-order: stroke fill; }
+  .bar i.flash { filter: brightness(2.2); }
+  #tools { position: fixed; right: 10px; top: calc(118px + env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 8px; z-index: 7; }
+  #tools button { width: 46px; height: 46px; border-radius: 14px; border: 3px solid #000; background: rgba(255,247,234,.95); font-size: 24px; box-shadow: 0 3px 0 #000; }
+  #emo-panel { position: fixed; right: 64px; top: calc(118px + env(safe-area-inset-top)); display: grid; grid-template-columns: repeat(3, 50px); gap: 6px; padding: 8px;
+    background: rgba(255,247,234,.97); border: 3px solid #000; border-radius: 16px; box-shadow: 0 5px 0 #000; z-index: 8; }
+  #emo-panel button { font-size: 30px; background: none; border: 0; padding: 4px; }
+  .bubble { position: fixed; top: calc(62px + env(safe-area-inset-top)); font-size: 46px; z-index: 9; pointer-events: none; opacity: 0; transform: scale(.3); transition: opacity .2s, transform .25s cubic-bezier(.2,1.6,.4,1); filter: drop-shadow(0 3px 0 rgba(0,0,0,.4)); }
+  .bubble.on { opacity: 1; transform: scale(1); }
+  #bub-me { left: 14px; } #bub-opp { right: 14px; }
+  #banner { position: fixed; left: 0; right: 0; top: 30%; z-index: 9; display: flex; flex-direction: column; align-items: center; pointer-events: none;
+    animation: ban 2.4s ease forwards; }
+  #banner .b0 { font-size: 15px; font-weight: 900; letter-spacing: 3px; color: #ffd34d; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #banner .b1 { font-size: 40px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; text-align: center; line-height: 1.05; padding: 0 12px; }
+  #banner .b2 { margin-top: 6px; font-size: 16px; font-weight: 800; color: #fff; background: rgba(0,0,0,.55); padding: 4px 12px; border-radius: 999px; }
+  @keyframes ban { 0% { transform: translateX(-120%); } 14% { transform: translateX(0); } 82% { transform: translateX(0); opacity: 1; } 100% { transform: translateX(120%); opacity: 0; } }
+  #vs { position: fixed; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(#1b2b55, #070b18); color: #fff; }
+  #vs .p { text-align: center; width: 38%; } #vs .p .av { margin: 0 auto 8px; width: 74px; height: 74px; font-size: 34px; border-radius: 18px; }
+  #vs .p b { display: block; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #vs .x { font-size: 54px; font-weight: 900; color: #ffd34d; -webkit-text-stroke: 4px #000; paint-order: stroke fill; animation: pulse .6s infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.15); } }
   .bar i { display: block; height: 100%; width: 100%; transition: width .35s; }
   .pl.r .bar i { margin-left: auto; }
   #timer { flex: 0 0 auto; min-width: 54px; text-align: center; font-weight: 900; font-size: 24px; background: rgba(0,0,0,.55); border: 2px solid #fff; border-radius: 12px; padding: 4px 8px; margin-top: 4px; }
@@ -61,13 +82,18 @@
 
 <div id="hud" class="hidden">
   <div class="row">
-    <div class="pl"><div class="av" id="av1" style="background:#2f7cf6">Я</div><div class="info"><div class="nm" id="n1"></div><div class="bar"><i id="h1" style="background:#3b82f6"></i></div></div></div>
+    <div class="pl"><div class="av" id="av1" style="background:#2f7cf6">Я</div><div class="info"><div class="nm" id="n1"></div><div class="bar"><i id="h1" style="background:linear-gradient(#60a5fa,#2563eb)"></i><span class="hpn" id="hn1">100</span></div></div></div>
     <div id="timer">20</div>
-    <div class="pl r"><div class="av" id="av2" style="background:#e5484d">?</div><div class="info"><div class="nm" id="n2"></div><div class="bar"><i id="h2" style="background:#ef4444"></i></div></div></div>
+    <div class="pl r"><div class="av" id="av2" style="background:#e5484d">?</div><div class="info"><div class="nm" id="n2"></div><div class="bar"><i id="h2" style="background:linear-gradient(#f87171,#dc2626)"></i><span class="hpn" id="hn2">100</span></div></div></div>
   </div>
   <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px"><div id="ammo"></div><div id="coins">🪙 0</div></div>
   <div id="role"></div>
 </div>
+<div id="tools" class="hidden"><button id="emo-btn">😀</button><button id="snd-btn">🔊</button></div>
+<div id="emo-panel" class="hidden"></div>
+<div class="bubble" id="bub-me"></div><div class="bubble" id="bub-opp"></div>
+<div id="banner" class="hidden"><div class="b0" id="ban0"></div><div class="b1" id="ban1"></div><div class="b2" id="ban2"></div></div>
+<div id="vs" class="hidden"><div class="p"><div class="av" style="background:#2f7cf6" id="vs-a1"></div><b id="vs-n1"></b></div><div class="x">VS</div><div class="p"><div class="av" style="background:#e5484d" id="vs-a2"></div><b id="vs-n2"></b></div></div>
 <div id="msg"></div>
 <div id="big"></div>
 <div id="controls" class="hidden"></div>

@@ -12,6 +12,44 @@
     armor: { name: "Броня", ic: "🦺", desc: "−12% урона по тебе" }
   };
   const PRICE = [60, 120, 220], MAXLV = 3;
+  const THEMES = [
+    { name: "Пустынный", sky: ["#3d8fe0", "#a9dcff"], sea: ["#1f78c4", "#4fb3e8"], sand: ["#e7c27c", "#b07f45"], top: "#d9ae67", brick: 22, mortar: "#8a5a3c" },
+    { name: "Закатный", sky: ["#5b3a8c", "#ff9d6c"], sea: ["#3a4f9a", "#e2837a"], sand: ["#d9a066", "#8a5232"], top: "#e6b07a", brick: 6, mortar: "#6e3b2a" }
+  ];
+  const EMOS = ["😂", "😡", "🖕", "👍", "😎", "🤡", "😱", "💩", "🔥"];
+
+  // ---------- звук (синтез, без файлов) ----------
+  const Snd = (() => {
+    let ac = null, on = true;
+    try { on = localStorage.getItem("sniper_mute") !== "1"; } catch (_) {}
+    const ctxA = () => { if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} } if (ac && ac.state === "suspended") ac.resume(); return ac; };
+    function noise(dur, vol, freq, q) {
+      const a = ctxA(); if (!a || !on) return;
+      const len = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+      const src = a.createBufferSource(); src.buffer = buf;
+      const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = freq || 3000; f.Q.value = q || 0.7;
+      const g = a.createGain(); g.gain.value = vol; src.connect(f); f.connect(g); g.connect(a.destination); src.start();
+    }
+    function tone(freq, dur, vol, type, slide) {
+      const a = ctxA(); if (!a || !on) return;
+      const o = a.createOscillator(), g = a.createGain(); o.type = type || "sine"; o.frequency.value = freq;
+      if (slide) o.frequency.exponentialRampToValueAtTime(slide, a.currentTime + dur);
+      g.gain.setValueAtTime(vol, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+      o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + dur);
+    }
+    return {
+      unlock: ctxA,
+      get on() { return on; }, toggle() { on = !on; try { localStorage.setItem("sniper_mute", on ? "0" : "1"); } catch (_) {} return on; },
+      shot() { noise(0.35, 0.9, 2600); tone(90, 0.25, 0.6, "triangle", 40); },
+      far() { noise(0.4, 0.35, 900); },
+      thud() { noise(0.15, 0.5, 700, 2); tone(160, 0.12, 0.2, "square", 70); },
+      hit() { tone(220, 0.18, 0.5, "sawtooth", 80); noise(0.12, 0.5, 1500); },
+      coin() { tone(988, 0.08, 0.25, "square"); setTimeout(() => tone(1319, 0.12, 0.25, "square"), 70); },
+      beep(h) { tone(h ? 880 : 520, 0.12, 0.3, "square"); },
+      emo() { tone(660, 0.08, 0.2, "triangle", 990); }
+    };
+  })();
 
   // ---------- кошелёк и улучшения ----------
   let wallet = { coins: 0, mag: 0, zoom: 0, speed: 0, armor: 0 };
@@ -96,7 +134,7 @@
   const visible = (p) => { const s = coverState(p); return !s.hidden || s.peek.length > 0; };
 
   // ---------- состояние ----------
-  let mode = null, room = null, map = null, layerDirty = true;
+  let mode = null, room = null, map = null, maps = null, layerDirty = true, shake = 0, kick = 0, emoT = 0;
   let me = { name: "Ты", up: myUp() }, opp = { name: "Друг", up: { mag: 0, zoom: 0, speed: 0, armor: 0 } };
   let match = null, R = null;            // матч и текущий раунд
   let phase = "menu";                    // menu | room | prep | live | over | end
@@ -110,14 +148,14 @@
   layer.width = WW * LR; layer.height = WH * LR; const lctx = layer.getContext("2d");
 
   function drawBricks(g, c) {
-    const r = rng(c.seed), y = G - c.h;
-    g.fillStyle = "#8a5a3c"; g.fillRect(c.x, y, c.w, c.h);
+    const r = rng(c.seed), y = G - c.h, TH = THEMES[map.theme || 0];
+    g.fillStyle = TH.mortar; g.fillRect(c.x, y, c.w, c.h);
     const bh = 8.5, bw = 17;
     for (let row = 0, yy = y + 1; yy < G; yy += bh, row++) {
       for (let xx = c.x - (row % 2 ? bw / 2 : 0); xx < c.x + c.w; xx += bw) {
         const x0 = Math.max(c.x + 0.8, xx + 0.8), x1 = Math.min(c.x + c.w - 0.8, xx + bw - 0.8);
         if (x1 <= x0) continue;
-        const l = 38 + r() * 14, h = 22 + r() * 8;
+        const l = 38 + r() * 14, h = TH.brick + r() * 8;
         g.fillStyle = `hsl(${h},${38 + r() * 12}%,${l}%)`;
         g.fillRect(x0, yy + 0.8, x1 - x0, Math.min(bh - 1.6, G - yy - 0.8));
         g.fillStyle = "rgba(255,255,255,.08)"; g.fillRect(x0, yy + 0.8, x1 - x0, 1.2);
@@ -181,14 +219,15 @@
   }
 
   function drawBg(t) {
+    const TH = THEMES[map.theme || 0];
     const sky = ctx.createLinearGradient(0, 0, 0, 150);
-    sky.addColorStop(0, "#3d8fe0"); sky.addColorStop(1, "#a9dcff");
+    sky.addColorStop(0, TH.sky[0]); sky.addColorStop(1, TH.sky[1]);
     ctx.fillStyle = sky; ctx.fillRect(-WW, -WH, WW * 3, 150 + WH);
     ctx.fillStyle = "rgba(255,255,255,.85)";
     for (let i = 0; i < 4; i++) { const x = ((i * 120 + t * 3) % 480) - 60, y = 40 + i * 17; ctx.beginPath(); ctx.ellipse(x, y, 26, 7, 0, 0, 7); ctx.ellipse(x + 14, y - 5, 15, 7, 0, 0, 7); ctx.fill(); }
     // море
     const sea = ctx.createLinearGradient(0, 132, 0, 178);
-    sea.addColorStop(0, "#1f78c4"); sea.addColorStop(1, "#4fb3e8");
+    sea.addColorStop(0, TH.sea[0]); sea.addColorStop(1, TH.sea[1]);
     ctx.fillStyle = sea; ctx.fillRect(-WW, 132, WW * 3, 48);
     ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1;
     for (let k = 0; k < 7; k++) { const yy = 138 + k * 6, off = (t * (6 + k) + k * 40) % 60; ctx.beginPath();
@@ -203,9 +242,9 @@
     if (phase === "live" && Math.sin(t * 5) > 0.6) { ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.beginPath(); ctx.arc(ix + 1, 122, 1.6, 0, 7); ctx.fill(); }
     // песок
     const sand = ctx.createLinearGradient(0, 176, 0, WH);
-    sand.addColorStop(0, "#e7c27c"); sand.addColorStop(1, "#b07f45");
+    sand.addColorStop(0, TH.sand[0]); sand.addColorStop(1, TH.sand[1]);
     ctx.fillStyle = sand; ctx.fillRect(-WW, 176, WW * 3, WH * 2);
-    ctx.fillStyle = "#d9ae67"; ctx.fillRect(-WW, 176, WW * 3, 3);
+    ctx.fillStyle = TH.top; ctx.fillRect(-WW, 176, WW * 3, 3);
     const r = rng(map.seed + 7);
     ctx.fillStyle = "rgba(120,80,40,.25)";
     for (let i = 0; i < 70; i++) { ctx.beginPath(); ctx.ellipse(r() * WW, 185 + r() * 110, 1 + r() * 2, 0.6 + r(), 0, 0, 7); ctx.fill(); }
@@ -289,12 +328,6 @@
       const b = bodyRect(pos);
       ctx.strokeStyle = st.hidden && !st.peek.length ? "#22c55e" : st.hidden ? "#ffd34d" : "#ef4444";
       ctx.lineWidth = 1.5; ctx.setLineDash([3, 2]); ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); ctx.setLineDash([]);
-      if (phase === "live") {        // лазер снайпера
-        const ix = 60 + map.deco * 240;
-        ctx.strokeStyle = "rgba(255,40,40,.35)"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(ix, 124); ctx.lineTo(remoteAim.x, remoteAim.y); ctx.stroke();
-        ctx.fillStyle = "rgba(255,30,30,.95)"; ctx.beginPath(); ctx.arc(remoteAim.x, remoteAim.y, 2.2, 0, 7); ctx.fill();
-        ctx.strokeStyle = "rgba(255,30,30,.4)"; ctx.beginPath(); ctx.arc(remoteAim.x, remoteAim.y, 5 + Math.sin(t * 10), 0, 7); ctx.stroke();
-      }
     }
     if (phase === "over" && R && R.reveal) {
       const b = bodyRect(hp); ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 2.5; ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
@@ -320,7 +353,8 @@
       const fx0 = hiderPos().x;
       camX += (Math.max(half, Math.min(WW - half, fx0)) - camX) * Math.min(1, dt * 6);
       if (WW < half * 2) camX = WW / 2;
-      drawWorld(dt, t, sc, W / 2 - camX * sc, H * 0.66 - G * sc, R.iHide && phase !== "over" ? "hider" : "plain");
+      shake = Math.max(0, shake - dt * 3); const sx = (Math.random() - 0.5) * shake * 14, sy = (Math.random() - 0.5) * shake * 14;
+      drawWorld(dt, t, sc, W / 2 - camX * sc + sx, H * 0.66 - G * sc + sy, R.iHide && phase !== "over" ? "hider" : "plain");
       return;
     }
     if (phase === "prep") {
@@ -330,7 +364,8 @@
     }
     const Z = 2.3 + 0.35 * me.up.zoom, sc = S * Z, cx = W / 2, cy = H * 0.47;
     const sway = phase === "live" ? Math.sin(t * 1.3) * 0.6 : 0;
-    drawWorld(dt, t, sc, cx - (aim.x + sway) * sc, cy - aim.y * sc, "sniper");
+    kick = Math.max(0, kick - dt * 4);
+    drawWorld(dt, t, sc, cx - (aim.x + sway) * sc, cy - (aim.y - kick * 10) * sc, "sniper");
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     const Rr = Math.min(W * 0.48, H * 0.36);
     ctx.fillStyle = "#04060c"; ctx.beginPath(); ctx.rect(0, 0, W, H); octagon(cx, cy, Rr, true); ctx.fill("evenodd");
@@ -344,6 +379,10 @@
     ctx.moveTo(cx, cy + Rr * 0.5); ctx.lineTo(cx, cy + Rr); ctx.stroke();
     ctx.lineWidth = 1.2; for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(cx - 5, cy + k * 18); ctx.lineTo(cx + 5, cy + k * 18); ctx.stroke(); }
     ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(cx, cy, 2.6, 0, 7); ctx.fill();
+    const gl = ctx.createLinearGradient(cx - Rr, cy - Rr, cx, cy); gl.addColorStop(0, "rgba(180,220,255,.16)"); gl.addColorStop(1, "rgba(180,220,255,0)");
+    ctx.fillStyle = gl; ctx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`${Math.round(320 + (aim.y - 150) * 2)} м`, cx + 12, cy - 8);
     ctx.restore();
   }
 
@@ -357,6 +396,7 @@
     $("n1").textContent = me.name; $("n2").textContent = opp.name;
     $("av1").textContent = (me.name[0] || "Я").toUpperCase(); $("av2").textContent = opp.name.startsWith("🤖") ? "🤖" : (opp.name[0] || "?").toUpperCase();
     $("h1").style.width = Math.max(0, match.hp.me) + "%"; $("h2").style.width = Math.max(0, match.hp.opp) + "%";
+    $("hn1").textContent = Math.max(0, match.hp.me); $("hn2").textContent = Math.max(0, match.hp.opp);
     $("coins").textContent = "🪙 +" + match.earned;
     if (R) {
       $("role").textContent = `Раунд ${R.n + 1}/${ROUNDS} · ` + (R.iHide ? "🏃 Прячься и собирай деньги" : "🎯 Найди и подстрели");
@@ -391,7 +431,7 @@
   // ---------- меню и магазин ----------
   function toMenu() {
     if (room) { try { room.close(); } catch (_) {} room = null; }
-    phase = "menu"; match = null; R = null; controls(null); show("hud", false); big("");
+    phase = "menu"; match = null; R = null; controls(null); show("hud", false); show("tools", false); show("emo-panel", false); big("");
     if (!map) { map = genMap(7); layerDirty = true; }
     $("wallet").textContent = `🪙 ${wallet.coins}`;
     screen("screen-menu");
@@ -485,7 +525,10 @@
     rm.on("start", (d) => beginMatch(d.seed));
     rm.on("round", (d) => beginRound(d));
     rm.on("pos", (d) => { if (R && !R.iHide) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; } });
-    rm.on("aim", (d) => { remoteAim.tx = d.x; remoteAim.ty = d.y; });
+    rm.on("hp", (d) => { if (match) { match.hp.opp = d.hp; flashBar("h2"); hud(); } });
+    rm.on("ko", () => { if (isHost()) setTimeout(() => hostEndRound("ko"), 500); });
+    rm.on("out", () => { if (isHost()) setTimeout(() => hostEndRound("ammo"), 1300); });
+    rm.on("emo", (d) => bubble("opp", d.e));
     rm.on("shot", (d) => applyShot(d, false));
     rm.on("pick", (d) => { if (R && R.pickups[d.i]) R.pickups[d.i].taken = true; });
     rm.on("rend", (d) => onRoundEnd(d));
@@ -509,15 +552,20 @@
   }
   function hostEndRound(reason) {
     if (!R || R.ended) return;
-    const hpHost = match.hp.me, hpGuest = match.hp.opp;
-    const d = { n: R.n, reason, hp: { host: hpHost, guest: hpGuest } };
+    const d = { n: R.n, reason };
     send("rend", d); onRoundEnd(d);
     const next = R.n + 1;
     setTimeout(() => hostNextRound(next), 3400);
   }
 
   function beginMatch(seed) {
-    map = genMap(seed); layerDirty = true;
+    maps = { host: genMap(seed * 2 + 1), guest: genMap(seed * 2 + 2) };
+    maps.host.theme = 0; maps.guest.theme = 1;
+    map = maps.host; layerDirty = true;
+    $("vs-n1").textContent = me.name; $("vs-n2").textContent = opp.name;
+    $("vs-a1").textContent = (me.name[0] || "Я").toUpperCase(); $("vs-a2").textContent = opp.name.startsWith("🤖") ? "🤖" : (opp.name[0] || "?").toUpperCase();
+    show("vs", true); setTimeout(() => show("vs", false), 1400);
+    show("tools", true); $("snd-btn").textContent = Snd.on ? "🔊" : "🔇";
     match = { hp: { me: 100, opp: 100 }, earned: 0, hits: 0, survived: 0, picks: 0 };
     rematch = { me: false, opp: false };
     screen(null); show("hud", true); hud();
@@ -533,6 +581,7 @@
   function beginRound(d) {
     const hostHides = d.hiderHost;
     const iH = isHost() ? hostHides : !hostHides;
+    map = maps[hostHides ? "host" : "guest"]; layerDirty = true;
     R = { n: d.n, iHide: iH, pickups: d.pick.map((x) => ({ x, taken: false })), mag: BASE_MAG + (iH ? 0 : me.up.mag),
       bullets: 0, start: now, ended: false, reveal: false, shots: 0, endAt: now + PREP + DUR };
     R.bullets = R.mag;
@@ -543,12 +592,14 @@
     keys = { l: false, r: false };
     hud();
     T.haptic("impact", "medium");
+    banner(`РАУНД ${d.n + 1} / ${ROUNDS}`, iH ? "ТЫ ПРЯЧЕШЬСЯ" : "ТЫ СНАЙПЕР",
+      (iH ? "Твой остров. Беги между укрытиями, собирай $" : `Остров соперника · ${R.mag} патрона`) + ` · ${THEMES[map.theme].name}`);
     if (mode === "bot") bot.beginRound();
     window.Stats && Stats.state({ round: d.n, hide: iH, hp: match.hp.me });
   }
 
   function goLive() {
-    phase = "live"; big("");
+    phase = "live"; big(""); Snd.beep(true);
     msg(R.iHide ? "Беги! Снайпер ищет тебя 👀" : "Огонь по готовности 🎯", 1300);
     T.haptic("impact", "heavy");
   }
@@ -564,42 +615,61 @@
     const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * (opp.up.armor || 0))) : 0;
     const d = { x, y, res, dmg };
     send("shot", d); applyShot(d, true);
-    T.haptic("impact", "heavy");
+    T.haptic("impact", "heavy"); Snd.shot(); kick = 1;
     hud();
+    if (R.bullets <= 0) {
+      if (isHost()) setTimeout(() => hostEndRound("ammo"), 1300); else send("out", {});
+    }
   }
   function applyShot(d, byMe) {
     if (!R) return;
     const c = map.covers.find((c) => d.x >= c.x && d.x <= c.x + c.w && d.y >= G - c.h && d.y <= G && !inOpening(c, d.x, d.y));
-    if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 4 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); }
+    if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 4 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); if (byMe) setTimeout(() => Snd.thud(), 90); }
     fx.push({ kind: "flash", x: d.x, y: d.y, t: 0, life: 0.25 });
+    if (!byMe) Snd.far();
     if (d.res) {
-      const victimIsMe = !byMe;
-      if (victimIsMe) match.hp.me -= d.dmg; else match.hp.opp -= d.dmg;
-      if (byMe) { match.earned += d.res === "head" ? 20 : 10; match.hits++; }
       fx.push({ kind: "txt", text: `−${d.dmg}`, color: "#ff5a5a", x: d.x, y: d.y - 8, t: 0, life: 1 });
-      if (byMe) msg(d.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
-      else { msg(d.res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error"); }
+      if (byMe) {
+        match.earned += d.res === "head" ? 20 : 10; match.hits++; Snd.hit();
+        msg(d.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
+        if (mode === "bot") { match.hp.opp -= d.dmg; flashBar("h2"); if (match.hp.opp <= 0) setTimeout(() => hostEndRound("ko"), 500); if (Math.random() < 0.5) setTimeout(() => bubble("opp", pick(["😡", "😱", "🤡"])), 600); }
+      } else {
+        match.hp.me -= d.dmg; flashBar("h1"); shake = 1; Snd.hit();
+        send("hp", { hp: match.hp.me });
+        msg(d.res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error");
+        if (match.hp.me <= 0) { if (isHost()) setTimeout(() => hostEndRound("ko"), 500); else send("ko", {}); }
+        if (mode === "bot" && Math.random() < 0.6) setTimeout(() => bubble("opp", pick(["😂", "😎", "🖕", "🔥"])), 700);
+      }
     } else if (byMe) {
       const p = remote, dist = Math.hypot(d.x - p.x, d.y - (G - 35));
       msg(dist < 30 ? "Совсем рядом! 😬" : dist < 70 ? "Тепло…" : "Мимо", 900);
     } else {
       const dist = Math.hypot(d.x - pos.x, d.y - (G - 35));
-      if (dist < 40) { msg("Пуля рядом! 😱", 900); T.haptic("impact", "rigid"); }
+      if (dist < 40) { msg("Пуля рядом! 😱", 900); T.haptic("impact", "rigid"); shake = 0.4; }
     }
     hud();
-    if (isHost() && (match.hp.me <= 0 || match.hp.opp <= 0)) setTimeout(() => hostEndRound("ko"), 400);
+  }
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  function flashBar(id) { const el = $(id); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 180); }
+  function banner(a, b, c) {
+    const el = $("banner"); $("ban0").textContent = a; $("ban1").textContent = b; $("ban2").textContent = c;
+    el.classList.add("hidden"); void el.offsetWidth; el.classList.remove("hidden");
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "";
+  }
+  function bubble(who, e) {
+    const el = $(who === "me" ? "bub-me" : "bub-opp"); el.textContent = e; el.classList.add("on");
+    clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("on"), 1800);
+    if (who === "opp") { T.haptic("impact", "light"); Snd.emo(); }
   }
 
   function onRoundEnd(d) {
     if (!R || R.ended) return;
     R.ended = true; R.reveal = true; phase = "over"; controls(null);
-    const host = isHost();
-    match.hp.me = host ? d.hp.host : d.hp.guest; match.hp.opp = host ? d.hp.guest : d.hp.host;
     let text;
     if (R.iHide) {
-      if (match.hp.me > 0 && d.reason === "time") { match.earned += 15; match.survived++; text = "Выжил! +15 🪙"; }
+      if (match.hp.me > 0) { match.earned += 15; match.survived++; text = d.reason === "ammo" ? "У снайпера кончились патроны!<br>Выжил! +15 🪙" : "Выжил! +15 🪙"; }
       else text = "Тебя нашли 💀";
-    } else text = d.reason === "ko" ? "Цель уничтожена! 🎯" : "Время вышло ⏱️";
+    } else text = d.reason === "ko" ? "Цель уничтожена! 🎯" : d.reason === "ammo" ? "Патроны кончились 🫙" : "Время вышло ⏱️";
     msg(text, 2600); hud();
     if (mode === "bot") bot.anim = null;
   }
@@ -676,7 +746,7 @@
         else { tx = WW / 2 + Math.sin(now * 0.6) * 150; ty = 185 + Math.sin(now * 1.1) * 15; }
         const k = Math.min(1, dt * (vis ? 7 : 1.5));
         a.x += (tx - a.x) * k; a.y += (ty - a.y) * k;
-        emit("aim", { x: a.x, y: a.y });
+        if (R.bullets <= 0 && !R.botOut) { R.botOut = true; setTimeout(() => hostEndRound("ammo"), 1300); }
         if (now > this.nextShot && R.bullets > 0) {
           const b = bodyRect(pos), onTarget = a.x > b.x - 3 && a.x < b.x + b.w + 3 && a.y > b.y && a.y < G;
           const wild = !vis && this.lastSeen && Math.random() < 0.006;
@@ -712,6 +782,7 @@
     const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts; now = ts / 1000;
     if (R && phase === "prep") {
       const left = Math.ceil(R.start + PREP - now);
+      if (left !== R.lastBeep && left > 0) { R.lastBeep = left; Snd.beep(false); }
       big(left > 0 ? String(left) : "");
       if (!R.iHide && !R.prepMsg) { R.prepMsg = true; msg("Противник прячется…", 2900); }
       if (now >= R.start + PREP) goLive();
@@ -724,20 +795,19 @@
         const mv = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
         if (mv) { pos.x = Math.max(10, Math.min(WW - 10, pos.x + mv * sp)); pos.dir = mv; pos.walk += dt * (pos.st ? 6 : 12); } else pos.walk = 0;
         if (phase === "live") R.pickups.forEach((c, i) => {
-          if (!c.taken && Math.abs(c.x - pos.x) < 12) { c.taken = true; match.earned += 5; match.picks++; send("pick", { i }); fx.push({ kind: "txt", text: "+5 🪙", color: "#7CFC9A", x: c.x, y: G - 30, t: 0, life: 1 }); T.haptic("impact", "light"); hud(); }
+          if (!c.taken && Math.abs(c.x - pos.x) < 12) { c.taken = true; match.earned += 5; match.picks++; send("pick", { i }); Snd.coin(); fx.push({ kind: "txt", text: "+5 🪙", color: "#7CFC9A", x: c.x, y: G - 30, t: 0, life: 1 }); T.haptic("impact", "light"); hud(); }
         });
         sendT -= dt;
         if (sendT <= 0) { send("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0 }); sendT = 1 / 12; }
-        remoteAim.x += (remoteAim.tx - remoteAim.x) * Math.min(1, dt * 10); remoteAim.y += (remoteAim.ty - remoteAim.y) * Math.min(1, dt * 10);
+
       } else {
         remote.x += (remote.tx - remote.x) * Math.min(1, dt * 12);
         remote.walk = remote.moving ? remote.walk + dt * 12 : 0;
-        aimSendT -= dt;
-        if (aimSendT <= 0 && phase === "live") { send("aim", { x: Math.round(aim.x), y: Math.round(aim.y) }); aimSendT = 0.1; }
+
       }
       if (mode === "bot") bot.update(dt);
       if (phase === "live" && isHost() && now > R.endAt + 0.3) hostEndRound("time");
-      if (phase === "live" && !R.iHide && R.bullets <= 0 && !R.outMsg) { R.outMsg = true; msg("Патроны кончились 😬", 1500); }
+
     }
     render(dt, now);
     requestAnimationFrame(frame);
@@ -746,6 +816,15 @@
   // ---------- ввод прицела ----------
   let drag = null;
   canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); drag = { x: e.clientX, y: e.clientY }; });
+  document.addEventListener("pointerdown", () => Snd.unlock(), { once: true });
+  $("emo-panel").innerHTML = EMOS.map((e) => `<button>${e}</button>`).join("");
+  $("emo-btn").onclick = () => show("emo-panel", $("emo-panel").classList.contains("hidden"));
+  $("emo-panel").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    if (now - emoT < 0.8) return; emoT = now;
+    send("emo", { e: b.textContent }); bubble("me", b.textContent); show("emo-panel", false); T.haptic("select");
+    window.Stats && Stats.event("emote", { e: b.textContent });
+  });
+  $("snd-btn").onclick = () => { $("snd-btn").textContent = Snd.toggle() ? "🔊" : "🔇"; };
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
     if (R && !R.iHide && (phase === "live" || phase === "prep")) {
