@@ -1,4 +1,4 @@
-/* Танчики — артиллерийская дуэль 1 на 1 онлайн (и против бота). Набор «Кооп-игры». */
+/* Артиллерия — дуэль 1 на 1 онлайн (и против бота). Набор «Кооп-игры». */
 (function () {
   "use strict";
   const T = window.TG, $ = (id) => document.getElementById(id);
@@ -99,6 +99,7 @@
     wind = windFor(turn); phase = "aim";
     const mine = myTurn();
     aim = { angle: tanks[shooterSide()].ang, power: aim.power || 0.6 };
+    remoteAim = { a: tanks[shooterSide()].ang, ta: tanks[shooterSide()].ang, p: 0.5 };
     $("wind").textContent = wind === 0 ? "💨 0" : (wind > 0 ? "💨 " + Math.abs(wind) + " →" : "← " + Math.abs(wind) + " 💨");
     $("turn").textContent = mine ? "🎯 Твой выстрел" : `⏳ Стреляет ${opp}`;
     $("controls").style.opacity = mine ? 1 : 0.4; $("fire").disabled = !mine;
@@ -111,7 +112,9 @@
   function hud() {
     const L = mySide() === "host" ? "host" : "guest";       // слева всегда я
     $("h1").style.width = Math.max(0, tanks[mySide()].hp) + "%"; $("h2").style.width = Math.max(0, tanks[oppSide()].hp) + "%";
-    $("aiminfo").textContent = myTurn() && phase === "aim" ? `угол ${Math.round(displayAngle())}° · сила ${Math.round(aim.power * 100)}%` : "";
+    const oppAng = shooterSide() === "host" ? remoteAim.a : 180 - remoteAim.a;
+    $("aiminfo").textContent = phase !== "aim" ? "" : myTurn() ? `угол ${Math.round(displayAngle())}° · сила ${Math.round(aim.power * 100)}%`
+      : `${opp} целится: угол ${Math.round(oppAng)}° · сила ${Math.round(remoteAim.p * 100)}%`;
   }
   function displayAngle() { return mySide() === "host" ? aim.angle : 180 - aim.angle; }
   function updWeapons() {
@@ -131,6 +134,7 @@
     if (weapon !== "std" && ammo[weapon] <= 0) weapon = "std";
     T.haptic("impact", "heavy");
   }
+  let remoteAim = { a: 45, ta: 45, p: 0.5 }, aimSentT = 0, lastSentAim = "";
   let pendingShot = null, botShots = 0;
   function playShot(d) {
     if (d.k !== turn || phase !== "aim") { if (d.k >= turn) pendingShot = d; return; }
@@ -183,6 +187,7 @@
   function bind(rm) {
     rm.on("start", (d) => startMatch(d.seed, d.hostFirst));
     rm.on("shot", (d) => playShot(d));
+    rm.on("aim", (d) => { if (!myTurn() && d.k === turn) { remoteAim.ta = d.a; remoteAim.p = d.p; } });
     rm.on("rematch", () => { rematch.opp = true; tryRematch(); });
     rm.on("peer-left", () => {
       if (phase === "menu") return;
@@ -216,8 +221,14 @@
     const w = ammo.big > 0 && Math.random() < 0.25 ? "big" : Math.random() < 0.2 ? "tri" : "std";
     const err = Math.max(0.25, 1 - botShots * 0.2); botShots++;          // с каждым выстрелом бот пристреливается
     const ang = best.ang + (Math.random() - 0.5) * 14 * err, pw = Math.max(0.1, Math.min(1, best.pw + (Math.random() - 0.5) * 0.22 * err));
-    const res = simulate(side, ang, pw, w);
-    playShot({ k: turn, ang, w, shells: res.shells, impacts: res.impacts, dmg: res.dmg });
+    const k = turn;
+    const steps = [[tanks[side].ang + (Math.random() - 0.5) * 40, 0.3 + Math.random() * 0.5], [ang + (Math.random() - 0.5) * 10, pw * 0.9], [ang, pw]];
+    steps.forEach(([a, p], i) => setTimeout(() => { if (turn === k && phase === "aim") { remoteAim.ta = Math.max(5, Math.min(175, a)); remoteAim.p = p; } }, i * 650));
+    setTimeout(() => {
+      if (turn !== k || phase !== "aim") return;
+      const res = simulate(side, ang, pw, w);
+      playShot({ k, ang, w, shells: res.shells, impacts: res.impacts, dmg: res.dmg });
+    }, steps.length * 650 + 400);
   }
 
   // ---------- рисование ----------
@@ -250,7 +261,7 @@
     if (tanks.host) {
       for (const s of ["host", "guest"]) { const tk = tanks[s]; tk.y += (groundAt(tk.x) - tk.y) * 0.3; }
       const myC = "#3b82f6", opC = "#ef4444";
-      const angFor = (s) => (phase === "aim" && shooterSide() === s && myTurn() ? aim.angle : tanks[s].ang);
+      const angFor = (s) => (phase === "aim" && shooterSide() === s ? (myTurn() ? aim.angle : remoteAim.a) : tanks[s].ang);
       drawTank(tanks.host, mySide() === "host" ? myC : opC, angFor("host"));
       drawTank(tanks.guest, mySide() === "guest" ? myC : opC, angFor("guest"));
       if (phase === "aim" && myTurn()) {        // подсказка траектории (только начало)
@@ -281,7 +292,18 @@
     }
   }
   let last = 0;
-  function frame(ts) { const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts; render(dt, ts / 1000); if (phase === "aim") hud(); requestAnimationFrame(frame); }
+  function frame(ts) {
+    const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
+    if (phase === "aim" && tanks.host) {
+      if (myTurn()) {
+        aimSentT -= dt;
+        const key = Math.round(aim.angle) + ":" + Math.round(aim.power * 100);
+        if (aimSentT <= 0 && key !== lastSentAim) { send("aim", { k: turn, a: Math.round(aim.angle * 10) / 10, p: Math.round(aim.power * 100) / 100 }); lastSentAim = key; aimSentT = 0.1; }
+      } else remoteAim.a += (remoteAim.ta - remoteAim.a) * Math.min(1, dt * 8);
+      hud();
+    }
+    render(dt, ts / 1000); requestAnimationFrame(frame);
+  }
 
   // ---------- ввод ----------
   let drag = null;
