@@ -4,8 +4,8 @@
 (function () {
   "use strict";
   const CFG = window.STATS_CONFIG || {
-    key: "",                                   // ключ проекта PostHog (phc_...), появится после регистрации
-    host: "https://eu.i.posthog.com"
+    key: "phc_uwVWQ7yDjZYiUUasnKcpfaGPbhYn93GG9McX99P56YUs",   // публичный ключ проекта PostHog (его можно держать в коде)
+    host: "https://us.i.posthog.com"
   };
   const T = window.TG, tg = T && T.tg;
   const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
