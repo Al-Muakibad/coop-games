@@ -92,5 +92,5 @@
   }
 
   window.TG = { tg, BOT, CHANNEL, haptic, playerName, readChallenge, shareChallenge, shareGame, gameLink,
-    openChannel, openLink, loadBest, saveBest, init, b64url };
+    openChannel, openLink, loadBest, saveBest, init, b64url, unb64url };
 })();

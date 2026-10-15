@@ -9,7 +9,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -57,6 +57,11 @@
     <p>Короткие игры, чтобы рубиться с друзьями.<br>Новая — каждую неделю в канале.</p>
   </header>
 
+  <a class="game" href="./sniper/">
+    <div class="icon" style="background:#7ec8ff">🎯</div>
+    <div class="info"><b>Снайпер: прятки</b><span>Один прячется за стеной, другой ищет в прицел. Батл с другом по ссылке.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ батл</i></div>
+  </a>
   <a class="game" href="./duel/">
     <div class="icon" style="background:#ffd34d">⚡</div>
     <div class="info"><b>Дуэль</b><span>Вдвоём на одном телефоне. Кто быстрее нажмёт — тот и прав.</span>
@@ -65,7 +70,7 @@
   <a class="game" href="./bashnya/">
     <div class="icon" style="background:#9ee6c8">🏗️</div>
     <div class="info"><b>Башня</b><span>Один тап — один этаж. Промахнулся — срезало.</span>
-      <i class="tag new">НОВОЕ</i> <div class="best" data-key="bashnya_best"></div></div>
+      <div class="best" data-key="bashnya_best"></div></div>
   </a>
   <a class="game" href="./gruz/">
     <div class="icon" style="background:#ffb98a">📦</div>
