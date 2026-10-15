@@ -1,11 +1,37 @@
-/* Снайпер: прятки — пошаговый батл. Набор «Кооп-игры». */
+/* Снайпер: прятки — онлайн-батл 1 на 1 (и тренировка с ботом). Набор «Кооп-игры». */
 (function () {
   "use strict";
   const T = window.TG;
   const $ = (id) => document.getElementById(id);
-  const WW = 360, WH = 300, G = 232;           // размеры мира и линия земли
-  const BULLETS = 3, MAX_TURNS = 6, HEAD_DMG = 60, BODY_DMG = 30;
-  const COL = { 1: "#ff7a2f", 2: "#2f7cf6" };
+  const WW = 360, WH = 300, G = 232;
+  const ROUNDS = 6, PREP = 3, DUR = 20, BASE_MAG = 3, HEAD = 50, BODY = 25, SPEED = 72;
+  const UP = {
+    mag: { name: "Обойма", ic: "🔫", desc: "+1 патрон в раунде снайпера" },
+    zoom: { name: "Прицел", ic: "🔭", desc: "Сильнее увеличение" },
+    speed: { name: "Кроссовки", ic: "👟", desc: "+12% к скорости бега" },
+    armor: { name: "Броня", ic: "🦺", desc: "−12% урона по тебе" }
+  };
+  const PRICE = [60, 120, 220], MAXLV = 3;
+
+  // ---------- кошелёк и улучшения ----------
+  let wallet = { coins: 0, mag: 0, zoom: 0, speed: 0, armor: 0 };
+  function saveWallet() {
+    const s = JSON.stringify(wallet);
+    try { localStorage.setItem("sniper_wallet", s); } catch (_) {}
+    try { if (T.tg && T.tg.CloudStorage) T.tg.CloudStorage.setItem("sniper_wallet", s); } catch (_) {}
+  }
+  function loadWallet(cb) {
+    const apply = (s) => { try { const w = JSON.parse(s); if (w && typeof w.coins === "number") wallet = Object.assign(wallet, w); } catch (_) {} };
+    try { apply(localStorage.getItem("sniper_wallet")); } catch (_) {}
+    try {
+      if (T.tg && T.tg.CloudStorage && T.tg.isVersionAtLeast && T.tg.isVersionAtLeast("6.9")) {
+        T.tg.CloudStorage.getItem("sniper_wallet", (e, v) => { if (!e && v) { const before = wallet.coins; apply(v); wallet.coins = Math.max(before, wallet.coins); } cb(); });
+        return;
+      }
+    } catch (_) {}
+    cb();
+  }
+  const myUp = () => ({ mag: wallet.mag, zoom: wallet.zoom, speed: wallet.speed, armor: wallet.armor });
 
   // ---------- экран ----------
   const canvas = $("game"), ctx = canvas.getContext("2d");
@@ -14,11 +40,12 @@
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
-    const top = 112, bottom = 165;
-    S = Math.min(W / WW, (H - top - bottom) / WH);
-    OX = (W - WW * S) / 2; OY = top + ((H - top - bottom) - WH * S) / 2;
+    const top = 120, bottom = 150, y0 = 70, y1 = WH;      // показываем мир от y0 до y1
+    S = Math.min(W / WW, (H - top - bottom) / (y1 - y0));
+    OX = (W - WW * S) / 2; OY = top + ((H - top - bottom) - (y1 - y0) * S) / 2 - y0 * S;
+    layerDirty = true;
   }
-  window.addEventListener("resize", () => { resize(); layerDirty = true; }); resize();
+  window.addEventListener("resize", resize);
 
   // ---------- карта ----------
   function rng(seed) {
@@ -27,23 +54,24 @@
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
   function genMap(seed) {
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 30; attempt++) {
       const r = rng(seed * 31 + attempt), covers = [];
-      let x = 8 + r() * 14, tall = 0;
+      let x = 6 + r() * 12, tall = 0;
       for (;;) {
         const t = r(); let c;
-        if (t < 0.45) {
-          const w = 74 + r() * 40, h = 84 + r() * 16;
+        if (t < 0.42) {
+          const w = 70 + r() * 36, h = 84 + r() * 14;
           c = { kind: "wall", x, w, h, open: [] };
-          if (r() < 0.4) { const ww = 16 + r() * 8; c.open.push({ t: "r", x: x + w * (0.3 + r() * 0.4) - ww / 2, y: G - h + 12, w: ww, h: 28 }); }
-        } else if (t < 0.62) c = { kind: "low", x, w: 96 + r() * 34, h: 52, open: [] };
-        else if (t < 0.82) c = { kind: "crate", x, w: 52 + r() * 10, h: 50 + r() * 4, open: [] };
+          if (r() < 0.45) { const ww = 15 + r() * 7; c.open.push({ t: "r", x: x + w * (0.25 + r() * 0.5) - ww / 2, y: G - h + 12, w: ww, h: 26 }); }
+        } else if (t < 0.58) c = { kind: "sand", x, w: 60 + r() * 30, h: 44, open: [] };
+        else if (t < 0.78) c = { kind: "crate", x, w: 50 + r() * 8, h: 50 + r() * 4, open: [] };
         else c = { kind: "barrel", x, w: 34, h: 56, open: [] };
-        if (x + c.w > WW - 6) break;
+        if (x + c.w > WW - 4) break;
         if (c.kind === "wall") tall++;
-        covers.push(c); x += c.w + 18 + r() * 26;
+        c.seed = Math.floor(r() * 1e6);
+        covers.push(c); x += c.w + 22 + r() * 30;
       }
-      if (tall >= 2 && covers.length >= 3) return { covers, deco: r() };
+      if (tall >= 2 && covers.length >= 3) return { covers, deco: r(), seed };
     }
     return genMap(seed + 1);
   }
@@ -59,49 +87,56 @@
     const cx = Math.max(b.x, Math.min(o.x, b.x + b.w)), cy = Math.max(b.y, Math.min(o.y, b.y + b.h));
     return (o.x - cx) ** 2 + (o.y - cy) ** 2 <= o.r * o.r;
   }
-  // {hidden, peek, openings через которые видно}
   function coverState(p) {
     const b = bodyRect(p);
     const c = map.covers.find((c) => c.x <= b.x && b.x + b.w <= c.x + c.w && G - c.h <= b.y);
     if (!c) return { hidden: false, peek: [] };
-    const peek = c.open.filter((o) => openHitsRect(o, b));
-    return { hidden: true, peek, cover: c };
+    return { hidden: true, peek: c.open.filter((o) => openHitsRect(o, b)), cover: c };
   }
+  const visible = (p) => { const s = coverState(p); return !s.hidden || s.peek.length > 0; };
 
   // ---------- состояние ----------
-  let map, mode = "menu", phase = "menu", turn = 0, hp = { 1: 100, 2: 100 };
-  let players = {}, hider = 1, shooter = 2, pos = { x: WW / 2, st: 0 };
-  let bullets = 0, cross = { x: WW / 2, y: G - 50 }, lastShot = null, shotsUsed = 0, hitKind = null;
-  let fx = [], layerDirty = true, revealT = 0, challenge = null, chResult = null;
-
-  // ---------- кодирование вызова ----------
-  const XOR = 0x2A5F3;
-  function encode(seed, x, st) {
-    let n = ((seed % 1000) * 361 + Math.round(x)) * 2 + st; n ^= XOR;
-    let s = n.toString(36); while (s.length < 5) s = "0" + s; return s;
-  }
-  function decode(s) {
-    let n = parseInt(s, 36) ^ XOR; const st = n % 2; n = (n - st) / 2;
-    const x = n % 361, seed = (n - x) / 361; return { seed, x, st };
-  }
-  function readLink() {
-    const p = new URLSearchParams(location.search).get("c");
-    const m = p && /^h([0-9a-z]{5})([A-Za-z0-9_-]{0,48})$/.exec(p);
-    if (!m) return null;
-    const d = decode(m[1]); if (!(d.seed >= 0 && d.seed < 1000)) return null;
-    let name = "Друг"; try { name = T.unb64url(m[2]).slice(0, 16) || "Друг"; } catch (_) {}
-    return { ...d, name };
-  }
+  let mode = null, room = null, map = null, layerDirty = true;
+  let me = { name: "Ты", up: myUp() }, opp = { name: "Друг", up: { mag: 0, zoom: 0, speed: 0, armor: 0 } };
+  let match = null, R = null;            // матч и текущий раунд
+  let phase = "menu";                    // menu | room | prep | live | over | end
+  let pos = { x: 180, st: 0, dir: 1, walk: 0 }, remote = { x: 180, st: 0, dir: 1, walk: 0, tx: 180, moving: false };
+  let aim = { x: 180, y: 190 }, remoteAim = { x: 180, y: 190, tx: 180, ty: 190 };
+  let camX = 180, keys = { l: false, r: false }, fx = [], sendT = 0, aimSendT = 0, now = 0;
+  let rematch = { me: false, opp: false };
 
   // ---------- рисование ----------
   const layer = document.createElement("canvas"); const LR = 4;
   layer.width = WW * LR; layer.height = WH * LR; const lctx = layer.getContext("2d");
-  function bricks(g, x, y, w, h, base, line) {
-    g.fillStyle = base; g.fillRect(x, y, w, h);
-    g.strokeStyle = line; g.lineWidth = 1;
-    for (let r = 0, yy = y + 9; yy < y + h; yy += 9, r++) {
-      g.beginPath(); g.moveTo(x, yy); g.lineTo(x + w, yy); g.stroke();
-      for (let xx = x + (r % 2 ? 9 : 0); xx < x + w; xx += 18) { g.beginPath(); g.moveTo(xx, yy); g.lineTo(xx, yy + 9); g.stroke(); }
+
+  function drawBricks(g, c) {
+    const r = rng(c.seed), y = G - c.h;
+    g.fillStyle = "#8a5a3c"; g.fillRect(c.x, y, c.w, c.h);
+    const bh = 8.5, bw = 17;
+    for (let row = 0, yy = y + 1; yy < G; yy += bh, row++) {
+      for (let xx = c.x - (row % 2 ? bw / 2 : 0); xx < c.x + c.w; xx += bw) {
+        const x0 = Math.max(c.x + 0.8, xx + 0.8), x1 = Math.min(c.x + c.w - 0.8, xx + bw - 0.8);
+        if (x1 <= x0) continue;
+        const l = 38 + r() * 14, h = 22 + r() * 8;
+        g.fillStyle = `hsl(${h},${38 + r() * 12}%,${l}%)`;
+        g.fillRect(x0, yy + 0.8, x1 - x0, Math.min(bh - 1.6, G - yy - 0.8));
+        g.fillStyle = "rgba(255,255,255,.08)"; g.fillRect(x0, yy + 0.8, x1 - x0, 1.2);
+      }
+    }
+    g.fillStyle = "#6e4a33"; g.fillRect(c.x - 3, y - 5, c.w + 6, 6);
+    g.fillStyle = "#a0745a"; g.fillRect(c.x - 3, y - 5, c.w + 6, 2);
+    // плющ
+    const vines = 1 + Math.floor(r() * 3);
+    for (let v = 0; v < vines; v++) {
+      let vx = c.x + 8 + r() * (c.w - 16), vy = y - 2;
+      const len = 20 + r() * (c.h * 0.6);
+      g.strokeStyle = "#3d6b2a"; g.lineWidth = 1.4; g.beginPath(); g.moveTo(vx, vy);
+      const pts = [];
+      for (let k = 0; k < len; k += 4) { vx += (r() - 0.5) * 5; vy += 4; g.lineTo(vx, vy); pts.push([vx, vy]); }
+      g.stroke();
+      for (const [px, py] of pts) {
+        if (r() < 0.75) { g.fillStyle = r() < 0.5 ? "#5b9a3a" : "#4b8a2f"; g.beginPath(); g.ellipse(px + (r() - 0.5) * 6, py, 2.8, 1.8, r() * 3, 0, 7); g.fill(); }
+      }
     }
   }
   function drawLayer() {
@@ -109,23 +144,29 @@
     lctx.globalCompositeOperation = "source-over";
     for (const c of map.covers) {
       const y = G - c.h;
-      if (c.kind === "wall" || c.kind === "low") {
-        bricks(lctx, c.x, y, c.w, c.h, c.kind === "wall" ? "#a9744c" : "#b8865a", "rgba(70,40,20,.55)");
-        lctx.fillStyle = "#8c5f3e"; lctx.fillRect(c.x - 3, y - 5, c.w + 6, 6);
-        lctx.fillStyle = "rgba(90,140,60,.55)";
-        for (let i = 0; i < c.w / 16; i++) lctx.fillRect(c.x + ((i * 37) % c.w), y + 10 + ((i * 23) % (c.h - 20)), 6, 3);
+      if (c.kind === "wall") drawBricks(lctx, c);
+      else if (c.kind === "sand") {
+        const r = rng(c.seed);
+        for (let row = 0; row < 4; row++) for (let k = 0; k < c.w / 18 + 1; k++) {
+          const bx = c.x + k * 18 - (row % 2 ? 9 : 0), by = G - 11 - row * 11;
+          if (bx < c.x - 4 || bx + 18 > c.x + c.w + 4) continue;
+          lctx.fillStyle = `hsl(42,${30 + r() * 10}%,${62 + r() * 8}%)`; lctx.strokeStyle = "#8c7444"; lctx.lineWidth = 1;
+          lctx.beginPath(); lctx.roundRect(bx, by, 19, 12, 5); lctx.fill(); lctx.stroke();
+        }
+        c.h = 44;
       } else if (c.kind === "crate") {
-        lctx.fillStyle = "#c8914b"; lctx.fillRect(c.x, y, c.w, c.h);
-        lctx.strokeStyle = "#7a5228"; lctx.lineWidth = 3; lctx.strokeRect(c.x + 1.5, y + 1.5, c.w - 3, c.h - 3);
-        lctx.beginPath(); lctx.moveTo(c.x + 3, y + 3); lctx.lineTo(c.x + c.w - 3, y + c.h - 3);
-        lctx.moveTo(c.x + c.w - 3, y + 3); lctx.lineTo(c.x + 3, y + c.h - 3); lctx.stroke();
+        lctx.fillStyle = "#b9803f"; lctx.fillRect(c.x, y, c.w, c.h);
+        lctx.fillStyle = "#a06b31"; for (let k = 0; k < 4; k++) lctx.fillRect(c.x, y + k * c.h / 4, c.w, 1.5);
+        lctx.strokeStyle = "#6b4520"; lctx.lineWidth = 4; lctx.strokeRect(c.x + 2, y + 2, c.w - 4, c.h - 4);
+        lctx.beginPath(); lctx.moveTo(c.x + 4, y + 4); lctx.lineTo(c.x + c.w - 4, y + c.h - 4); lctx.stroke();
       } else {
-        lctx.fillStyle = "#3f7d4f"; lctx.beginPath(); lctx.roundRect(c.x, y, c.w, c.h, 5); lctx.fill();
-        lctx.fillStyle = "#2e5e3a"; lctx.fillRect(c.x, y + 12, c.w, 4); lctx.fillRect(c.x, y + c.h - 16, c.w, 4);
-        lctx.fillStyle = "#e5484d"; lctx.save(); lctx.translate(c.x + c.w / 2, y + c.h / 2); lctx.rotate(Math.PI / 4);
-        lctx.fillRect(-6, -6, 12, 12); lctx.restore();
+        const gr = lctx.createLinearGradient(c.x, 0, c.x + c.w, 0);
+        gr.addColorStop(0, "#2e5a3a"); gr.addColorStop(0.45, "#4f8f5c"); gr.addColorStop(1, "#24452d");
+        lctx.fillStyle = gr; lctx.beginPath(); lctx.roundRect(c.x, y, c.w, c.h, 4); lctx.fill();
+        lctx.fillStyle = "rgba(0,0,0,.25)"; lctx.fillRect(c.x, y + 13, c.w, 3); lctx.fillRect(c.x, y + c.h - 16, c.w, 3);
+        lctx.save(); lctx.translate(c.x + c.w / 2, y + c.h / 2); lctx.rotate(Math.PI / 4);
+        lctx.fillStyle = "#fff"; lctx.fillRect(-7, -7, 14, 14); lctx.fillStyle = "#e5484d"; lctx.fillRect(-5, -5, 10, 10); lctx.restore();
       }
-      lctx.strokeStyle = "#2b1d14"; lctx.lineWidth = 1.5; lctx.strokeRect(c.x, y, c.w, c.h);
     }
     lctx.globalCompositeOperation = "destination-out";
     for (const c of map.covers) for (const o of c.open) {
@@ -133,43 +174,83 @@
     }
     lctx.globalCompositeOperation = "source-over";
     for (const c of map.covers) for (const o of c.open) if (o.t === "c") {
-      lctx.strokeStyle = "rgba(40,20,10,.7)"; lctx.lineWidth = 1.6; lctx.beginPath(); lctx.arc(o.x, o.y, o.r + 0.6, 0, 7); lctx.stroke();
+      lctx.strokeStyle = "rgba(30,15,5,.75)"; lctx.lineWidth = 1.6; lctx.beginPath(); lctx.arc(o.x, o.y, o.r + 0.7, 0, 7); lctx.stroke();
+      lctx.strokeStyle = "rgba(255,230,200,.35)"; lctx.lineWidth = 1; lctx.beginPath(); lctx.arc(o.x, o.y, o.r + 2.2, 0.5, 2.2); lctx.stroke();
     }
     layerDirty = false;
   }
 
-  function drawBg() {
-    const sky = ctx.createLinearGradient(0, 0, 0, 140);
-    sky.addColorStop(0, "#5fb4f0"); sky.addColorStop(1, "#bfe6ff");
-    ctx.fillStyle = sky; ctx.fillRect(-WW, -WH, WW * 3, 140 + WH);
-    ctx.fillStyle = "#2c86c9"; ctx.fillRect(-WW, 140, WW * 3, 38);
-    ctx.fillStyle = "#3c9be0"; ctx.fillRect(-WW, 140, WW * 3, 6);
-    // остров с вражеской базой вдали
-    const ix = 70 + map.deco * 200;
-    ctx.fillStyle = "#d9b26a"; ctx.beginPath(); ctx.ellipse(ix, 143, 60, 7, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#a9744c"; ctx.fillRect(ix - 30, 129, 16, 12); ctx.fillRect(ix + 12, 129, 16, 12);
+  function drawBg(t) {
+    const sky = ctx.createLinearGradient(0, 0, 0, 150);
+    sky.addColorStop(0, "#3d8fe0"); sky.addColorStop(1, "#a9dcff");
+    ctx.fillStyle = sky; ctx.fillRect(-WW, -WH, WW * 3, 150 + WH);
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    for (let i = 0; i < 4; i++) { const x = ((i * 120 + t * 3) % 480) - 60, y = 40 + i * 17; ctx.beginPath(); ctx.ellipse(x, y, 26, 7, 0, 0, 7); ctx.ellipse(x + 14, y - 5, 15, 7, 0, 0, 7); ctx.fill(); }
+    // море
+    const sea = ctx.createLinearGradient(0, 132, 0, 178);
+    sea.addColorStop(0, "#1f78c4"); sea.addColorStop(1, "#4fb3e8");
+    ctx.fillStyle = sea; ctx.fillRect(-WW, 132, WW * 3, 48);
+    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1;
+    for (let k = 0; k < 7; k++) { const yy = 138 + k * 6, off = (t * (6 + k) + k * 40) % 60; ctx.beginPath();
+      for (let xx = -60 + off; xx < WW + 60; xx += 60) { ctx.moveTo(xx, yy); ctx.lineTo(xx + 14 + k, yy); } ctx.stroke(); }
+    // остров с руинами и снайпером
+    const ix = 60 + map.deco * 240;
+    ctx.fillStyle = "#c9a35b"; ctx.beginPath(); ctx.ellipse(ix, 136, 70, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#e0bd74"; ctx.beginPath(); ctx.ellipse(ix, 134, 62, 4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#8a5a3c";
+    for (const dx of [-44, -26, 14, 32]) ctx.fillRect(ix + dx, 121, 12, 12);
+    ctx.fillStyle = "#2b2b2b"; ctx.fillRect(ix - 4, 124, 4, 9); ctx.beginPath(); ctx.arc(ix - 2, 122, 2, 0, 7); ctx.fill();
+    if (phase === "live" && Math.sin(t * 5) > 0.6) { ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.beginPath(); ctx.arc(ix + 1, 122, 1.6, 0, 7); ctx.fill(); }
+    // песок
     const sand = ctx.createLinearGradient(0, 176, 0, WH);
-    sand.addColorStop(0, "#e2b66f"); sand.addColorStop(1, "#b98545");
+    sand.addColorStop(0, "#e7c27c"); sand.addColorStop(1, "#b07f45");
     ctx.fillStyle = sand; ctx.fillRect(-WW, 176, WW * 3, WH * 2);
-    ctx.fillStyle = "rgba(0,0,0,.12)";
-    for (const c of map.covers) ctx.fillRect(c.x - 2, G, c.w + 10, 5);
+    ctx.fillStyle = "#d9ae67"; ctx.fillRect(-WW, 176, WW * 3, 3);
+    const r = rng(map.seed + 7);
+    ctx.fillStyle = "rgba(120,80,40,.25)";
+    for (let i = 0; i < 70; i++) { ctx.beginPath(); ctx.ellipse(r() * WW, 185 + r() * 110, 1 + r() * 2, 0.6 + r(), 0, 0, 7); ctx.fill(); }
+    // «ежи» вдали
+    ctx.strokeStyle = "#7a5530"; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { const hx = 30 + r() * 300, hy = 186 + r() * 8;
+      ctx.beginPath(); ctx.moveTo(hx - 6, hy + 6); ctx.lineTo(hx + 6, hy - 6); ctx.moveTo(hx - 6, hy - 6); ctx.lineTo(hx + 6, hy + 6); ctx.moveTo(hx, hy - 7); ctx.lineTo(hx, hy + 7); ctx.stroke(); }
+    ctx.fillStyle = "rgba(0,0,0,.16)";
+    for (const c of map.covers) { ctx.beginPath(); ctx.ellipse(c.x + c.w / 2 + 4, G + 2, c.w / 2 + 6, 4, 0, 0, 7); ctx.fill(); }
   }
 
-  function drawSoldier(p, color, alpha) {
+  function drawPickups(t) {
+    if (!R) return;
+    for (const p of R.pickups) {
+      if (p.taken) continue;
+      const y = G - 9 + Math.sin(t * 4 + p.x) * 1.5;
+      ctx.fillStyle = "rgba(0,0,0,.2)"; ctx.beginPath(); ctx.ellipse(p.x, G, 7, 2, 0, 0, 7); ctx.fill();
+      ctx.save(); ctx.translate(p.x, y); ctx.scale(Math.abs(Math.cos(t * 3 + p.x)) * 0.6 + 0.4, 1);
+      ctx.fillStyle = "#1f9d55"; ctx.strokeStyle = "#0b4d27"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.roundRect(-8, -5, 16, 10, 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#c7f5d6"; ctx.font = "bold 7px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("$", 0, 0.5);
+      ctx.restore();
+    }
+  }
+
+  function drawSoldier(p, shirt, alpha) {
     ctx.globalAlpha = alpha == null ? 1 : alpha;
-    const x = p.x, ink = "#1d1712";
+    const x = p.x, sw = Math.sin(p.walk || 0), f = p.dir || 1;
+    const pants = "#3f4a2f", skin = "#f1c7a0", helm = "#4b5a34";
     if (!p.st) {
-      ctx.fillStyle = "#4b5a34"; ctx.fillRect(x - 8, G - 26, 7, 26); ctx.fillRect(x + 1, G - 26, 7, 26);
-      ctx.fillStyle = color; ctx.fillRect(x - 11, G - 54, 22, 30);
-      ctx.fillStyle = "#f1c7a0"; ctx.beginPath(); ctx.arc(x, G - 61, 9, 0, 7); ctx.fill();
-      ctx.fillStyle = "#4b5a34"; ctx.beginPath(); ctx.arc(x, G - 63, 9.5, Math.PI, 0); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 4, G - 44); ctx.lineTo(x + 20, G - 50); ctx.stroke();
+      ctx.save(); ctx.translate(x - 4, G - 30); ctx.rotate(sw * 0.45); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 29); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 9 * f, 5); ctx.restore();
+      ctx.save(); ctx.translate(x + 4, G - 30); ctx.rotate(-sw * 0.45); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 29); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 9 * f, 5); ctx.restore();
+      ctx.fillStyle = shirt; ctx.beginPath(); ctx.roundRect(x - 11, G - 55, 22, 28, 5); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x - 11, G - 42, 22, 4);
+      ctx.save(); ctx.translate(x, G - 51); ctx.rotate(-sw * 0.5); ctx.fillStyle = shirt; ctx.fillRect(-3, 0, 6, 20); ctx.fillStyle = skin; ctx.fillRect(-3, 18, 6, 4); ctx.restore();
+      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x, G - 61, 8.5, 0, 7); ctx.fill();
+      ctx.fillStyle = helm; ctx.beginPath(); ctx.arc(x, G - 63, 9.5, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 10.5, G - 64, 21, 3);
+      ctx.fillStyle = "#222"; ctx.fillRect(x + 3 * f - 1, G - 61, 2, 2);
     } else {
-      ctx.fillStyle = "#4b5a34"; ctx.fillRect(x - 11, G - 14, 22, 14);
-      ctx.fillStyle = color; ctx.fillRect(x - 11, G - 34, 22, 21);
-      ctx.fillStyle = "#f1c7a0"; ctx.beginPath(); ctx.arc(x, G - 37, 9, 0, 7); ctx.fill();
-      ctx.fillStyle = "#4b5a34"; ctx.beginPath(); ctx.arc(x, G - 39, 9.5, Math.PI, 0); ctx.fill();
-      ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 4, G - 26); ctx.lineTo(x + 20, G - 30); ctx.stroke();
+      ctx.fillStyle = pants; ctx.beginPath(); ctx.roundRect(x - 12, G - 16, 24, 14, 4); ctx.fill();
+      ctx.fillStyle = "#1d1d1d"; ctx.fillRect(x - 12, G - 4, 10, 4); ctx.fillRect(x + 3, G - 4, 10, 4);
+      ctx.fillStyle = shirt; ctx.beginPath(); ctx.roundRect(x - 11, G - 36, 22, 22, 5); ctx.fill();
+      ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x, G - 37, 8.5, 0, 7); ctx.fill();
+      ctx.fillStyle = helm; ctx.beginPath(); ctx.arc(x, G - 39, 9.5, Math.PI, 0); ctx.fill(); ctx.fillRect(x - 10.5, G - 40, 21, 3);
+      ctx.fillStyle = "#222"; ctx.fillRect(x + 3 * f - 1, G - 37, 2, 2);
     }
     ctx.globalAlpha = 1;
   }
@@ -179,342 +260,524 @@
     for (const f of fx) {
       const k = f.t / f.life;
       if (f.kind === "dust") {
-        ctx.fillStyle = `rgba(230,200,150,${1 - k})`;
-        for (let i = 0; i < 6; i++) { const a = i * 1.05 + f.seed; ctx.beginPath(); ctx.arc(f.x + Math.cos(a) * k * 14, f.y + Math.sin(a) * k * 10, 3 + k * 3, 0, 7); ctx.fill(); }
+        ctx.fillStyle = `rgba(225,195,150,${1 - k})`;
+        for (let i = 0; i < 7; i++) { const a = i * 0.9 + f.seed; ctx.beginPath(); ctx.arc(f.x + Math.cos(a) * k * 14, f.y + Math.sin(a) * k * 10, 2.5 + k * 3, 0, 7); ctx.fill(); }
+      } else if (f.kind === "flash") {
+        ctx.fillStyle = `rgba(255,240,180,${1 - k})`; ctx.beginPath(); ctx.arc(f.x, f.y, 4 + k * 10, 0, 7); ctx.fill();
       } else {
-        ctx.globalAlpha = 1 - k; ctx.font = `${16 + k * 14}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(f.text, f.x, f.y - k * 18); ctx.globalAlpha = 1;
+        ctx.globalAlpha = 1 - k; ctx.font = `bold ${12 + k * 10}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 3; ctx.strokeStyle = "#000"; ctx.strokeText(f.text, f.x, f.y - k * 16); ctx.fillStyle = f.color || "#fff"; ctx.fillText(f.text, f.x, f.y - k * 16);
+        ctx.globalAlpha = 1;
       }
     }
   }
 
-  function drawWorld(dt, scale, ox, oy) {
+  const iHide = () => R && R.iHide;
+  function hiderPos() { return iHide() ? pos : remote; }
+
+  function drawWorld(dt, t, scale, ox, oy, view) {
     ctx.setTransform(DPR * scale, 0, 0, DPR * scale, DPR * ox, DPR * oy);
-    drawBg();
-    const showHider = phase !== "menu";
-    if (showHider) drawSoldier(pos, COL[hider]);       // за укрытиями: видно только через дыры и окна
+    drawBg(t); drawPickups(t);
+    const hp = hiderPos();
+    const hiderColor = iHide() ? "#3b82f6" : "#ef4444";
+    if (R && (phase === "prep" || phase === "live" || phase === "over")) drawSoldier(hp, hiderColor);
     if (layerDirty) drawLayer();
     ctx.drawImage(layer, 0, 0, WW, WH);
-    if (phase === "hide" && !players[hider].bot) {      // прячущийся видит себя полупрозрачным
+    if (view === "hider") {
       const st = coverState(pos);
-      drawSoldier(pos, COL[hider], 0.5);
+      drawSoldier(pos, "#3b82f6", 0.45);
       const b = bodyRect(pos);
-      ctx.strokeStyle = st.hidden && !st.peek.length ? "#22c55e" : st.hidden ? "#ffd34d" : "#e5484d";
-      ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); ctx.setLineDash([]);
+      ctx.strokeStyle = st.hidden && !st.peek.length ? "#22c55e" : st.hidden ? "#ffd34d" : "#ef4444";
+      ctx.lineWidth = 1.5; ctx.setLineDash([3, 2]); ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); ctx.setLineDash([]);
+      if (phase === "live") {        // лазер снайпера
+        const ix = 60 + map.deco * 240;
+        ctx.strokeStyle = "rgba(255,40,40,.35)"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(ix, 124); ctx.lineTo(remoteAim.x, remoteAim.y); ctx.stroke();
+        ctx.fillStyle = "rgba(255,30,30,.95)"; ctx.beginPath(); ctx.arc(remoteAim.x, remoteAim.y, 2.2, 0, 7); ctx.fill();
+        ctx.strokeStyle = "rgba(255,30,30,.4)"; ctx.beginPath(); ctx.arc(remoteAim.x, remoteAim.y, 5 + Math.sin(t * 10), 0, 7); ctx.stroke();
+      }
     }
-    if (phase === "reveal") {
-      const pulse = 0.6 + 0.4 * Math.sin(revealT * 8);
-      drawSoldier(pos, COL[hider], 0.95);
-      const b = bodyRect(pos);
-      ctx.strokeStyle = `rgba(255,211,77,${pulse})`; ctx.lineWidth = 3; ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
+    if (phase === "over" && R && R.reveal) {
+      const b = bodyRect(hp); ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 2.5; ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8);
+      drawSoldier(hp, hiderColor, 0.9);
     }
     drawFx(dt);
   }
 
-  function render(dt) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#101831"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (!map) return;
-    drawWorld(dt, S, OX, OY);
-    const aiming = phase === "shoot" || phase === "botaim";
-    if (!aiming) return;
-    // затемнение и прицел с увеличением
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.fillStyle = "rgba(5,8,20,.6)"; ctx.fillRect(0, 0, W, H);
-    const px = OX + cross.x * S, py = OY + cross.y * S, R = Math.min(W * 0.36, 150), Z = 2.4;
-    ctx.save(); ctx.beginPath(); ctx.arc(px, py, R, 0, 7); ctx.clip();
-    drawWorld(0, S * Z, px - cross.x * S * Z, py - cross.y * S * Z);
-    ctx.restore();
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.strokeStyle = "#000"; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(px, py, R + 4, 0, 7); ctx.stroke();
-    ctx.lineWidth = 1.5; ctx.beginPath();
-    ctx.moveTo(px - R, py); ctx.lineTo(px - 8, py); ctx.moveTo(px + 8, py); ctx.lineTo(px + R, py);
-    ctx.moveTo(px, py - R); ctx.lineTo(px, py - 8); ctx.moveTo(px, py + 8); ctx.lineTo(px, py + R); ctx.stroke();
-    ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(px - R, py); ctx.lineTo(px - R * 0.55, py); ctx.moveTo(px + R * 0.55, py); ctx.lineTo(px + R, py);
-    ctx.moveTo(px, py + R * 0.55); ctx.lineTo(px, py + R); ctx.stroke();
-    ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(px, py, 2.6, 0, 7); ctx.fill();
+  function octagon(cx, cy, r, keep) {
+    if (!keep) ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4; const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.closePath();
   }
 
-  let last = 0;
-  function frame(t) {
-    const dt = Math.min((t - (last || t)) / 1000, 0.05); last = t;
-    if (phase === "reveal") revealT += dt;
-    if (bot.anim) bot.step(dt);
-    render(dt);
-    requestAnimationFrame(frame);
+  function render(dt, t) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "#0b1226"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!map) return;
+    const sniping = R && !R.iHide && (phase === "live" || phase === "prep" || (phase === "over" && !R.reveal));
+    if (!sniping) {
+      if (!R) { drawWorld(dt, t, S, OX, OY, "plain"); return; }
+      const sc = S * 1.75, half = W / 2 / sc;
+      const fx0 = hiderPos().x;
+      camX += (Math.max(half, Math.min(WW - half, fx0)) - camX) * Math.min(1, dt * 6);
+      if (WW < half * 2) camX = WW / 2;
+      drawWorld(dt, t, sc, W / 2 - camX * sc, H * 0.66 - G * sc, R.iHide && phase !== "over" ? "hider" : "plain");
+      return;
+    }
+    if (phase === "prep") {
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = "#05080f"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,.08)"; octagon(W / 2, H / 2, Math.min(W, H) * 0.42); ctx.fill();
+      return;
+    }
+    const Z = 2.3 + 0.35 * me.up.zoom, sc = S * Z, cx = W / 2, cy = H * 0.47;
+    const sway = phase === "live" ? Math.sin(t * 1.3) * 0.6 : 0;
+    drawWorld(dt, t, sc, cx - (aim.x + sway) * sc, cy - aim.y * sc, "sniper");
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const Rr = Math.min(W * 0.48, H * 0.36);
+    ctx.fillStyle = "#04060c"; ctx.beginPath(); ctx.rect(0, 0, W, H); octagon(cx, cy, Rr, true); ctx.fill("evenodd");
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 14; octagon(cx, cy, Rr + 6); ctx.stroke();
+    const vg = ctx.createRadialGradient(cx, cy, Rr * 0.6, cx, cy, Rr); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.45)");
+    ctx.save(); octagon(cx, cy, Rr); ctx.clip(); ctx.fillStyle = vg; ctx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1.4; ctx.beginPath();
+    ctx.moveTo(cx - Rr, cy); ctx.lineTo(cx - 10, cy); ctx.moveTo(cx + 10, cy); ctx.lineTo(cx + Rr, cy);
+    ctx.moveTo(cx, cy - Rr); ctx.lineTo(cx, cy - 10); ctx.moveTo(cx, cy + 10); ctx.lineTo(cx, cy + Rr); ctx.stroke();
+    ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx - Rr, cy); ctx.lineTo(cx - Rr * 0.5, cy); ctx.moveTo(cx + Rr * 0.5, cy); ctx.lineTo(cx + Rr, cy);
+    ctx.moveTo(cx, cy + Rr * 0.5); ctx.lineTo(cx, cy + Rr); ctx.stroke();
+    ctx.lineWidth = 1.2; for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(cx - 5, cy + k * 18); ctx.lineTo(cx + 5, cy + k * 18); ctx.stroke(); }
+    ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(cx, cy, 2.6, 0, 7); ctx.fill();
+    ctx.restore();
   }
 
   // ---------- UI ----------
-  function show(id, on) { $(id).classList.toggle("hidden", !on); }
+  const show = (id, on) => $(id).classList.toggle("hidden", !on);
   let msgTimer = 0;
-  function msg(text, ms) {
-    const el = $("msg"); el.textContent = text; el.classList.add("on");
-    clearTimeout(msgTimer); msgTimer = setTimeout(() => el.classList.remove("on"), ms || 1400);
-  }
+  function msg(text, ms) { const el = $("msg"); el.innerHTML = text; el.classList.add("on"); clearTimeout(msgTimer); msgTimer = setTimeout(() => el.classList.remove("on"), ms || 1400); }
+  function big(text) { $("big").textContent = text || ""; }
   function hud() {
-    $("n1").textContent = players[1].name; $("n2").textContent = players[2].name;
-    $("h1").style.width = Math.max(0, hp[1]) + "%"; $("h2").style.width = Math.max(0, hp[2]) + "%";
-    const turnNo = mode === "challenge" || mode === "link" ? "" : `Раунд ${Math.floor(turn / 2) + 1}/3 · `;
-    $("turn").textContent = phase === "hide" ? `${turnNo}🫣 Прячется ${players[hider].name}`
-      : `${turnNo}🎯 Стреляет ${players[shooter].name}`;
-    $("bullets").textContent = phase === "shoot" || phase === "botaim" || phase === "reveal"
-      ? "🔸".repeat(bullets) + "▫️".repeat(BULLETS - bullets) : "";
+    if (!match) return;
+    $("n1").textContent = me.name; $("n2").textContent = opp.name;
+    $("av1").textContent = (me.name[0] || "Я").toUpperCase(); $("av2").textContent = opp.name.startsWith("🤖") ? "🤖" : (opp.name[0] || "?").toUpperCase();
+    $("h1").style.width = Math.max(0, match.hp.me) + "%"; $("h2").style.width = Math.max(0, match.hp.opp) + "%";
+    $("coins").textContent = "🪙 +" + match.earned;
+    if (R) {
+      $("role").textContent = `Раунд ${R.n + 1}/${ROUNDS} · ` + (R.iHide ? "🏃 Прячься и собирай деньги" : "🎯 Найди и подстрели");
+      const ammo = $("ammo");
+      if (!R.iHide) ammo.innerHTML = Array.from({ length: R.mag }, (_, i) => `<b class="${i < R.mag - R.bullets ? "used" : ""}"></b>`).join("");
+      else ammo.innerHTML = "";
+    }
   }
-  function controls(html) { const c = $("controls"); c.innerHTML = html; show("controls", !!html); }
-  function hint(text) { $("hint").textContent = text || ""; show("hint", !!text); }
-
-  // ---------- матч ----------
-  function setupPlayers() {
-    const me = T.playerName();
-    if (mode === "bot") players = { 1: { name: me === "Друг" ? "Ты" : me }, 2: { name: "🤖 Бот", bot: true } };
-    else if (mode === "local") players = { 1: { name: "🟠 Оранжевый" }, 2: { name: "🔵 Синий" } };
-    else if (mode === "challenge") players = { 1: { name: me === "Друг" ? "Ты" : me }, 2: { name: challenge.name } };
-    else players = { 1: { name: me === "Друг" ? "Ты" : me }, 2: { name: "Друг" } };
+  function controls(kind) {
+    const c = $("controls");
+    if (kind === "hider") {
+      c.innerHTML = `<button class="ctl" id="c-l">◀</button><div class="mid"><button class="ctl small" id="c-c">🧎</button></div><button class="ctl" id="c-r">▶</button>`;
+      const hold = (id, k) => {
+        const el = $(id);
+        el.addEventListener("pointerdown", (e) => { e.preventDefault(); keys[k] = true; el.classList.add("on"); T.haptic("select"); });
+        ["pointerup", "pointercancel", "pointerleave"].forEach((ev) => el.addEventListener(ev, () => { keys[k] = false; el.classList.remove("on"); }));
+      };
+      hold("c-l", "l"); hold("c-r", "r");
+      $("c-c").addEventListener("pointerdown", (e) => { e.preventDefault(); pos.st = pos.st ? 0 : 1; $("c-c").textContent = pos.st ? "🧍" : "🧎"; T.haptic("impact", "light"); });
+    } else if (kind === "sniper") {
+      c.innerHTML = `<div></div><button class="ctl fire" id="c-f">ОГОНЬ</button>`;
+      $("c-f").addEventListener("pointerdown", (e) => { e.preventDefault(); fire(); });
+    } else c.innerHTML = "";
+    show("controls", !!kind);
   }
-
-  function newMatch(m) {
-    mode = m; turn = 0; hp = { 1: 100, 2: 100 }; fx = [];
-    const seed = m === "challenge" ? challenge.seed : Math.floor(Math.random() * 1000);
-    map = genMap(seed); map.seed = seed; layerDirty = true;
-    setupPlayers();
-    ["screen-menu", "screen-end", "screen-pass"].forEach((s) => show(s, false));
-    show("hud", true);
-    if (m === "link") { hider = 1; shooter = 2; goHide(); return; }
-    if (m === "challenge") { hider = 2; shooter = 1; pos = { x: challenge.x, st: challenge.st }; goShoot(); return; }
-    startTurn();
-  }
-
-  function startTurn() {
-    if (hp[1] <= 0 || hp[2] <= 0 || turn >= MAX_TURNS) return endMatch();
-    hider = turn % 2 === 0 ? 2 : 1; shooter = hider === 1 ? 2 : 1;
-    if (players[hider].bot) { pos = bot.hide(); goShoot(); return; }
-    if (mode === "local") return pass(hider, "hide");
-    goHide();
+  function screen(id) { ["screen-menu", "screen-room", "screen-shop", "screen-end"].forEach((s) => show(s, s === id)); }
+  function buttons(boxId, list) {
+    const box = $(boxId); box.innerHTML = "";
+    for (const [label, cls, fn] of list) { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); }
   }
 
-  function pass(who, what) {
-    phase = "pass"; controls(""); hint("");
-    const other = players[who === 1 ? 2 : 1].name;
-    $("pass-emoji").textContent = what === "hide" ? "🫣" : "🎯";
-    $("pass-title").textContent = `Телефон — ${players[who].name}`;
-    $("pass-sub").textContent = what === "hide" ? `${other}, отвернись! Сейчас ${players[who].name} прячется.`
-      : `${players[who].name}, твой выстрел. У тебя ${BULLETS} пули.`;
-    $("pass-go").onclick = () => { show("screen-pass", false); what === "hide" ? goHide() : goShoot(); };
-    show("screen-pass", true);
+  // ---------- меню и магазин ----------
+  function toMenu() {
+    if (room) { try { room.close(); } catch (_) {} room = null; }
+    phase = "menu"; match = null; R = null; controls(null); show("hud", false); big("");
+    if (!map) { map = genMap(7); layerDirty = true; }
+    $("wallet").textContent = `🪙 ${wallet.coins}`;
+    screen("screen-menu");
+  }
+  function openShop() {
+    screen("screen-shop");
+    const render = () => {
+      $("shop-wallet").textContent = `🪙 ${wallet.coins}`;
+      $("shop-list").innerHTML = Object.entries(UP).map(([k, u]) => {
+        const lv = wallet[k], price = PRICE[lv];
+        return `<div class="it"><div class="ic">${u.ic}</div><div class="tx"><b>${u.name}</b>${u.desc}<div class="lv">Уровень ${lv}/${MAXLV}</div></div>` +
+          (lv >= MAXLV ? `<button disabled>MAX</button>` : `<button data-k="${k}" ${wallet.coins < price ? "disabled" : ""}>🪙 ${price}</button>`) + `</div>`;
+      }).join("");
+      $("shop-list").querySelectorAll("button[data-k]").forEach((b) => b.onclick = () => {
+        const k = b.dataset.k, price = PRICE[wallet[k]];
+        if (wallet.coins < price) return;
+        wallet.coins -= price; wallet[k]++; saveWallet(); T.haptic("notify", "success"); render();
+      });
+    };
+    render();
   }
 
-  function goHide() {
-    phase = "hide"; pos = { x: WW / 2, st: 0 };
-    const c = map.covers[Math.floor(map.covers.length / 2)]; pos.x = c.x + c.w / 2;
+  // ---------- онлайн-комната ----------
+  async function createRoom() {
+    phase = "room"; screen("screen-room");
+    $("room-emoji").textContent = "📡"; $("room-title").textContent = "Создаём комнату";
+    $("room-sub").textContent = ""; $("room-status").innerHTML = `<span class="dots">Подключаемся к серверу</span>`;
+    buttons("room-buttons", [["Отмена", "ghost", toMenu]]);
+    try { room = await Net.open("sniper", null, { name: T.playerName() }); }
+    catch (e) { return netError(); }
+    bindRoom();
+    const link = Net.inviteLink("sniper", room.id);
+    const share = () => T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("Го в снайперский батл 1 на 1 🎯 Я уже в комнате — жми и заходи!")}`);
+    $("room-emoji").textContent = "📨"; $("room-title").textContent = "Позови друга";
+    $("room-sub").textContent = "Отправь приглашение. Как только друг откроет ссылку — бой начнётся автоматически. Не закрывай игру.";
+    $("room-status").innerHTML = `<span class="dots">Ждём друга</span>`;
+    buttons("room-buttons", [["📨 Отправить приглашение", "primary", share], ["Отмена", "ghost", toMenu]]);
+    share();
+  }
+  async function joinRoom(id) {
+    phase = "room"; screen("screen-room");
+    $("room-emoji").textContent = "⚔️"; $("room-title").textContent = "Тебя позвали в батл";
+    $("room-sub").textContent = ""; $("room-status").innerHTML = `<span class="dots">Подключаемся к комнате</span>`;
+    buttons("room-buttons", [["Отмена", "ghost", toMenu]]);
+    try { room = await Net.open("sniper", id, { name: T.playerName() }); }
+    catch (e) { return netError(); }
+    bindRoom();
+    setTimeout(() => {
+      if (room && !room.peer && phase === "room") {
+        $("room-emoji").textContent = "😕"; $("room-title").textContent = "Комната не найдена";
+        $("room-status").textContent = "Друг уже вышел или игра у него закрыта. Попроси прислать новое приглашение.";
+        buttons("room-buttons", [["🤖 Пока сыграть с ботом", "", () => { toMenu(); startBot(); }], ["В меню", "ghost", toMenu]]);
+      }
+    }, 12000);
+  }
+  function netError() {
+    $("room-emoji").textContent = "📵"; $("room-title").textContent = "Нет связи с сервером";
+    $("room-status").textContent = "Проверь интернет и попробуй ещё раз. Тренировка с ботом работает без сети.";
+    buttons("room-buttons", [["Попробовать снова", "primary", () => location.reload()], ["🤖 С ботом", "", () => { toMenu(); startBot(); }], ["В меню", "ghost", toMenu]]);
+  }
+  function bindRoom() {
+    room.on("peer", (p) => {
+      opp.name = p.name || "Друг";
+      room.send("info", { name: me.name, up: me.up });
+      $("room-emoji").textContent = "✅"; $("room-title").textContent = `${opp.name} в игре!`; $("room-status").textContent = "Начинаем…";
+      T.haptic("notify", "success");
+      if (room.isHost) setTimeout(() => { if (room && room.peer) hostStartMatch(); }, 1200);
+    });
+    room.on("info", (d) => { if (d) { opp.name = (d.name || opp.name).slice(0, 20); opp.up = d.up || opp.up; hud(); } });
+    room.on("full", () => { $("room-title").textContent = "Комната занята"; $("room-status").textContent = "В этой комнате уже играют двое."; });
+    room.on("peer-left", () => {
+      if (phase === "menu") return;
+      if (phase === "room" && room.isHost) { $("room-status").innerHTML = `<span class="dots">Друг вышел. Ждём снова</span>`; return; }
+      opponentLeft();
+    });
+    bindGame(room);
+  }
+  function opponentLeft() {
+    phase = "end"; controls(null); big("");
+    $("end-emoji").textContent = "🚪"; $("end-title").textContent = `${opp.name} вышел из игры`;
+    $("end-sub").textContent = match ? "Монеты за матч сохранены." : ""; $("end-coins").textContent = ""; $("end-status").textContent = "";
+    if (match && match.earned) { wallet.coins += match.earned; saveWallet(); match.earned = 0; }
+    buttons("end-buttons", [["⚔️ Позвать снова", "primary", () => { toMenu(); createRoom(); }], ["В меню", "ghost", toMenu]]);
+    screen("screen-end");
+  }
+
+  // ---------- сообщения матча (одинаково для онлайна и бота) ----------
+  function bindGame(rm) {
+    rm.on("start", (d) => beginMatch(d.seed));
+    rm.on("round", (d) => beginRound(d));
+    rm.on("pos", (d) => { if (R && !R.iHide) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; } });
+    rm.on("aim", (d) => { remoteAim.tx = d.x; remoteAim.ty = d.y; });
+    rm.on("shot", (d) => applyShot(d, false));
+    rm.on("pick", (d) => { if (R && R.pickups[d.i]) R.pickups[d.i].taken = true; });
+    rm.on("rend", (d) => onRoundEnd(d));
+    rm.on("mend", () => endMatch());
+    rm.on("rematch", () => { rematch.opp = true; tryRematch(); });
+  }
+  const send = (t, d) => { if (room) room.send(t, d); };
+  const isHost = () => !room || room.isHost;
+
+  function hostStartMatch() {
+    const seed = Math.floor(Math.random() * 100000);
+    send("start", { seed }); beginMatch(seed);
+    setTimeout(() => hostNextRound(0), 1500);
+  }
+  function hostNextRound(n) {
+    if (!match) return;
+    if (n >= ROUNDS || match.hp.me <= 0 || match.hp.opp <= 0) { send("mend", {}); endMatch(); return; }
+    const pick = Array.from({ length: 4 }, () => Math.round(14 + Math.random() * (WW - 28)));
+    const d = { n, hiderHost: n % 2 === 1, pick };
+    send("round", d); beginRound(d);
+  }
+  function hostEndRound(reason) {
+    if (!R || R.ended) return;
+    const hpHost = match.hp.me, hpGuest = match.hp.opp;
+    const d = { n: R.n, reason, hp: { host: hpHost, guest: hpGuest } };
+    send("rend", d); onRoundEnd(d);
+    const next = R.n + 1;
+    setTimeout(() => hostNextRound(next), 3400);
+  }
+
+  function beginMatch(seed) {
+    map = genMap(seed); layerDirty = true;
+    match = { hp: { me: 100, opp: 100 }, earned: 0, hits: 0, survived: 0, picks: 0 };
+    rematch = { me: false, opp: false };
+    screen(null); show("hud", true); hud();
+  }
+
+  function startPos() {
+    const cs = map.covers.filter((c) => c.h >= 50);
+    const c = cs[Math.floor(Math.random() * cs.length)] || map.covers[0];
+    return { x: c.x + c.w / 2, st: c.h < 72 ? 1 : 0, dir: 1, walk: 0 };
+  }
+
+  function beginRound(d) {
+    const hostHides = d.hiderHost;
+    const iH = isHost() ? hostHides : !hostHides;
+    R = { n: d.n, iHide: iH, pickups: d.pick.map((x) => ({ x, taken: false })), mag: BASE_MAG + (iH ? 0 : me.up.mag),
+      bullets: 0, start: now, ended: false, reveal: false, shots: 0, endAt: now + PREP + DUR };
+    R.bullets = R.mag;
+    phase = "prep";
+    if (iH) { pos = startPos(); controls("hider"); }
+    else { aim = { x: WW / 2, y: G - 50 }; remote = { x: WW / 2, tx: WW / 2, st: 0, dir: 1, walk: 0, moving: false }; controls("sniper"); }
+    remoteAim = { x: WW / 2, y: 190, tx: WW / 2, ty: 190 };
+    keys = { l: false, r: false };
     hud();
-    hint("Двигай пальцем по экрану. Зелёная рамка — тебя не видно");
-    controls(`<button class="btn" id="b-st">🧎 Присесть</button><button class="btn primary" id="b-ok">Спрятался ✅</button>`);
-    $("b-st").onclick = () => { pos.st = pos.st ? 0 : 1; $("b-st").textContent = pos.st ? "🧍 Встать" : "🧎 Присесть"; checkHide(); };
-    $("b-ok").onclick = confirmHide;
-    checkHide();
-  }
-  function checkHide() {
-    const st = coverState(pos), ok = st.hidden;
-    const b = $("b-ok"); if (b) { b.disabled = !ok; b.style.opacity = ok ? 1 : 0.5; }
-    hint(!st.hidden ? "❌ Тебя видно — встань за укрытие" : st.peek.length ? "⚠️ Тебя видно через дыру или окно!" : "✅ Спрятан. Можно подтверждать");
-  }
-  function confirmHide() {
-    if (phase !== "hide" || !coverState(pos).hidden) return;
-    T.haptic("impact", "medium"); hint("");
-    if (mode === "link") return shareHide();
-    if (players[shooter].bot) { goShoot(); bot.start(); return; }
-    if (mode === "local") return pass(shooter, "shoot");
-    goShoot();
+    T.haptic("impact", "medium");
+    if (mode === "bot") bot.beginRound();
   }
 
-  function goShoot() {
-    phase = players[shooter].bot ? "botaim" : "shoot";
-    bullets = BULLETS; shotsUsed = 0; lastShot = null; hitKind = null;
-    cross = { x: WW / 2, y: G - 50 };
-    hud();
-    if (phase === "shoot") {
-      hint("Води пальцем — двигай прицел. Стены пробиваются насквозь");
-      controls(`<button id="fire">ОГОНЬ</button>`);
-      $("fire").addEventListener("pointerdown", (e) => { e.preventDefault(); fire(); });
-    } else { controls(""); hint(`${players[shooter].name} целится…`); }
-  }
-
-  function fire() {
-    if ((phase !== "shoot" && phase !== "botaim") || bullets <= 0) return;
-    bullets--; shotsUsed++;
-    const x = cross.x, y = cross.y;
-    const c = map.covers.find((c) => x >= c.x && x <= c.x + c.w && y >= G - c.h && y <= G && !inOpening(c, x, y));
-    if (c) { c.open.push({ t: "c", x, y, r: 4.5 }); layerDirty = true; fx.push({ kind: "dust", x, y, t: 0, life: 0.6, seed: Math.random() * 6 }); }
+  function goLive() {
+    phase = "live"; big("");
+    msg(R.iHide ? "Беги! Снайпер ищет тебя 👀" : "Огонь по готовности 🎯", 1300);
     T.haptic("impact", "heavy");
-    const b = bodyRect(pos);
+  }
+
+  // ---------- выстрел ----------
+  function fire() {
+    if (phase !== "live" || !R || R.iHide || R.bullets <= 0) return;
+    R.bullets--; R.shots++;
+    const x = aim.x, y = aim.y, target = remote;
+    const b = bodyRect(target);
     let res = null;
     if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= G) res = y < b.y + 18 ? "head" : "body";
-    lastShot = { x, y, dist: Math.hypot(x - pos.x, y - (b.y + b.h / 2)) };
+    const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * (opp.up.armor || 0))) : 0;
+    const d = { x, y, res, dmg };
+    send("shot", d); applyShot(d, true);
+    T.haptic("impact", "heavy");
     hud();
-    if (res) {
-      hitKind = res;
-      const dmg = res === "head" ? HEAD_DMG : BODY_DMG;
-      hp[hider] -= dmg;
-      fx.push({ kind: "txt", text: "💥", x, y, t: 0, life: 0.9 });
-      msg(res === "head" ? `В ГОЛОВУ! −${HEAD_DMG} 💀` : `Попадание! −${BODY_DMG}`, 1600);
-      T.haptic("notify", "success");
-      return reveal(1700);
+  }
+  function applyShot(d, byMe) {
+    if (!R) return;
+    const c = map.covers.find((c) => d.x >= c.x && d.x <= c.x + c.w && d.y >= G - c.h && d.y <= G && !inOpening(c, d.x, d.y));
+    if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 4 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); }
+    fx.push({ kind: "flash", x: d.x, y: d.y, t: 0, life: 0.25 });
+    if (d.res) {
+      const victimIsMe = !byMe;
+      if (victimIsMe) match.hp.me -= d.dmg; else match.hp.opp -= d.dmg;
+      if (byMe) { match.earned += d.res === "head" ? 20 : 10; match.hits++; }
+      fx.push({ kind: "txt", text: `−${d.dmg}`, color: "#ff5a5a", x: d.x, y: d.y - 8, t: 0, life: 1 });
+      if (byMe) msg(d.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
+      else { msg(d.res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error"); }
+    } else if (byMe) {
+      const p = remote, dist = Math.hypot(d.x - p.x, d.y - (G - 35));
+      msg(dist < 30 ? "Совсем рядом! 😬" : dist < 70 ? "Тепло…" : "Мимо", 900);
+    } else {
+      const dist = Math.hypot(d.x - pos.x, d.y - (G - 35));
+      if (dist < 40) { msg("Пуля рядом! 😱", 900); T.haptic("impact", "rigid"); }
     }
-    if (!c) fx.push({ kind: "txt", text: "💨", x, y, t: 0, life: 0.6 });
-    msg(lastShot.dist < 34 ? "Совсем рядом! 😰" : lastShot.dist < 80 ? "Тепло…" : "Мимо", 1100);
-    if (bullets <= 0) { setTimeout(() => { msg(`Не нашёл! ${players[hider].name} был тут 👇`, 1800); reveal(2000); }, 700); }
+    hud();
+    if (isHost() && (match.hp.me <= 0 || match.hp.opp <= 0)) setTimeout(() => hostEndRound("ko"), 400);
   }
 
-  function reveal(ms) {
-    phase = "reveal"; revealT = 0; controls(""); hint(""); bot.anim = null; hud();
-    setTimeout(endTurn, ms);
-  }
-  function endTurn() {
-    if (mode === "challenge") return challengeEnd();
-    turn++; startTurn();
+  function onRoundEnd(d) {
+    if (!R || R.ended) return;
+    R.ended = true; R.reveal = true; phase = "over"; controls(null);
+    const host = isHost();
+    match.hp.me = host ? d.hp.host : d.hp.guest; match.hp.opp = host ? d.hp.guest : d.hp.host;
+    let text;
+    if (R.iHide) {
+      if (match.hp.me > 0 && d.reason === "time") { match.earned += 15; match.survived++; text = "Выжил! +15 🪙"; }
+      else text = "Тебя нашли 💀";
+    } else text = d.reason === "ko" ? "Цель уничтожена! 🎯" : "Время вышло ⏱️";
+    msg(text, 2600); hud();
+    if (mode === "bot") bot.anim = null;
   }
 
   function endMatch() {
-    phase = "end"; controls(""); hint(""); show("hud", true);
-    const a = hp[1], b = hp[2];
-    let emoji = "🤝", title = "Ничья";
-    if (a !== b) { const w = a > b ? 1 : 2; emoji = players[w].bot ? "🤖" : "🏆"; title = `Победа: ${players[w].name}`; }
-    $("end-emoji").textContent = emoji; $("end-title").textContent = title;
-    $("end-sub").textContent = `Осталось здоровья — ${players[1].name}: ${Math.max(0, a)}, ${players[2].name}: ${Math.max(0, b)}`;
-    endButtons([["Реванш", "primary", () => newMatch(mode)],
-      ["✉️ Вызвать друга по ссылке", "", () => newMatch("link")],
-      ["В меню", "ghost", toMenu]]);
-    setTimeout(() => show("screen-end", true), 400);
+    phase = "end"; controls(null); big("");
+    const a = match.hp.me, b = match.hp.opp, win = a > b, draw = a === b;
+    const bonus = draw ? 15 : win ? 30 : 10;
+    const total = match.earned + bonus;
+    wallet.coins += total; saveWallet();
+    $("end-emoji").textContent = draw ? "🤝" : win ? "🏆" : "💀";
+    $("end-title").textContent = draw ? "Ничья" : win ? "Победа!" : `Победил ${opp.name}`;
+    $("end-sub").textContent = `Здоровье: ты ${Math.max(0, a)} · ${opp.name} ${Math.max(0, b)} · попаданий ${match.hits} · выжил раундов ${match.survived}`;
+    $("end-coins").textContent = `+${total} 🪙 (бонус за ${draw ? "ничью" : win ? "победу" : "участие"} ${bonus})`;
+    $("end-status").textContent = "";
+    match.earned = 0;
+    const list = [["🔁 Реванш", "primary", askRematch], ["🛒 Улучшения", "", () => { openShop(); $("shop-close").onclick = () => screen("screen-end"); }]];
+    if (mode === "online") list.push(["Выйти в меню", "ghost", toMenu]); else list.push(["⚔️ Позвать друга", "", () => { toMenu(); createRoom(); }], ["В меню", "ghost", toMenu]);
+    buttons("end-buttons", list);
+    setTimeout(() => screen("screen-end"), 800);
   }
-
-  function challengeEnd() {
-    phase = "end"; controls(""); hint("");
-    const found = !!hitKind;
-    chResult = found ? shotsUsed : 0;
-    $("end-emoji").textContent = found ? (hitKind === "head" ? "🎯" : "✅") : "😅";
-    $("end-title").textContent = found ? `Нашёл ${challenge.name} с ${shotsUsed}-го выстрела!` : `${challenge.name} спрятался надёжно`;
-    $("end-sub").textContent = found ? (hitKind === "head" ? "Точно в голову." : "Попал в корпус.") + " Теперь твоя очередь прятаться."
-      : "Отомсти: спрячься сам и отправь ответный вызов.";
-    endButtons([["🫣 Спрятаться и отправить ответку", "primary", () => newMatch("link")],
-      ["🤖 Сыграть с ботом", "", () => newMatch("bot")],
-      ["Другие игры", "ghost", () => { location.href = "../"; }]]);
-    setTimeout(() => show("screen-end", true), 300);
+  function askRematch() {
+    if (mode === "bot") { startBot(); return; }
+    rematch.me = true; me.up = myUp(); send("info", { name: me.name, up: me.up }); send("rematch", {});
+    $("end-status").innerHTML = `<span class="dots">Ждём ${opp.name}</span>`;
+    tryRematch();
   }
-
-  function shareHide() {
-    const me = T.playerName().slice(0, 12);
-    const code = "h" + encode(map.seed, pos.x, pos.st) + T.b64url(me);
-    const text = chResult === null ? "Я спрятался за стеной 🧱 У тебя 3 пули — найдёшь меня?"
-      : chResult ? `Нашёл тебя с ${chResult}-го выстрела 🎯 Теперь я спрятался — найди меня!`
-        : "Не нашёл тебя 😅 Ладно, теперь я спрятался — попробуй найти меня!";
-    T.openLink(`https://t.me/share/url?url=${encodeURIComponent(T.gameLink("sniper", code))}&text=${encodeURIComponent(text)}`);
-    phase = "end"; controls("");
-    $("end-emoji").textContent = "✉️"; $("end-title").textContent = "Вызов отправлен";
-    $("end-sub").textContent = "Выбери друга или чат в Telegram. Когда он сыграет — пришлёт ответку.";
-    endButtons([["Отправить ещё раз", "primary", shareHide], ["🤖 Пока сыграть с ботом", "", () => newMatch("bot")], ["В меню", "ghost", toMenu]]);
-    show("screen-end", true);
-  }
-
-  function endButtons(list) {
-    const box = $("end-buttons"); box.innerHTML = "";
-    for (const [label, cls, fn] of list) { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); }
-  }
-  function toMenu() {
-    phase = "menu"; ["screen-end", "screen-pass", "hud", "controls", "hint"].forEach((s) => show(s, false));
-    show("screen-menu", true);
+  function tryRematch() {
+    if (phase !== "end") return;
+    if (!rematch.me) { $("end-status").textContent = `${opp.name} хочет реванш!`; return; }
+    if (rematch.opp && isHost()) hostStartMatch();
   }
 
   // ---------- бот ----------
   const bot = {
-    anim: null,
-    hide() {
-      for (let i = 0; i < 400; i++) {
+    anim: null, pos: { x: 180, st: 0, dir: 1, walk: 0 }, target: null, aim: { x: 180, y: 190 }, seenAt: -1, nextShot: 0, wait: 0, lastSeen: null,
+    beginRound() {
+      this.target = null; this.wait = 0; this.seenAt = -1; this.lastSeen = null; this.nextShot = 0;
+      if (R.iHide) { this.aim = { x: WW * Math.random(), y: 190 }; }
+      else { this.pos = startPos(); }
+    },
+    hideSpot() {
+      for (let i = 0; i < 200; i++) {
         const c = map.covers[Math.floor(Math.random() * map.covers.length)];
-        const p = { x: c.x + 12 + Math.random() * (c.w - 24), st: c.h < 72 || Math.random() < 0.4 ? 1 : 0 };
-        const s = coverState(p);
-        if (s.hidden && !s.peek.length) return p;
+        const p = { x: c.x + 12 + Math.random() * (c.w - 24), st: c.h < 72 || Math.random() < 0.35 ? 1 : 0 };
+        const s = coverState(p); if (s.hidden && !s.peek.length) return p;
       }
-      const c = map.covers[0]; return { x: c.x + c.w / 2, st: 1 };
+      return { x: this.pos.x, st: 1 };
     },
-    target() {
-      const b = bodyRect(pos), st = coverState(pos), j = (n) => (Math.random() - 0.5) * n;
-      if (st.peek.length && Math.random() < 0.85) {            // видит через дыру
-        const o = st.peek[0];
-        const ox = o.t === "r" ? o.x + o.w / 2 : o.x, oy = o.t === "r" ? o.y + o.h / 2 : o.y;
-        return { x: Math.max(b.x + 2, Math.min(b.x + b.w - 2, ox)) + j(4), y: Math.max(b.y + 4, Math.min(G - 4, oy)) + j(6) };
+    update(dt) {
+      if (!R || phase !== "live") return;
+      if (!R.iHide) {                        // бот прячется
+        const p = this.pos;
+        if (!this.target) {
+          const free = R.pickups.map((c, i) => ({ c, i })).filter((o) => !o.c.taken);
+          const aimFar = Math.abs(remoteAimOf().x - p.x) > 90;
+          if (free.length && aimFar && Math.random() < 0.5) { const o = free[Math.floor(Math.random() * free.length)]; this.target = { x: o.c.x, st: 0, coin: true }; }
+          else this.target = this.hideSpot();
+          this.wait = 1 + Math.random() * 3;
+        }
+        const dx = this.target.x - p.x, sp = SPEED * (p.st ? 0.5 : 1) * dt;
+        if (Math.abs(dx) > 1) { p.st = 0; p.x += Math.sign(dx) * Math.min(sp, Math.abs(dx)); p.dir = Math.sign(dx); p.walk += dt * 12; }
+        else { p.st = this.target.st; p.walk = 0; this.wait -= dt; if (this.wait <= 0 || this.target.coin) this.target = null; }
+        R.pickups.forEach((c, i) => { if (!c.taken && Math.abs(c.x - p.x) < 12) { c.taken = true; } });
+        emit("pos", { x: p.x, st: p.st, dir: p.dir, m: Math.abs(dx) > 1 });
+      } else {                               // бот стреляет
+        const a = this.aim, vis = visible(pos);
+        if (vis) { if (this.seenAt < 0) this.seenAt = now; this.lastSeen = { x: pos.x, y: G - (pos.st ? 30 : 50) }; } else this.seenAt = -1;
+        let tx, ty;
+        const vx = (pos.x - (this.px == null ? pos.x : this.px)) / Math.max(dt, 0.001); this.px = pos.x;
+        if (vis && now - this.seenAt > 0.45) { const b = bodyRect(pos); tx = pos.x + vx * 0.18; ty = b.y + (this.headAim ? 8 : 26); }
+        else if (this.lastSeen) { tx = this.lastSeen.x + Math.sin(now * 1.7) * 30; ty = this.lastSeen.y; }
+        else { tx = WW / 2 + Math.sin(now * 0.6) * 150; ty = 185 + Math.sin(now * 1.1) * 15; }
+        const k = Math.min(1, dt * (vis ? 7 : 1.5));
+        a.x += (tx - a.x) * k; a.y += (ty - a.y) * k;
+        emit("aim", { x: a.x, y: a.y });
+        if (now > this.nextShot && R.bullets > 0) {
+          const b = bodyRect(pos), onTarget = a.x > b.x - 3 && a.x < b.x + b.w + 3 && a.y > b.y && a.y < G;
+          const wild = !vis && this.lastSeen && Math.random() < 0.006;
+          if ((vis && onTarget && now - this.seenAt > 0.7) || wild) {
+            R.bullets--; this.nextShot = now + 1.1; this.headAim = Math.random() < 0.3;
+            const x = a.x + (Math.random() - 0.5) * 10, y = a.y + (Math.random() - 0.5) * 8;
+            let res = null; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= G) res = y < b.y + 18 ? "head" : "body";
+            const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * me.up.armor)) : 0;
+            emit("shot", { x, y, res, dmg });
+          }
+        }
       }
-      if (lastShot && lastShot.dist < 80) {                     // «тепло» — бьёт рядом
-        const k = lastShot.dist < 34 ? 18 : 40;
-        return { x: lastShot.x + j(k * 2), y: G - 20 - Math.random() * 40 };
-      }
-      const tot = map.covers.reduce((s, c) => s + c.w, 0); let r = Math.random() * tot, c = map.covers[0];
-      for (const cc of map.covers) { if ((r -= cc.w) <= 0) { c = cc; break; } }
-      return { x: c.x + 10 + Math.random() * (c.w - 20), y: G - 12 - Math.random() * Math.min(c.h - 8, 52) };
-    },
-    start() { setTimeout(() => this.aim(), 700); },
-    aim() {
-      if (phase !== "botaim" || bullets <= 0) return;
-      const tg = this.target(), from = { ...cross };
-      this.anim = { t: 0, dur: 1.1, from, tg };
-    },
-    step(dt) {
-      const a = this.anim; a.t += dt;
-      const k = Math.min(1, a.t / a.dur), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
-      cross.x = a.from.x + (a.tg.x - a.from.x) * e + Math.sin(a.t * 9) * 2 * (1 - k);
-      cross.y = a.from.y + (a.tg.y - a.from.y) * e + Math.cos(a.t * 7) * 2 * (1 - k);
-      if (k >= 1) { this.anim = null; fire(); if (phase === "botaim") setTimeout(() => this.aim(), 900); }
     }
   };
+  function remoteAimOf() { return aim; }
+  let botHandlers = {};
+  function emit(t, d) { (botHandlers[t] || []).forEach((f) => f(d)); }
+  function startBot() {
+    mode = "bot";
+    botHandlers = {};
+    room = null;
+    const fake = { on(t, fn) { (botHandlers[t] = botHandlers[t] || []).push(fn); return fake; } };
+    bindGame(fake);
+    opp = { name: "🤖 Бот-снайпер", up: { mag: 0, zoom: 0, speed: 0, armor: 0 } };
+    me.up = myUp();
+    screen(null);
+    hostStartMatch();
+  }
 
-  // ---------- ввод ----------
+  // ---------- цикл ----------
+  let last = 0;
+  function frame(ts) {
+    const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts; now = ts / 1000;
+    if (R && phase === "prep") {
+      const left = Math.ceil(R.start + PREP - now);
+      big(left > 0 ? String(left) : "");
+      if (!R.iHide && !R.prepMsg) { R.prepMsg = true; msg("Противник прячется…", 2900); }
+      if (now >= R.start + PREP) goLive();
+    }
+    if (R && (phase === "prep" || phase === "live")) {
+      const left = Math.max(0, Math.ceil(R.endAt - now));
+      $("timer").textContent = phase === "prep" ? DUR : left; $("timer").classList.toggle("warn", phase === "live" && left <= 5);
+      if (R.iHide) {
+        const sp = SPEED * (1 + 0.12 * me.up.speed) * (pos.st ? 0.5 : 1) * dt;
+        const mv = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
+        if (mv) { pos.x = Math.max(10, Math.min(WW - 10, pos.x + mv * sp)); pos.dir = mv; pos.walk += dt * (pos.st ? 6 : 12); } else pos.walk = 0;
+        if (phase === "live") R.pickups.forEach((c, i) => {
+          if (!c.taken && Math.abs(c.x - pos.x) < 12) { c.taken = true; match.earned += 5; match.picks++; send("pick", { i }); fx.push({ kind: "txt", text: "+5 🪙", color: "#7CFC9A", x: c.x, y: G - 30, t: 0, life: 1 }); T.haptic("impact", "light"); hud(); }
+        });
+        sendT -= dt;
+        if (sendT <= 0) { send("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0 }); sendT = 1 / 12; }
+        remoteAim.x += (remoteAim.tx - remoteAim.x) * Math.min(1, dt * 10); remoteAim.y += (remoteAim.ty - remoteAim.y) * Math.min(1, dt * 10);
+      } else {
+        remote.x += (remote.tx - remote.x) * Math.min(1, dt * 12);
+        remote.walk = remote.moving ? remote.walk + dt * 12 : 0;
+        aimSendT -= dt;
+        if (aimSendT <= 0 && phase === "live") { send("aim", { x: Math.round(aim.x), y: Math.round(aim.y) }); aimSendT = 0.1; }
+      }
+      if (mode === "bot") bot.update(dt);
+      if (phase === "live" && isHost() && now > R.endAt + 0.3) hostEndRound("time");
+      if (phase === "live" && !R.iHide && R.bullets <= 0 && !R.outMsg) { R.outMsg = true; msg("Патроны кончились 😬", 1500); }
+    }
+    render(dt, now);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- ввод прицела ----------
   let drag = null;
-  canvas.addEventListener("pointerdown", (e) => {
-    e.preventDefault(); drag = { x: e.clientX, y: e.clientY };
-    if (phase === "hide") movePos(e.clientX);
-  });
+  canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); drag = { x: e.clientX, y: e.clientY }; });
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    if (phase === "hide") movePos(e.clientX);
-    if (phase === "shoot") {
-      cross.x = Math.max(0, Math.min(WW, cross.x + (e.clientX - drag.x) / S * 0.6));
-      cross.y = Math.max(60, Math.min(WH - 10, cross.y + (e.clientY - drag.y) / S * 0.6));
+    if (R && !R.iHide && (phase === "live" || phase === "prep")) {
+      const Z = 2.3 + 0.35 * me.up.zoom, k = 1 / (S * Z) * 1.15;
+      aim.x = Math.max(0, Math.min(WW, aim.x + (e.clientX - drag.x) * k));
+      aim.y = Math.max(90, Math.min(WH - 20, aim.y + (e.clientY - drag.y) * k));
     }
     drag = { x: e.clientX, y: e.clientY };
   });
   window.addEventListener("pointerup", () => { drag = null; });
-  function movePos(cx) { pos.x = Math.max(12, Math.min(WW - 12, (cx - OX) / S)); checkHide(); }
   window.addEventListener("keydown", (e) => {
-    if (phase === "shoot") {
-      const d = e.shiftKey ? 1 : 5;
-      if (e.key === "ArrowLeft") cross.x -= d; if (e.key === "ArrowRight") cross.x += d;
-      if (e.key === "ArrowUp") cross.y -= d; if (e.key === "ArrowDown") cross.y += d;
-      if (e.key === " ") fire();
-    }
+    if (!R) return;
+    if (R.iHide) { if (e.key === "ArrowLeft") keys.l = true; if (e.key === "ArrowRight") keys.r = true; if (e.key === "ArrowDown") pos.st = 1; if (e.key === "ArrowUp") pos.st = 0; }
+    else { const d = e.shiftKey ? 1 : 6; if (e.key === "ArrowLeft") aim.x -= d; if (e.key === "ArrowRight") aim.x += d; if (e.key === "ArrowUp") aim.y -= d; if (e.key === "ArrowDown") aim.y += d; if (e.key === " ") fire(); }
   });
+  window.addEventListener("keyup", (e) => { if (e.key === "ArrowLeft") keys.l = false; if (e.key === "ArrowRight") keys.r = false; });
 
   // ---------- старт ----------
-  $("m-bot").onclick = () => newMatch("bot");
-  $("m-local").onclick = () => newMatch("local");
-  $("m-link").onclick = () => { chResult = null; newMatch("link"); };
+  $("m-invite").onclick = () => { mode = "online"; me.up = myUp(); createRoom(); };
+  $("m-bot").onclick = () => startBot();
+  $("m-shop").onclick = () => { openShop(); $("shop-close").onclick = toMenu; };
   $("m-menu").onclick = () => { location.href = "../"; };
-  T.init({ header: "#101831", bg: "#101831", back: "../" });
-
-  challenge = readLink();
-  map = genMap(challenge ? challenge.seed : 7); map.seed = challenge ? challenge.seed : 7;
-  if (challenge) {
-    const el = $("challenge");
-    el.innerHTML = `${challenge.name.replace(/[<>&]/g, "")} спрятался 🫣<br>У тебя 3 пули`;
-    el.classList.remove("hidden");
-    const b = document.createElement("button"); b.className = "btn primary"; b.textContent = "🎯 Найти и выстрелить";
-    b.onclick = () => newMatch("challenge");
-    el.after(b);
-    $("m-bot").classList.remove("primary");
-  }
+  T.init({ header: "#0b1226", bg: "#0b1226", back: "../" });
+  me.name = T.playerName() === "Друг" ? "Ты" : T.playerName();
+  resize();
+  loadWallet(() => {
+    $("wallet").textContent = `🪙 ${wallet.coins}`;
+    me.up = myUp();
+    const inv = Net.readInvite();
+    map = genMap(7); layerDirty = true;
+    if (inv) { mode = "online"; joinRoom(inv); } else toMenu();
+  });
   requestAnimationFrame(frame);
 
   window.__game = {
-    get phase() { return phase; }, get hp() { return hp; }, get pos() { return pos; }, get cross() { return cross; },
-    get map() { return map; }, get bullets() { return bullets; }, start: newMatch, fire, coverState,
-    aimAt(x, y) { cross.x = x; cross.y = y; }, setPos(x, st) { pos.x = x; pos.st = st; checkHide(); }, confirmHide, encode, decode
+    get phase() { return phase; }, get R() { return R; }, get match() { return match; }, get pos() { return pos; }, get aim() { return aim; },
+    get remote() { return remote; }, get map() { return map; }, get wallet() { return wallet; }, get roomId() { return room && room.id; }, get mode() { return mode; }, keys, fire, coverState,
+    aimAt(x, y) { aim.x = x; aim.y = y; }, setPos(x, st) { pos.x = x; pos.st = st; }, startBot, createRoom
   };
 })();

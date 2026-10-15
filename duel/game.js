@@ -1,196 +1,335 @@
-/* Дуэль — игра вдвоём на одном телефоне. Набор «Кооп-игры». */
+/* Дуэль — онлайн-реакция 1 на 1 (и разминка с ботом). Набор «Кооп-игры». */
 (function () {
   "use strict";
   const T = window.TG;
-  const WIN = 3;
-  const P = { 1: { name: "🟠 Оранжевый", el: "p1" }, 2: { name: "🔵 Синий", el: "p2" } };
   const $ = (id) => document.getElementById(id);
+  const WIN = 3, INTRO = 2.2;
 
-  let score = { 1: 0, 2: 0 }, round = 0, mode = "idle", rt = null, timers = [], order = [], lastType = "";
-  let stats = { fastest: null };
-
-  // ---------- вывод сразу на обе половины ----------
-  function say(title, big, small) {
-    for (const k of [1, 2]) {
-      $(`p${k}-title`).textContent = title || "";
-      $(`p${k}-big`).textContent = big || "";
-      $(`p${k}-small`).textContent = typeof small === "function" ? small(k) : (small || "");
-    }
+  function rng(seed) {
+    let a = (seed * 2654435761) >>> 0 || 1;
+    return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
-  function paint(cls) {
-    for (const k of [1, 2]) { const el = $(`p${k}`); el.classList.remove("go", "wait", "win"); if (cls) el.classList.add(cls); }
-  }
-  function pts() {
-    for (const k of [1, 2]) {
-      const o = k === 1 ? 2 : 1;
-      $(`p${k}-pts`).textContent = "●".repeat(score[k]) + "○".repeat(WIN - score[k]) + "   vs   " + "●".repeat(score[o]) + "○".repeat(WIN - score[o]);
-    }
-  }
-  function later(fn, ms) { const t = setTimeout(fn, ms); timers.push(t); return t; }
-  function clearTimers() { timers.forEach(clearTimeout); timers = []; if (rt && rt.raf) cancelAnimationFrame(rt.raf); }
-  function setSplit(frac) { // доля экрана у синего (сверху)
-    $("p2").style.height = frac * 100 + "%"; $("p1").style.height = (1 - frac) * 100 + "%";
-    $("divider").style.top = `calc(${frac * 100}% - 3px)`;
-  }
-
-  // ---------- типы раундов ----------
   const FRUITS = ["🍎", "🍌", "🍇", "🍓", "🥝", "🍋", "🍑", "💣"];
   const PAIRS = ["🐶", "🐱", "🐸", "🐵", "🦊", "🐼"];
-  const COLORS = [["КРАСНЫЙ", "#e5484d"], ["СИНИЙ", "#2f7cf6"], ["ЖЁЛТЫЙ", "#ffd34d"], ["ЗЕЛЁНЫЙ", "#22c55e"], ["БЕЛЫЙ", "#ffffff"]];
-  const pick = (a) => a[Math.floor(Math.random() * a.length)];
-
+  const COLORS = [["КРАСНЫЙ", "#e5484d"], ["СИНИЙ", "#1d4ed8"], ["ЖЁЛТЫЙ", "#ffd34d"], ["ЗЕЛЁНЫЙ", "#16a34a"], ["БЕЛЫЙ", "#ffffff"]];
   const TYPES = {
-    green: {
-      title: "Реакция", rule: "Ждите зелёный экран — и жмите!",
-      start() {
-        paint("wait"); say("Реакция", "Ждём…", "не жми раньше времени");
-        later(() => { rt.live = true; rt.at = performance.now(); paint("go"); say("", "ЖМИ!", ""); T.haptic("impact", "heavy"); },
-          1400 + Math.random() * 3200);
-      },
-      tap(k) {
-        if (!rt.live) return falseStart(k);
-        const ms = Math.round(performance.now() - rt.at);
-        if (!stats.fastest || ms < stats.fastest.ms) stats.fastest = { k, ms };
-        win(k, `${ms} мс`);
-      }
-    },
-    fruit: watchType("Лови арбуз", "Жми, когда появится 🍉. Не на что-то другое!",
-      (i, hit) => ({ big: hit ? "🍉" : pick(FRUITS), hit }), 650),
-    pairs: watchType("Пара", "Жми, когда зверьки одинаковые",
-      (i, hit) => { const a = pick(PAIRS); let b = pick(PAIRS); if (hit) b = a; else while (b === a) b = pick(PAIRS); return { big: a + " " + b, hit }; }, 850),
-    stroop: watchType("Цвета", "Жми, когда слово совпадает с цветом букв",
-      (i, hit) => { const w = pick(COLORS); let c = pick(COLORS); if (hit) c = w; else while (c === w) c = pick(COLORS); return { big: w[0], color: c[1], hit }; }, 900),
-    tug: {
-      title: "Перетягивание", rule: "Жми как можно чаще — отожми половину экрана у соперника!",
-      start() {
-        rt.pos = 0.5; rt.live = true; paint(null); say("", "ТАПАЙ!", "");
-        T.haptic("impact", "heavy");
-      },
-      tap(k) {
-        rt.pos += k === 2 ? 0.028 : -0.028;
-        setSplit(rt.pos);
-        if (rt.pos >= 0.85) win(2); else if (rt.pos <= 0.15) win(1);
-      }
-    }
+    green: { title: "Реакция", rule: "Ждите зелёный экран — и жмите!" },
+    fruit: { title: "Лови арбуз", rule: "Жми, когда появится 🍉. Не на что-то другое!" },
+    pairs: { title: "Пара", rule: "Жми, когда зверьки одинаковые" },
+    stroop: { title: "Цвета", rule: "Жми, когда слово совпадает с цветом букв" },
+    tug: { title: "Перетягивание", rule: "Тапай как можно чаще — перетяни шкалу!" }
   };
+  // Кадры «смотри и жми» строятся одинаково на обоих телефонах из общего seed
+  function buildFrames(type, seed) {
+    const r = rng(seed), pick = (a) => a[Math.floor(r() * a.length)];
+    const hitAt = 3 + Math.floor(r() * 5), base = type === "fruit" ? 0.65 : type === "pairs" ? 0.85 : 0.9;
+    const frames = []; let t = 0;
+    for (let i = 0; i <= hitAt + 2; i++) {
+      const hit = i === hitAt; let f;
+      if (type === "fruit") f = { big: hit ? "🍉" : pick(FRUITS) };
+      else if (type === "pairs") { const a = pick(PAIRS); let b = pick(PAIRS); if (hit) b = a; else while (b === a) b = pick(PAIRS); f = { big: a + " " + b }; }
+      else { const w = pick(COLORS); let c = pick(COLORS); if (hit) c = w; else while (c === w) c = pick(COLORS); f = { big: w[0], color: c[1] }; }
+      f.hit = hit; f.t = t; t += hit ? base * 1.6 : base * (0.75 + r() * 0.5);
+      frames.push(f);
+    }
+    return { frames, end: t };
+  }
 
-  function watchType(title, rule, gen, period) {
-    return {
-      title, rule,
-      start() {
-        paint(null); rt.n = 0; rt.hitAt = 3 + Math.floor(Math.random() * 5); rt.live = true;
-        const tick = () => {
-          const hit = rt.n === rt.hitAt;
-          rt.frame = gen(rt.n, hit); rt.n++;
-          if (hit) rt.hitTime = performance.now();
-          if (rt.n > rt.hitAt + 2) rt.hitAt = rt.n + 2 + Math.floor(Math.random() * 4); // прозевали — ещё раз
-          say("", rt.frame.big, "");
-          for (const k of [1, 2]) $(`p${k}-big`).style.color = rt.frame.color || "";
-          later(tick, hit ? period * 1.5 : period * (0.75 + Math.random() * 0.5));
-        };
-        tick();
-      },
-      tap(k) {
-        if (!rt.frame) return;
-        if (rt.frame.hit) win(k, `${Math.round(performance.now() - rt.hitTime)} мс`);
-        else falseStart(k, "мимо!");
+  // ---------- состояние ----------
+  let mode = null, room = null, phase = "menu", me = "Ты", opp = "Друг";
+  let score = { me: 0, opp: 0 }, R = null, now = 0, stats = { best: null, rounds: 0 }, order = [], lastType = "";
+  let results = {}, tug = { pos: 0, myTaps: 0, sentT: 0 }, rematch = { me: false, opp: false };
+  const isHost = () => !room || room.isHost;
+  const send = (t, d) => { if (room) room.send(t, d); };
+
+  // ---------- экран ----------
+  const show = (id, on) => $(id).classList.toggle("hidden", !on);
+  function screen(id) { ["screen-menu", "screen-room", "screen-end"].forEach((s) => show(s, s === id)); }
+  function say(title, big, small, cls, color) {
+    $("title").textContent = title || ""; $("big").textContent = big || ""; $("small").textContent = small || "";
+    $("big").style.color = color || ""; $("arena").className = cls || "";
+  }
+  function board() {
+    $("nm-me").textContent = me; $("nm-opp").textContent = opp;
+    $("dots-me").textContent = "●".repeat(score.me) + "○".repeat(WIN - score.me);
+    $("dots-opp").textContent = "●".repeat(score.opp) + "○".repeat(WIN - score.opp);
+  }
+  function buttons(boxId, list) {
+    const box = $(boxId); box.innerHTML = "";
+    for (const [label, cls, fn] of list) { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); }
+  }
+  function toMenu() {
+    if (room) { try { room.close(); } catch (_) {} room = null; }
+    phase = "menu"; R = null; show("board", false); show("tug", false); say("", "⚡", ""); screen("screen-menu");
+  }
+
+  // ---------- комната ----------
+  async function createRoom() {
+    mode = "online"; phase = "room"; screen("screen-room");
+    $("room-emoji").textContent = "📡"; $("room-title").textContent = "Создаём комнату"; $("room-sub").textContent = "";
+    $("room-status").innerHTML = `<span class="dotsa">Подключаемся к серверу</span>`;
+    buttons("room-buttons", [["Отмена", "ghost", toMenu]]);
+    try { room = await Net.open("duel", null, { name: T.playerName() }); } catch (_) { return netError(); }
+    bindRoom();
+    const link = Net.inviteLink("duel", room.id);
+    const share = () => T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("Вызываю на дуэль ⚡ Кто быстрее нажмёт? Заходи, я жду!")}`);
+    $("room-emoji").textContent = "📨"; $("room-title").textContent = "Позови соперника";
+    $("room-sub").textContent = "Отправь приглашение. Как только друг откроет ссылку — дуэль начнётся. Не закрывай игру.";
+    $("room-status").innerHTML = `<span class="dotsa">Ждём соперника</span>`;
+    buttons("room-buttons", [["📨 Отправить приглашение", "primary", share], ["Отмена", "ghost", toMenu]]);
+    share();
+  }
+  async function joinRoom(id) {
+    mode = "online"; phase = "room"; screen("screen-room");
+    $("room-emoji").textContent = "⚡"; $("room-title").textContent = "Тебя вызвали на дуэль"; $("room-sub").textContent = "";
+    $("room-status").innerHTML = `<span class="dotsa">Подключаемся</span>`;
+    buttons("room-buttons", [["Отмена", "ghost", toMenu]]);
+    try { room = await Net.open("duel", id, { name: T.playerName() }); } catch (_) { return netError(); }
+    bindRoom();
+    setTimeout(() => {
+      if (room && !room.peer && phase === "room") {
+        $("room-emoji").textContent = "😕"; $("room-title").textContent = "Комната не найдена";
+        $("room-status").textContent = "Соперник уже вышел. Попроси прислать новое приглашение.";
+        buttons("room-buttons", [["🤖 Сыграть с ботом", "", startBot], ["В меню", "ghost", toMenu]]);
       }
-    };
+    }, 12000);
   }
-
-  // ---------- ход матча ----------
-  function nextType() {
-    if (!order.length) {
-      order = Object.keys(TYPES).sort(() => Math.random() - 0.5);
-      if (order[0] === lastType) order.push(order.shift());
-    }
-    lastType = order.shift();
-    return lastType;
+  function netError() {
+    $("room-emoji").textContent = "📵"; $("room-title").textContent = "Нет связи с сервером";
+    $("room-status").textContent = "Проверь интернет и попробуй ещё раз.";
+    buttons("room-buttons", [["Попробовать снова", "primary", () => location.reload()], ["🤖 С ботом", "", startBot], ["В меню", "ghost", toMenu]]);
   }
-
-  function startRound() {
-    clearTimers(); setSplit(0.5);
-    round++;
-    const type = nextType();
-    rt = { type, live: false };
-    mode = "intro"; paint(null);
-    for (const k of [1, 2]) $(`p${k}-big`).style.color = "";
-    say(`Раунд ${round}`, TYPES[type].title, TYPES[type].rule);
-    T.haptic("select");
-    later(() => { mode = "play"; TYPES[type].start(); }, 2300);
-  }
-
-  function win(k, note) {
-    if (mode !== "play") return;
-    mode = "result"; clearTimers();
-    score[k]++; pts();
-    T.haptic("notify", "success");
-    for (const j of [1, 2]) {
-      $(`p${j}`).classList.remove("go", "wait", "win");
-      if (j === k) $(`p${j}`).classList.add("win");
-      $(`p${j}-big`).style.color = "";
-    }
-    say("", "", "");
-    for (const j of [1, 2]) {
-      $(`p${j}-big`).textContent = j === k ? "+1 🎉" : "Мимо 😤";
-      $(`p${j}-small`).textContent = (j === k ? "Раунд твой" : `Раунд за: ${P[k].name}`) + (note ? ` · ${note}` : "");
-    }
-    later(() => (score[k] >= WIN ? endMatch(k) : startRound()), 1700);
-  }
-
-  function falseStart(k, why) {
-    if (mode !== "play") return;
-    const o = k === 1 ? 2 : 1;
-    win(o, `${P[k].name}: ${why || "фальстарт!"}`);
-  }
-
-  function endMatch(k) {
-    mode = "end"; clearTimers(); setSplit(0.5);
-    for (const j of [1, 2]) {
-      $(`p${j}`).classList.remove("go", "wait", "win");
-      if (j === k) $(`p${j}`).classList.add("win");
-    }
-    say("", "", "");
-    for (const j of [1, 2]) $(`p${j}-big`).textContent = j === k ? "ПОБЕДА 🏆" : "Реванш?";
-    $("end-title").textContent = `Победил ${P[k].name}`;
-    $("end-score").textContent = `${score[1]} : ${score[2]}`;
-    $("end-breakdown").textContent = `🟠 : 🔵 · раундов: ${round}` +
-      (stats.fastest ? ` · лучшая реакция ${stats.fastest.ms} мс (${P[stats.fastest.k].name})` : "");
-    later(() => $("screen-end").classList.remove("hidden"), 1200);
-  }
-
-  function startMatch() {
-    score = { 1: 0, 2: 0 }; round = 0; order = []; stats = { fastest: null };
-    $("screen-start").classList.add("hidden"); $("screen-end").classList.add("hidden");
-    pts(); startRound();
-  }
-
-  // ---------- ввод: каждая половина отдельно, мультитач ----------
-  for (const k of [1, 2]) {
-    $(`p${k}`).addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      if (mode !== "play" || !rt) return;
-      const el = $(`p${k}`); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 80);
-      TYPES[rt.type].tap(k);
+  function bindRoom() {
+    room.on("peer", (p) => {
+      opp = p.name || "Друг"; room.send("name", { name: me });
+      $("room-emoji").textContent = "✅"; $("room-title").textContent = `${opp} в игре!`; $("room-status").textContent = "Начинаем…";
+      T.haptic("notify", "success");
+      if (room.isHost) setTimeout(() => { if (room && room.peer) hostStart(); }, 1200);
     });
+    room.on("name", (d) => { if (d && d.name) { opp = d.name.slice(0, 20); board(); } });
+    room.on("peer-left", () => {
+      if (phase === "menu") return;
+      if (phase === "room" && room.isHost) { $("room-status").innerHTML = `<span class="dotsa">Соперник вышел. Ждём снова</span>`; return; }
+      phase = "end"; R = null; show("tug", false);
+      $("end-emoji").textContent = "🚪"; $("end-title").textContent = `${opp} вышел`; $("end-score").textContent = `${score.me} : ${score.opp}`;
+      $("end-sub").textContent = ""; $("end-status").textContent = "";
+      buttons("end-buttons", [["⚔️ Позвать снова", "primary", () => { toMenu(); createRoom(); }], ["В меню", "ghost", toMenu]]);
+      screen("screen-end");
+    });
+    bindGame(room);
   }
-  window.addEventListener("keydown", (e) => { // для теста на компьютере: A — синий, L — оранжевый
-    if (mode !== "play" || !rt) return;
-    if (e.key === "a" || e.key === "ф") TYPES[rt.type].tap(2);
-    if (e.key === "l" || e.key === "д") TYPES[rt.type].tap(1);
-  });
+  function bindGame(rm) {
+    rm.on("start", () => beginMatch());
+    rm.on("round", (d) => beginRound(d));
+    rm.on("res", (d) => { if (isHost()) collect("opp", d); });
+    rm.on("taps", (d) => { if (isHost() && R && R.type === "tug") hostTug(0, d.c); });
+    rm.on("tug", (d) => { if (!isHost()) { tug.pos = -d.pos; drawTug(); } });
+    rm.on("point", (d) => onPoint(d));
+    rm.on("rematch", () => { rematch.opp = true; tryRematch(); });
+  }
 
-  $("btn-start").onclick = startMatch;
-  $("btn-again").onclick = startMatch;
-  $("btn-menu").onclick = $("btn-menu0").onclick = () => { location.href = "../"; };
-  $("btn-share").onclick = () => T.shareGame("duel", "Дуэль на одном телефоне ⚡ Кто быстрее? Зови друга и жми");
+  // ---------- ход матча (хозяин решает) ----------
+  function hostStart() { send("start", {}); beginMatch(); setTimeout(hostNextRound, 900); }
+  function nextType() {
+    if (!order.length) { order = Object.keys(TYPES).sort(() => Math.random() - 0.5); if (order[0] === lastType) order.push(order.shift()); }
+    return (lastType = order.shift());
+  }
+  function hostNextRound() {
+    if (score.me >= WIN || score.opp >= WIN) return;
+    const d = { n: stats.rounds, type: nextType(), seed: Math.floor(Math.random() * 1e6), delay: 1.4 + Math.random() * 3.2 };
+    send("round", d); beginRound(d);
+  }
+  function collect(who, res) {
+    if (!R || R.decided || res.n !== R.n) return;
+    results[who] = res;
+    if (results.me && results.opp) decide();
+  }
+  function decide() {
+    R.decided = true;
+    const a = results.me, b = results.opp;
+    let w = null, note = "";
+    if (a.fs && !b.fs) { w = "opp"; note = `${me}: фальстарт`; }
+    else if (b.fs && !a.fs) { w = "me"; note = `${opp}: фальстарт`; }
+    else if (!a.fs && !b.fs) {
+      if (a.ms != null && (b.ms == null || a.ms < b.ms)) { w = "me"; note = `${a.ms} мс` + (b.ms != null ? ` против ${b.ms}` : ""); }
+      else if (b.ms != null) { w = "opp"; note = `${b.ms} мс` + (a.ms != null ? ` против ${a.ms}` : ""); }
+      else note = "Оба прозевали";
+    } else note = "Оба поспешили";
+    const d = { n: R.n, w: w === "me" ? "host" : w === "opp" ? "guest" : null, note, ms: { host: a.ms, guest: b.ms } };
+    send("point", d); onPoint(d);
+  }
+  function hostTug(myTaps, oppTaps) {
+    if (!R || R.decided) return;
+    tug.pos += (myTaps - oppTaps) * 0.045;
+    send("tug", { pos: tug.pos }); drawTug();
+    if (Math.abs(tug.pos) >= 1) {
+      R.decided = true;
+      const d = { n: R.n, w: tug.pos > 0 ? "host" : "guest", note: "Перетянул!" };
+      send("point", d); onPoint(d);
+    }
+  }
 
-  T.init({ header: "#2f7cf6", bg: "#2b1d14", back: "../" });
-  say("", "⚡", ""); pts();
+  function beginMatch() {
+    score = { me: 0, opp: 0 }; stats = { best: null, rounds: 0 }; order = []; rematch = { me: false, opp: false };
+    screen(null); show("board", true); board();
+  }
 
-  window.__game = {
-    get mode() { return mode; }, get score() { return score; }, get type() { return rt && rt.type; },
-    get live() { return rt && (rt.live || (rt.frame && rt.frame.hit)); },
-    tap(k) { if (mode === "play" && rt) TYPES[rt.type].tap(k); }, start: startMatch
+  function beginRound(d) {
+    stats.rounds = d.n + 1;
+    R = { n: d.n, type: d.type, seed: d.seed, t0: now, sent: false, decided: false, delay: d.delay, frameIdx: -1 };
+    results = {};
+    if (d.type === "green") R.goAt = R.t0 + INTRO + d.delay;
+    if (["fruit", "pairs", "stroop"].includes(d.type)) { const f = buildFrames(d.type, d.seed); R.frames = f.frames; R.endAt = R.t0 + INTRO + f.end; }
+    if (d.type === "tug") { tug = { pos: 0, myTaps: 0, sentT: 0 }; R.endAt = R.t0 + INTRO + 12; }
+    phase = "intro"; show("tug", false);
+    say(`Раунд ${d.n + 1}`, TYPES[d.type].title, TYPES[d.type].rule);
+    T.haptic("select");
+    if (mode === "bot") bot.plan(R);
+  }
+
+  function submit(res) {
+    if (!R || R.sent) return;
+    R.sent = true; res.n = R.n;
+    if (isHost()) collect("me", res); else send("res", res);
+    if (res.fs) say("", "Рано! 😬", "Фальстарт", "lose");
+    else if (res.ms != null) say("", `${res.ms} мс`, "Ждём соперника…", "");
+  }
+
+  function onPoint(d) {
+    if (!R || R.done) return;
+    R.done = true; phase = "result";
+    const host = isHost();
+    const w = d.w === null ? null : (d.w === "host") === host ? "me" : "opp";
+    if (w) score[w]++;
+    const myMs = d.ms ? (host ? d.ms.host : d.ms.guest) : null;
+    if (myMs != null && (!stats.best || myMs < stats.best)) stats.best = myMs;
+    board(); show("tug", false);
+    if (w === "me") { say("", "+1 🎉", d.note, "win"); T.haptic("notify", "success"); }
+    else if (w === "opp") { say("", "Мимо 😤", `Очко у ${opp} · ${d.note}`, "lose"); T.haptic("notify", "error"); }
+    else say("", "Ничья", d.note, "");
+    setTimeout(() => {
+      if (score.me >= WIN || score.opp >= WIN) return endMatch();
+      if (isHost()) hostNextRound();
+    }, 1900);
+  }
+
+  function endMatch() {
+    phase = "end"; R = null;
+    const win = score.me > score.opp;
+    $("end-emoji").textContent = win ? "🏆" : "😤";
+    $("end-title").textContent = win ? "Ты победил!" : `Победил ${opp}`;
+    $("end-score").textContent = `${score.me} : ${score.opp}`;
+    $("end-sub").textContent = `Раундов: ${stats.rounds}` + (stats.best ? ` · твоя лучшая реакция ${stats.best} мс` : "");
+    $("end-status").textContent = "";
+    const list = [["🔁 Реванш", "primary", askRematch]];
+    if (mode === "bot") list.push(["⚔️ Позвать друга", "", () => { toMenu(); createRoom(); }]);
+    list.push(["В меню", "ghost", toMenu]);
+    buttons("end-buttons", list);
+    screen("screen-end");
+  }
+  function askRematch() {
+    if (mode === "bot") return startBot();
+    rematch.me = true; send("rematch", {}); $("end-status").innerHTML = `<span class="dotsa">Ждём ${opp}</span>`; tryRematch();
+  }
+  function tryRematch() {
+    if (phase !== "end") return;
+    if (!rematch.me) { $("end-status").textContent = `${opp} хочет реванш!`; return; }
+    if (rematch.opp && isHost()) hostStart();
+  }
+
+  // ---------- бот ----------
+  let botH = {};
+  const bot = {
+    plan(r) {
+      if (r.type === "green") {
+        const fs = Math.random() < 0.08;
+        const ms = Math.round(230 + Math.random() * 190);
+        setTimeout(() => botRes(fs ? { fs: true } : { ms }), ((fs ? INTRO + r.delay * Math.random() : INTRO + r.delay) * 1000) + (fs ? 0 : ms));
+      } else if (r.frames) {
+        const hit = r.frames.find((f) => f.hit), ms = Math.round(320 + Math.random() * 260);
+        if (Math.random() < 0.06) { const f = r.frames[1]; setTimeout(() => botRes({ fs: true }), (INTRO + f.t + 0.3) * 1000); }
+        else setTimeout(() => botRes({ ms }), (INTRO + hit.t) * 1000 + ms);
+      } else if (r.type === "tug") {
+        const rate = 6 + Math.random() * 2.5;
+        r.botTimer = setInterval(() => { if (!R || R !== r || r.decided) return clearInterval(r.botTimer); if (now > r.t0 + INTRO) hostTug(0, 1); }, 1000 / rate);
+      }
+    }
   };
+  function botRes(res) { const n = R && R.n; if (R) collect("opp", Object.assign(res, { n })); }
+  function startBot() {
+    if (room) { try { room.close(); } catch (_) {} room = null; }
+    mode = "bot"; opp = "🤖 Бот"; botH = {};
+    hostStart();
+  }
+
+  // ---------- цикл ----------
+  let last = 0;
+  function frame(ts) {
+    now = ts / 1000;
+    if (R && !R.done) {
+      const lt = now - R.t0;
+      if (phase === "intro" && lt >= INTRO) {
+        phase = "play";
+        if (R.type === "green") say("Реакция", "Ждём…", "не жми раньше времени", "wait");
+        if (R.type === "tug") { say("", "ТАПАЙ!", "", ""); show("tug", true); drawTug(); }
+        T.haptic("impact", "heavy");
+      }
+      if (phase === "play" && !R.sent) {
+        if (R.type === "green") {
+          if (now >= R.goAt && !R.live) { R.live = true; say("", "ЖМИ!", "", "go"); T.haptic("impact", "heavy"); }
+          if (now > R.goAt + 3) submit({ ms: null });
+        } else if (R.frames) {
+          const t = now - R.t0 - INTRO;
+          let idx = -1; for (let i = 0; i < R.frames.length; i++) if (t >= R.frames[i].t) idx = i;
+          if (idx !== R.frameIdx && idx >= 0) {
+            R.frameIdx = idx; const f = R.frames[idx];
+            if (f.hit) R.hitShown = now;
+            say(TYPES[R.type].title, f.big, "", "", f.color);
+          }
+          if (now >= R.endAt) submit({ ms: null });
+        }
+      }
+      if (phase === "play" && R.type === "tug") {
+        tug.sentT -= 1 / 60;
+        if (tug.myTaps && (isHost() || tug.sentT <= 0)) {
+          if (isHost()) hostTug(tug.myTaps, 0); else send("taps", { c: tug.myTaps });
+          tug.myTaps = 0; tug.sentT = 0.12;
+        }
+        if (isHost() && now >= R.endAt && !R.decided) {
+          R.decided = true; const d = { n: R.n, w: tug.pos === 0 ? null : tug.pos > 0 ? "host" : "guest", note: "Время вышло" };
+          send("point", d); onPoint(d);
+        }
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  function drawTug() { $("tug-me").style.width = Math.max(0, Math.min(100, 50 + tug.pos * 50)) + "%"; }
+
+  function tap() {
+    if (!R || R.done || phase !== "play") return;
+    if (R.type === "tug") { tug.myTaps++; T.haptic("impact", "light"); return; }
+    if (R.sent) return;
+    if (R.type === "green") {
+      if (!R.live) return submit({ fs: true });
+      return submit({ ms: Math.round((now - R.goAt) * 1000) });
+    }
+    const f = R.frames[R.frameIdx];
+    if (!f) return;
+    if (f.hit) submit({ ms: Math.round((now - R.hitShown) * 1000) }); else submit({ fs: true });
+  }
+  $("arena").addEventListener("pointerdown", (e) => { e.preventDefault(); tap(); });
+  window.addEventListener("keydown", (e) => { if (e.code === "Space") tap(); });
+
+  $("m-invite").onclick = createRoom;
+  $("m-bot").onclick = () => { screen(null); startBot(); };
+  $("m-menu").onclick = () => { location.href = "../"; };
+  T.init({ header: "#2f7cf6", bg: "#2f7cf6", back: "../" });
+  me = T.playerName() === "Друг" ? "Ты" : T.playerName();
+  const fake = { on(t, fn) { (botH[t] = botH[t] || []).push(fn); return fake; } };
+  const inv = Net.readInvite();
+  if (inv) joinRoom(inv); else toMenu();
+  requestAnimationFrame(frame);
+
+  window.__game = { get phase() { return phase; }, get R() { return R; }, get score() { return score; }, get roomId() { return room && room.id; }, tap, startBot, createRoom };
 })();
