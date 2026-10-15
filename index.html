@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Хрупкий груз</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud-row">
+    <div class="pill" id="hud-time">60</div>
+    <div class="pill" id="hud-dist">0 м</div>
+  </div>
+  <div class="cargo-row" id="hud-cargo"></div>
+</div>
+
+<div id="controls" class="hidden">
+  <button class="ctl" id="btn-back" aria-label="Назад">◀</button>
+  <button class="ctl gas" id="btn-gas" aria-label="Газ">▶</button>
+</div>
+
+<div id="screen-start" class="screen">
+  <div class="card">
+    <div class="logo">📦🚚</div>
+    <h1>Хрупкий груз</h1>
+    <p class="sub">60 секунд. Кочки. Шаткая гора коробок.<br>Довези как можно дальше и ничего не урони.</p>
+    <div id="challenge" class="challenge hidden"></div>
+    <div class="rules">
+      <div><b>▶</b> газ &nbsp;·&nbsp; <b>◀</b> назад и тормоз</div>
+      <div>Очки = метры + 30 за каждый уцелевший груз</div>
+    </div>
+    <button class="btn primary" id="btn-start">Поехали</button>
+    <div class="best" id="best-start"></div>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏁</div>
+    <h2 id="end-title">Финиш</h2>
+    <div class="score" id="end-score">0</div>
+    <div class="breakdown" id="end-breakdown"></div>
+    <div class="verdict" id="end-verdict"></div>
+    <button class="btn primary" id="btn-challenge">Бросить вызов другу</button>
+    <button class="btn" id="btn-again">Ещё раз</button>
+    <button class="btn ghost" id="btn-channel">Канал «Кооп с друзьями»</button>
+    <div class="best" id="best-end"></div>
+  </div>
+</div>
+
+<script src="matter.min.js"></script>
+<script src="config.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
