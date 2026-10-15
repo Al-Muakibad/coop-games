@@ -172,7 +172,7 @@
     if (mode === "bot") return startMatch(Math.floor(Math.random() * 1e5), Math.random() < 0.5);
     rematch.me = true; send("rematch", {}); $("end-status").textContent = `Ждём ${opp}…`; tryRematch();
   }
-  function tryRematch() { if (rematch.me && rematch.opp && isHost()) hostStart(); else if (rematch.opp && !rematch.me) $("end-status").textContent = `${opp} хочет реванш!`; }
+  function tryRematch() { if (rematch.me && rematch.opp && isHost()) hostStart(); else if (rematch.opp && !rematch.me) $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${opp} хочет реванш!</b>`; { const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш"; } T.haptic("notify", "warning"); }
   function hostStart() { const d = { seed: Math.floor(Math.random() * 1e5), hostFirst: Math.random() < 0.5 }; send("start", d); startMatch(d.seed, d.hostFirst); }
   function leave() { if (room) { room.close(); room = null; } }
   function toMenu() { phase = "menu"; ["hud", "controls", "screen-end"].forEach((s) => $(s).classList.add("hidden")); $("screen-menu").classList.remove("hidden"); }

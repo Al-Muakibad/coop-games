@@ -700,7 +700,7 @@
   }
   function tryRematch() {
     if (phase !== "end") return;
-    if (!rematch.me) { $("end-status").textContent = `${opp.name} хочет реванш!`; return; }
+    if (!rematch.me) { $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${opp.name} хочет реванш!</b>`; { const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш"; } T.haptic("notify", "warning"); return; }
     if (rematch.opp && isHost()) hostStartMatch();
   }
 

@@ -3,7 +3,7 @@
   "use strict";
   const T = window.TG;
   const $ = (id) => document.getElementById(id);
-  const WIN = 3, INTRO = 2.2;
+  const WIN = 3, INTRO = 3;
 
   function rng(seed) {
     let a = (seed * 2654435761) >>> 0 || 1;
@@ -23,7 +23,7 @@
   // Кадры «смотри и жми» строятся одинаково на обоих телефонах из общего seed
   function buildFrames(type, seed) {
     const r = rng(seed), pick = (a) => a[Math.floor(r() * a.length)];
-    const hitAt = 3 + Math.floor(r() * 5), base = type === "fruit" ? 0.65 : type === "pairs" ? 0.85 : 0.9;
+    const hitAt = 2 + Math.floor(r() * 3), base = type === "fruit" ? 0.65 : type === "pairs" ? 0.85 : 0.9;
     const frames = []; let t = 0;
     for (let i = 0; i <= hitAt + 2; i++) {
       const hit = i === hitAt; let f;
@@ -124,6 +124,8 @@
   function bindGame(rm) {
     rm.on("start", () => beginMatch());
     rm.on("round", (d) => beginRound(d));
+    rm.on("ready", (d) => { if (isHost()) onReady("opp", d.n); });
+    rm.on("go", (d) => onGo(d));
     rm.on("res", (d) => { if (isHost()) collect("opp", d); });
     rm.on("taps", (d) => { if (isHost() && R && R.type === "tug") hostTug(0, d.c); });
     rm.on("tug", (d) => { if (!isHost()) { tug.pos = -d.pos; drawTug(); } });
@@ -178,16 +180,37 @@
     window.Stats && Stats.gameStart({ mode });
   }
 
+  // Раунд: сначала правила и кнопка «Готов» у обоих, потом 3-2-1 и игра
   function beginRound(d) {
     stats.rounds = d.n + 1;
-    R = { n: d.n, type: d.type, seed: d.seed, t0: now, sent: false, decided: false, delay: d.delay, frameIdx: -1 };
+    R = { n: d.n, type: d.type, seed: d.seed, t0: null, sent: false, decided: false, delay: d.delay, frameIdx: -1, ready: { me: false, opp: false } };
     results = {};
-    if (d.type === "green") R.goAt = R.t0 + INTRO + d.delay;
-    if (["fruit", "pairs", "stroop"].includes(d.type)) { const f = buildFrames(d.type, d.seed); R.frames = f.frames; R.endAt = R.t0 + INTRO + f.end; }
-    if (d.type === "tug") { tug = { pos: 0, myTaps: 0, sentT: 0 }; R.endAt = R.t0 + INTRO + 12; }
-    phase = "intro"; show("tug", false);
+    phase = "rules"; show("tug", false);
     say(`Раунд ${d.n + 1}`, TYPES[d.type].title, TYPES[d.type].rule);
+    const b = $("ready-btn"); b.classList.remove("hidden"); b.disabled = false; b.textContent = "Понятно, готов!";
     T.haptic("select");
+    if (mode === "bot") setTimeout(() => onReady("opp", R.n), 900 + Math.random() * 900);
+  }
+  function pressReady() {
+    if (!R || phase !== "rules" || R.ready.me) return;
+    const b = $("ready-btn"); b.disabled = true; b.textContent = `Ждём ${opp}…`;
+    T.haptic("impact", "medium");
+    if (isHost()) onReady("me", R.n); else send("ready", { n: R.n });
+  }
+  function onReady(who, n) {
+    if (!R || R.n !== n || phase !== "rules") return;
+    R.ready[who] = true;
+    if (who === "opp") $("small").textContent = `${opp} готов ✅`;
+    if (isHost() && R.ready.me && R.ready.opp) { send("go", { n }); onGo({ n }); }
+  }
+  function onGo(d) {
+    if (!R || R.n !== d.n || phase !== "rules") return;
+    $("ready-btn").classList.add("hidden");
+    R.t0 = now;
+    if (R.type === "green") R.goAt = R.t0 + INTRO + R.delay;
+    if (["fruit", "pairs", "stroop"].includes(R.type)) { const f = buildFrames(R.type, R.seed); R.frames = f.frames; R.endAt = R.t0 + INTRO + f.end; }
+    if (R.type === "tug") { tug = { pos: 0, myTaps: 0, sentT: 0 }; R.endAt = R.t0 + INTRO + 12; }
+    phase = "intro";
     if (mode === "bot") bot.plan(R);
   }
 
@@ -238,7 +261,11 @@
   }
   function tryRematch() {
     if (phase !== "end") return;
-    if (!rematch.me) { $("end-status").textContent = `${opp} хочет реванш!`; return; }
+    if (!rematch.me) {
+      $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${opp} хочет реванш!</b>`;
+      const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш";
+      T.haptic("notify", "warning"); return;
+    }
     if (rematch.opp && isHost()) hostStart();
   }
 
@@ -271,8 +298,12 @@
   let last = 0;
   function frame(ts) {
     now = ts / 1000;
-    if (R && !R.done) {
+    if (R && !R.done && R.t0 != null) {
       const lt = now - R.t0;
+      if (phase === "intro" && lt < INTRO) {
+        const c = Math.ceil(INTRO - lt);
+        if (R.cd !== c) { R.cd = c; say(TYPES[R.type].title, String(c), "приготовься", ""); T.haptic("impact", "light"); }
+      }
       if (phase === "intro" && lt >= INTRO) {
         phase = "play";
         if (R.type === "green") say("Реакция", "Ждём…", "не жми раньше времени", "wait");
@@ -322,7 +353,8 @@
     if (!f) return;
     if (f.hit) submit({ ms: Math.round((now - R.hitShown) * 1000) }); else submit({ fs: true });
   }
-  $("arena").addEventListener("pointerdown", (e) => { e.preventDefault(); tap(); });
+  $("arena").addEventListener("pointerdown", (e) => { if (e.target.id === "ready-btn") return; e.preventDefault(); tap(); });
+  $("ready-btn").addEventListener("click", (e) => { e.stopPropagation(); pressReady(); });
   window.addEventListener("keydown", (e) => { if (e.code === "Space") tap(); });
 
   $("m-invite").onclick = createRoom;

@@ -160,7 +160,7 @@
     rm.on("first", (d) => begin(d.hostFirst));
     rm.on("fire", onFire);
     rm.on("res", onRes);
-    rm.on("rematch", () => { rematch.opp = true; if (phase === "end") { if (rematch.me) newGame(); else $("end-status").textContent = `${opp} хочет реванш!`; } });
+    rm.on("rematch", () => { rematch.opp = true; if (phase === "end") { if (rematch.me) newGame(); else $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${opp} хочет реванш!</b>`; { const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш"; } T.haptic("notify", "warning"); } });
     rm.on("peer-left", () => {
       if (phase === "menu") return;
       $("end-emoji").textContent = "🚪"; $("end-title").textContent = `${opp} вышел из игры`; $("end-sub").textContent = ""; $("end-status").textContent = "";
