@@ -275,8 +275,8 @@
     const x = p.x, sw = Math.sin(p.walk || 0), f = p.dir || 1;
     const pants = "#3f4a2f", skin = "#f1c7a0", helm = "#4b5a34";
     if (!p.st) {
-      ctx.save(); ctx.translate(x - 4, G - 30); ctx.rotate(sw * 0.45); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 29); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 9 * f, 5); ctx.restore();
-      ctx.save(); ctx.translate(x + 4, G - 30); ctx.rotate(-sw * 0.45); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 29); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 9 * f, 5); ctx.restore();
+      ctx.save(); ctx.translate(x - 4, G - 30); ctx.rotate(sw * 0.22); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 28); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 6.5 * f, 4); ctx.restore();
+      ctx.save(); ctx.translate(x + 4, G - 30); ctx.rotate(-sw * 0.22); ctx.fillStyle = pants; ctx.fillRect(-3.5, 0, 7, 28); ctx.fillStyle = "#1d1d1d"; ctx.fillRect(-3.5, 25, 6.5 * f, 4); ctx.restore();
       ctx.fillStyle = shirt; ctx.beginPath(); ctx.roundRect(x - 11, G - 55, 22, 28, 5); ctx.fill();
       ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x - 11, G - 42, 22, 4);
       ctx.save(); ctx.translate(x, G - 51); ctx.rotate(-sw * 0.5); ctx.fillStyle = shirt; ctx.fillRect(-3, 0, 6, 20); ctx.fillStyle = skin; ctx.fillRect(-3, 18, 6, 4); ctx.restore();
@@ -319,7 +319,9 @@
     drawBg(t); drawPickups(t);
     const hp = hiderPos();
     const hiderColor = iHide() ? "#3b82f6" : "#ef4444";
-    if (R && (phase === "prep" || phase === "live" || phase === "over")) drawSoldier(hp, hiderColor);
+    if (R && (phase === "prep" || phase === "live" || phase === "over")) {
+      ctx.save(); ctx.beginPath(); ctx.rect(-WW, -WH, WW * 3, WH + G); ctx.clip(); drawSoldier(hp, hiderColor); ctx.restore();
+    }
     if (layerDirty) drawLayer();
     ctx.drawImage(layer, 0, 0, WW, WH);
     if (view === "hider") {
@@ -526,10 +528,11 @@
     rm.on("round", (d) => beginRound(d));
     rm.on("pos", (d) => { if (R && !R.iHide) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; } });
     rm.on("hp", (d) => { if (match) { match.hp.opp = d.hp; flashBar("h2"); hud(); } });
-    rm.on("ko", () => { if (isHost()) setTimeout(() => hostEndRound("ko"), 500); });
-    rm.on("out", () => { if (isHost()) setTimeout(() => hostEndRound("ammo"), 1300); });
+    rm.on("ko", (d) => { if (isHost()) setTimeout(() => hostEndRound("ko", d && d.n), 500); });
+    rm.on("out", (d) => { if (isHost()) setTimeout(() => hostEndRound("ammo", d && d.n), 1600); });
+    rm.on("hitres", (d) => onHitRes(d));
     rm.on("emo", (d) => bubble("opp", d.e));
-    rm.on("shot", (d) => applyShot(d, false));
+    rm.on("shot", (d) => onShotAtMe(d));
     rm.on("pick", (d) => { if (R && R.pickups[d.i]) R.pickups[d.i].taken = true; });
     rm.on("rend", (d) => onRoundEnd(d));
     rm.on("mend", () => endMatch());
@@ -550,8 +553,8 @@
     const d = { n, hiderHost: n % 2 === 1, pick };
     send("round", d); beginRound(d);
   }
-  function hostEndRound(reason) {
-    if (!R || R.ended) return;
+  function hostEndRound(reason, n) {
+    if (!R || R.ended || (n != null && R.n !== n)) return;
     const d = { n: R.n, reason };
     send("rend", d); onRoundEnd(d);
     const next = R.n + 1;
@@ -593,7 +596,7 @@
     hud();
     T.haptic("impact", "medium");
     banner(`РАУНД ${d.n + 1} / ${ROUNDS}`, iH ? "ТЫ ПРЯЧЕШЬСЯ" : "ТЫ СНАЙПЕР",
-      (iH ? "Твой остров. Беги между укрытиями, собирай $" : `Остров соперника · ${R.mag} патрона`) + ` · ${THEMES[map.theme].name}`);
+      (iH ? "Твой остров. Беги между укрытиями, собирай $" : `Остров соперника · ${R.mag} ${plural(R.mag, "патрон", "патрона", "патронов")}`) + ` · ${THEMES[map.theme].name}`);
     if (mode === "bot") bot.beginRound();
     window.Stats && Stats.state({ round: d.n, hide: iH, hp: match.hp.me });
   }
@@ -605,50 +608,71 @@
   }
 
   // ---------- выстрел ----------
+  // Попадание проверяет тот, в кого стреляют: у него точная позиция своего человечка
+  function hitTest(p, x, y) {
+    const dx = x - p.x;
+    if (!p.st) {
+      if (dx * dx + (y - (G - 61)) ** 2 <= 9.5 * 9.5) return "head";
+      if (Math.abs(dx) <= 11 && y >= G - 55 && y <= G - 27) return "body";
+      if (Math.abs(dx) <= 8 && y >= G - 30 && y <= G) return "body";
+    } else {
+      if (dx * dx + (y - (G - 37)) ** 2 <= 9.5 * 9.5) return "head";
+      if (Math.abs(dx) <= 11 && y >= G - 36 && y <= G - 14) return "body";
+      if (Math.abs(dx) <= 12 && y >= G - 16 && y <= G) return "body";
+    }
+    return null;
+  }
+  let lastFire = 0, shotId = 0;
   function fire() {
-    if (phase !== "live" || !R || R.iHide || R.bullets <= 0) return;
-    R.bullets--; R.shots++;
-    const x = aim.x, y = aim.y, target = remote;
-    const b = bodyRect(target);
-    let res = null;
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= G) res = y < b.y + 18 ? "head" : "body";
-    const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * (opp.up.armor || 0))) : 0;
-    const d = { x, y, res, dmg };
-    send("shot", d); applyShot(d, true);
+    if (phase !== "live" || !R || R.iHide || R.bullets <= 0 || now - lastFire < 0.35) return;
+    lastFire = now; R.bullets--; R.shots++;
+    const d = { id: ++shotId, x: aim.x, y: aim.y };
+    send("shot", d); impact(d, true);
     T.haptic("impact", "heavy"); Snd.shot(); kick = 1;
     hud();
+    if (mode === "bot") {                       // бот прячется у нас локально — проверяем по его настоящей позиции
+      const res = hitTest(bot.pos, d.x, d.y), dmg = res ? (res === "head" ? HEAD : BODY) : 0;
+      setTimeout(() => onHitRes({ id: d.id, res, dmg, dist: Math.hypot(d.x - bot.pos.x, d.y - (G - 35)) }), 120);
+    }
     if (R.bullets <= 0) {
-      if (isHost()) setTimeout(() => hostEndRound("ammo"), 1300); else send("out", {});
+      const n = R.n;
+      if (isHost()) setTimeout(() => hostEndRound("ammo", n), 1600); else send("out", { n });
     }
   }
-  function applyShot(d, byMe) {
-    if (!R) return;
+  function impact(d, byMe) {                     // дырка, пыль, звук — у обоих
     const c = map.covers.find((c) => d.x >= c.x && d.x <= c.x + c.w && d.y >= G - c.h && d.y <= G && !inOpening(c, d.x, d.y));
     if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 4 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); if (byMe) setTimeout(() => Snd.thud(), 90); }
     fx.push({ kind: "flash", x: d.x, y: d.y, t: 0, life: 0.25 });
     if (!byMe) Snd.far();
-    if (d.res) {
-      fx.push({ kind: "txt", text: `−${d.dmg}`, color: "#ff5a5a", x: d.x, y: d.y - 8, t: 0, life: 1 });
-      if (byMe) {
-        match.earned += d.res === "head" ? 20 : 10; match.hits++; Snd.hit();
-        msg(d.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
-        if (mode === "bot") { match.hp.opp -= d.dmg; flashBar("h2"); if (match.hp.opp <= 0) setTimeout(() => hostEndRound("ko"), 500); if (Math.random() < 0.5) setTimeout(() => bubble("opp", pick(["😡", "😱", "🤡"])), 600); }
-      } else {
-        match.hp.me -= d.dmg; flashBar("h1"); shake = 1; Snd.hit();
-        send("hp", { hp: match.hp.me });
-        msg(d.res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error");
-        if (match.hp.me <= 0) { if (isHost()) setTimeout(() => hostEndRound("ko"), 500); else send("ko", {}); }
-        if (mode === "bot" && Math.random() < 0.6) setTimeout(() => bubble("opp", pick(["😂", "😎", "🖕", "🔥"])), 700);
-      }
-    } else if (byMe) {
-      const p = remote, dist = Math.hypot(d.x - p.x, d.y - (G - 35));
-      msg(dist < 30 ? "Совсем рядом! 😬" : dist < 70 ? "Тепло…" : "Мимо", 900);
-    } else {
-      const dist = Math.hypot(d.x - pos.x, d.y - (G - 35));
-      if (dist < 40) { msg("Пуля рядом! 😱", 900); T.haptic("impact", "rigid"); shake = 0.4; }
-    }
+  }
+  function onShotAtMe(d) {                       // в меня стреляли
+    if (!R || !R.iHide || R.ended) return;
+    impact(d, false);
+    const res = hitTest(pos, d.x, d.y);
+    const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * me.up.armor)) : 0;
+    const dist = Math.hypot(d.x - pos.x, d.y - (G - 35));
+    send("hitres", { id: d.id, res, dmg, dist: Math.round(dist) });
+    if (res) {
+      fx.push({ kind: "txt", text: `−${dmg}`, color: "#ff5a5a", x: d.x, y: d.y - 8, t: 0, life: 1 });
+      match.hp.me -= dmg; flashBar("h1"); shake = 1; Snd.hit();
+      send("hp", { hp: match.hp.me });
+      msg(res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error");
+      if (match.hp.me <= 0) { const n = R.n; if (isHost()) setTimeout(() => hostEndRound("ko", n), 500); else send("ko", { n }); }
+      if (mode === "bot" && Math.random() < 0.6) setTimeout(() => bubble("opp", pick(["😂", "😎", "🖕", "🔥"])), 700);
+    } else if (dist < 40) { msg("Пуля рядом! 😱", 900); T.haptic("impact", "rigid"); shake = 0.4; }
     hud();
   }
+  function onHitRes(r) {                          // ответ на мой выстрел
+    if (!R || R.iHide) return;
+    if (r.res) {
+      fx.push({ kind: "txt", text: `−${r.dmg}`, color: "#ff5a5a", x: aim.x, y: aim.y - 8, t: 0, life: 1 });
+      match.earned += r.res === "head" ? 20 : 10; match.hits++; Snd.hit();
+      msg(r.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
+      if (mode === "bot") { match.hp.opp -= r.dmg; flashBar("h2"); if (match.hp.opp <= 0) { const n = R.n; setTimeout(() => hostEndRound("ko", n), 500); } if (Math.random() < 0.5) setTimeout(() => bubble("opp", pick(["😡", "😱", "🤡"])), 600); }
+    } else msg(r.dist < 30 ? "Совсем рядом! 😬" : r.dist < 70 ? "Тепло…" : "Мимо", 900);
+    hud();
+  }
+  const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
   function flashBar(id) { const el = $(id); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 180); }
   function banner(a, b, c) {
@@ -746,16 +770,14 @@
         else { tx = WW / 2 + Math.sin(now * 0.6) * 150; ty = 185 + Math.sin(now * 1.1) * 15; }
         const k = Math.min(1, dt * (vis ? 7 : 1.5));
         a.x += (tx - a.x) * k; a.y += (ty - a.y) * k;
-        if (R.bullets <= 0 && !R.botOut) { R.botOut = true; setTimeout(() => hostEndRound("ammo"), 1300); }
+        if (R.bullets <= 0 && !R.botOut) { R.botOut = true; const n = R.n; setTimeout(() => hostEndRound("ammo", n), 1600); }
         if (now > this.nextShot && R.bullets > 0) {
           const b = bodyRect(pos), onTarget = a.x > b.x - 3 && a.x < b.x + b.w + 3 && a.y > b.y && a.y < G;
           const wild = !vis && this.lastSeen && Math.random() < 0.006;
           if ((vis && onTarget && now - this.seenAt > 0.7) || wild) {
             R.bullets--; this.nextShot = now + 1.1; this.headAim = Math.random() < 0.3;
             const x = a.x + (Math.random() - 0.5) * 10, y = a.y + (Math.random() - 0.5) * 8;
-            let res = null; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= G) res = y < b.y + 18 ? "head" : "body";
-            const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * me.up.armor)) : 0;
-            emit("shot", { x, y, res, dmg });
+            emit("shot", { id: 0, x, y });
           }
         }
       }
@@ -784,7 +806,7 @@
       const left = Math.ceil(R.start + PREP - now);
       if (left !== R.lastBeep && left > 0) { R.lastBeep = left; Snd.beep(false); }
       big(left > 0 ? String(left) : "");
-      if (!R.iHide && !R.prepMsg) { R.prepMsg = true; msg("Противник прячется…", 2900); }
+
       if (now >= R.start + PREP) goLive();
     }
     if (R && (phase === "prep" || phase === "live")) {

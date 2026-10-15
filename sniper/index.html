@@ -27,7 +27,7 @@
   .bubble { position: fixed; top: calc(62px + env(safe-area-inset-top)); font-size: 46px; z-index: 9; pointer-events: none; opacity: 0; transform: scale(.3); transition: opacity .2s, transform .25s cubic-bezier(.2,1.6,.4,1); filter: drop-shadow(0 3px 0 rgba(0,0,0,.4)); }
   .bubble.on { opacity: 1; transform: scale(1); }
   #bub-me { left: 14px; } #bub-opp { right: 14px; }
-  #banner { position: fixed; left: 0; right: 0; top: 30%; z-index: 9; display: flex; flex-direction: column; align-items: center; pointer-events: none;
+  #banner { position: fixed; left: 0; right: 0; top: 24%; z-index: 9; display: flex; flex-direction: column; align-items: center; pointer-events: none;
     animation: ban 2.4s ease forwards; }
   #banner .b0 { font-size: 15px; font-weight: 900; letter-spacing: 3px; color: #ffd34d; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
   #banner .b1 { font-size: 40px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; text-align: center; line-height: 1.05; padding: 0 12px; }
@@ -50,7 +50,7 @@
   #msg { position: fixed; left: 0; right: 0; top: 34%; text-align: center; font-size: 30px; font-weight: 900; color: #fff;
     -webkit-text-stroke: 3px #000; paint-order: stroke fill; pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 6; padding: 0 16px; line-height: 1.15; }
   #msg.on { opacity: 1; }
-  #big { position: fixed; left: 0; right: 0; top: 40%; text-align: center; font-size: 84px; font-weight: 900; color: #ffd34d;
+  #big { position: fixed; left: 0; right: 0; top: 56%; text-align: center; font-size: 84px; font-weight: 900; color: #ffd34d;
     -webkit-text-stroke: 5px #000; paint-order: stroke fill; pointer-events: none; z-index: 6; }
   #controls { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 14px calc(16px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; align-items: flex-end; z-index: 5; pointer-events: none; }
   #controls > * { pointer-events: auto; }
