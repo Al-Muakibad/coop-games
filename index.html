@@ -7,10 +7,11 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="shared/tg.js"></script>
 <script src="shared/stats.js"></script>
+<script src="shared/feedback.js"></script>
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -47,7 +48,7 @@
   .tag.new { background:var(--accent); color:#fff; }
   .best { color:var(--accent); font-weight:800; font-size:13px; margin-top:4px; }
   .tabs { display:flex; gap:8px; margin:0 0 12px; background:rgba(255,255,255,.5); padding:5px; border-radius:16px; border:3px solid var(--ink); }
-  .tab { flex:1; padding:10px; border:0; border-radius:11px; background:transparent; font:inherit; font-weight:900; font-size:16px; color:var(--ink); }
+  .tab { flex:1; padding:10px; border:0; border-radius:11px; background:transparent; font:inherit; font-weight:900; font-size:14px; color:var(--ink); padding:10px 4px; white-space:nowrap; }
   .tab.on { background:var(--accent); color:#fff; box-shadow:0 3px 0 var(--ink); }
   .secnote { margin:0 4px 12px; color:var(--muted); font-size:14px; line-height:1.35; }
   .hidden { display:none !important; }
@@ -63,7 +64,7 @@
     <p>Мини-игры прямо в Telegram.<br>Новые — каждую неделю в канале.</p>
   </header>
 
-  <div class="tabs"><button class="tab on" data-t="friends">👥 С друзьями</button><button class="tab" data-t="solo">🙋 Для одного</button></div>
+  <div class="tabs"><button class="tab on" data-t="friends">👥 1 на 1</button><button class="tab" data-t="party">🎉 Компания</button><button class="tab" data-t="solo">🙋 Один</button></div>
 
   <section data-sec="friends">
   <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
@@ -91,6 +92,16 @@
     <div class="icon" style="background:#ffd34d">⚡</div>
     <div class="info"><b>Дуэль</b><span>Кто быстрее нажмёт — 5 видов раундов на реакцию.</span>
       <i class="tag">⚔️ онлайн</i> <i class="tag">🤖 бот</i></div>
+  </a>
+  </section>
+
+  <section data-sec="party" class="hidden">
+  <p class="secnote">До 6 человек: одна ссылка в общий чат — все заходят в комнату, каждый со своего телефона. Можно командами 2 на 2, 2 на 1… Пустые места займут боты.</p>
+  <!--PARTY-->
+  <a class="game" href="./zahvat/">
+    <div class="icon" style="background:#c4b5fd">🏰</div>
+    <div class="info"><b>Захват</b><span>Крепости копят армию — веди войска пальцем и захвати всю карту.</span>
+      <i class="tag new">НОВОЕ</i> <i class="tag">🎉 до 6</i> <i class="tag">🤖 боты</i></div>
   </a>
   </section>
 
@@ -126,12 +137,14 @@
   <div class="foot">
     <button id="share">Позвать друга</button>
     <button id="channel">Канал</button>
+    <button id="fb">💬 Идея / баг</button>
   </div>
 </main>
 <script>
   TG.init({ header: "#8fd3ff", bg: "#ffe7b8" });
   if (TG.tg && TG.tg.BackButton) try { TG.tg.BackButton.hide(); } catch (_) {}
   document.getElementById("channel").onclick = TG.openChannel;
+  document.getElementById("fb").onclick = () => Feedback.open("hub");
   document.getElementById("share").onclick = () =>
     TG.openLink(`https://t.me/share/url?url=${encodeURIComponent("https://t.me/" + TG.BOT + "?startapp")}&text=${encodeURIComponent("Го рубиться в мини-игры прямо в Телеге 🎮")}`);
   function tab(t) {

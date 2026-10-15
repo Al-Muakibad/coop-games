@@ -88,3 +88,83 @@
   }
   window.Net = { open, inviteLink, readInvite };
 })();
+
+/* ---------- Комнаты на несколько игроков (до 8): хозяин ведёт список участников ----------
+   const room = await Net.openParty(game, roomId|null, {name, max})
+   room.players — [{id, name, host}] в порядке входа; room.me; room.isHost
+   события: "roster" (список изменился), "host-left", "full", любые игровые типы
+   room.send(type, data) — всем; room.lock() — хозяин закрывает вход (игра началась) */
+(function () {
+  "use strict";
+  const PREFIX = "coopgames-kg7x/v1p";
+  const rid = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+  async function openParty(game, roomId, opts) {
+    opts = opts || {};
+    const BROKERS = window.NET_BROKERS || ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
+    let client = null, err = null;
+    for (const url of BROKERS) {
+      try {
+        client = await new Promise((res, rej) => {
+          const c = mqtt.connect(url, { clientId: "kgp_" + rid(10), clean: true, connectTimeout: 7000, reconnectPeriod: 2500, keepalive: 30 });
+          const to = setTimeout(() => { try { c.end(true); } catch (_) {} rej(new Error("timeout")); }, 8000);
+          c.once("connect", () => { clearTimeout(to); res(c); });
+          c.once("error", (e) => { clearTimeout(to); try { c.end(true); } catch (_) {} rej(e); });
+        });
+        break;
+      } catch (e) { err = e; }
+    }
+    if (!client) throw err || new Error("no broker");
+    const isHost = !roomId, id = roomId || rid(6), topic = `${PREFIX}/${game}/${id}`, max = opts.max || 6;
+    const me = { id: "p_" + rid(8), name: (opts.name || "Игрок").slice(0, 20), host: isHost };
+    const handlers = {}, seen = {};
+    let players = isHost ? [me] : [], locked = false, closed = false, hostSeen = Date.now();
+    const emit = (t, d, f) => (handlers[t] || []).forEach((fn) => { try { fn(d, f); } catch (e) { console.error(e); } });
+    const send = (t, d) => { if (!closed) client.publish(topic, JSON.stringify({ f: me.id, n: me.name, h: isHost ? 1 : 0, t, d: d === undefined ? null : d })); };
+    const roster = () => { send("roster", players); emit("roster", players); };
+    client.on("message", (_t, buf) => {
+      let m; try { m = JSON.parse(buf.toString()); } catch (_) { return; }
+      if (!m || m.f === me.id) return;
+      seen[m.f] = Date.now();
+      if (isHost) {
+        if (m.t === "hi" || m.t === "ping") {
+          if (!players.some((p) => p.id === m.f)) {
+            if (locked || players.length >= max) { send("full", { to: m.f, started: locked }); return; }
+            players.push({ id: m.f, name: m.n || "Игрок", host: false }); roster();
+          } else if (m.t === "hi") send("roster", players);
+          return;
+        }
+        if (m.t === "bye") { players = players.filter((p) => p.id !== m.f); roster(); emit("left", m.f); return; }
+        if (!players.some((p) => p.id === m.f)) return;
+      } else {
+        if (m.h) hostSeen = Date.now();
+        if (m.t === "roster" && m.h) { players = m.d || []; emit("roster", players); return; }
+        if (m.t === "full") { if (m.d && m.d.to === me.id) emit("full", m.d); return; }
+        if (m.t === "hi" || m.t === "ping") return;
+        if (m.t === "bye" && m.h) { emit("host-left"); return; }
+      }
+      emit(m.t, m.d, m.f);
+    });
+    client.on("connect", () => { client.subscribe(topic); send("hi"); });
+    await new Promise((res) => client.subscribe(topic, { qos: 0 }, res));
+    send("hi");
+    const hb = setInterval(() => {
+      send("ping");
+      const now = Date.now();
+      if (isHost) {
+        const gone = players.filter((p) => p.id !== me.id && now - (seen[p.id] || now) > 12000);
+        if (gone.length) { players = players.filter((p) => !gone.includes(p)); roster(); gone.forEach((g) => emit("left", g.id)); }
+      } else if (now - hostSeen > 12000 && players.length) { hostSeen = now + 1e9; emit("host-left"); }
+    }, 2500);
+    const room = {
+      id, isHost, me, get players() { return players; }, topic,
+      on(t, fn) { (handlers[t] = handlers[t] || []).push(fn); return room; },
+      off(t) { delete handlers[t]; },
+      send, lock() { locked = true; }, unlock() { locked = false; },
+      close() { if (closed) return; send("bye"); closed = true; clearInterval(hb); setTimeout(() => { try { client.end(true); } catch (_) {} }, 200); }
+    };
+    if (isHost) setTimeout(() => emit("roster", players), 0);
+    window.addEventListener("pagehide", () => room.close());
+    return room;
+  }
+  window.Net.openParty = openParty;
+})();
