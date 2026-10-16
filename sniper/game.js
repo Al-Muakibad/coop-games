@@ -11,7 +11,7 @@
     speed: { name: "Кроссовки", ic: "👟", desc: "+12% к скорости бега" },
     armor: { name: "Броня", ic: "🦺", desc: "−12% урона по тебе" }
   };
-  const PRICE = [60, 120, 220], MAXLV = 3;
+  const PRICE = [40, 80, 140], MAXLV = 3;
   const THEMES = [
     { name: "Пустынный", sky: ["#3d8fe0", "#a9dcff"], sea: ["#1f78c4", "#4fb3e8"], sand: ["#e7c27c", "#b07f45"], top: "#d9ae67", brick: 22, mortar: "#8a5a3c" },
     { name: "Закатный", sky: ["#5b3a8c", "#ff9d6c"], sea: ["#3a4f9a", "#e2837a"], sand: ["#d9a066", "#8a5232"], top: "#e6b07a", brick: 6, mortar: "#6e3b2a" }
@@ -52,23 +52,11 @@
   })();
 
   // ---------- кошелёк и улучшения ----------
+  // Улучшения действуют только против текущего соперника: новый соперник — всё с нуля, реванш — сохраняем.
   let wallet = { coins: 0, mag: 0, zoom: 0, speed: 0, armor: 0 };
-  function saveWallet() {
-    const s = JSON.stringify(wallet);
-    try { localStorage.setItem("sniper_wallet", s); } catch (_) {}
-    try { if (T.tg && T.tg.CloudStorage) T.tg.CloudStorage.setItem("sniper_wallet", s); } catch (_) {}
-  }
-  function loadWallet(cb) {
-    const apply = (s) => { try { const w = JSON.parse(s); if (w && typeof w.coins === "number") wallet = Object.assign(wallet, w); } catch (_) {} };
-    try { apply(localStorage.getItem("sniper_wallet")); } catch (_) {}
-    try {
-      if (T.tg && T.tg.CloudStorage && T.tg.isVersionAtLeast && T.tg.isVersionAtLeast("6.9")) {
-        T.tg.CloudStorage.getItem("sniper_wallet", (e, v) => { if (!e && v) { const before = wallet.coins; apply(v); wallet.coins = Math.max(before, wallet.coins); } cb(); });
-        return;
-      }
-    } catch (_) {}
-    cb();
-  }
+  function resetWallet() { wallet = { coins: 0, mag: 0, zoom: 0, speed: 0, armor: 0 }; me.up = myUp(); }
+  function saveWallet() {}
+  function loadWallet(cb) { try { localStorage.removeItem("sniper_wallet"); } catch (_) {} try { if (T.tg && T.tg.CloudStorage && T.tg.isVersionAtLeast && T.tg.isVersionAtLeast("6.9")) T.tg.CloudStorage.removeItem("sniper_wallet"); } catch (_) {} cb(); }
   const myUp = () => ({ mag: wallet.mag, zoom: wallet.zoom, speed: wallet.speed, armor: wallet.armor });
 
   // ---------- экран ----------
@@ -207,6 +195,7 @@
       }
     }
     lctx.globalCompositeOperation = "destination-out";
+    lctx.fillStyle = "#000";                              // непрозрачная заливка, иначе дырка вырезается частично
     for (const c of map.covers) for (const o of c.open) {
       lctx.beginPath(); if (o.t === "r") lctx.rect(o.x, o.y, o.w, o.h); else lctx.arc(o.x, o.y, o.r, 0, 7); lctx.fill();
     }
@@ -319,6 +308,8 @@
     drawBg(t); drawPickups(t);
     const hp = hiderPos();
     const hiderColor = iHide() ? "#3b82f6" : "#ef4444";
+    ctx.fillStyle = "rgba(14,7,4,.85)";                 // тень за укрытиями — в дырках видно темноту (и человечка за ней)
+    for (const c of map.covers) if (c.open.length) ctx.fillRect(c.x + 1, G - c.h + 1, c.w - 2, c.h - 1);
     if (R && (phase === "prep" || phase === "live" || phase === "over")) {
       ctx.save(); ctx.beginPath(); ctx.rect(-WW, -WH, WW * 3, WH + G); ctx.clip(); drawSoldier(hp, hiderColor); ctx.restore();
     }
@@ -435,7 +426,7 @@
     if (room) { try { room.close(); } catch (_) {} room = null; }
     phase = "menu"; match = null; R = null; controls(null); show("hud", false); show("tools", false); show("emo-panel", false); big("");
     if (!map) { map = genMap(7); layerDirty = true; }
-    $("wallet").textContent = `🪙 ${wallet.coins}`;
+
     screen("screen-menu");
   }
   function openShop() {
@@ -450,7 +441,7 @@
       $("shop-list").querySelectorAll("button[data-k]").forEach((b) => b.onclick = () => {
         const k = b.dataset.k, price = PRICE[wallet[k]];
         if (wallet.coins < price) return;
-        wallet.coins -= price; wallet[k]++; saveWallet(); T.haptic("notify", "success"); window.Stats && Stats.event("buy_upgrade", { item: k, level: wallet[k], price }); render();
+        wallet.coins -= price; wallet[k]++; me.up = myUp(); if (rematch.me && mode === "online") send("info", { name: me.name, up: me.up }); T.haptic("notify", "success"); window.Stats && Stats.event("buy_upgrade", { item: k, level: wallet[k], price }); render();
       });
     };
     render();
@@ -712,7 +703,7 @@
     $("end-status").textContent = "";
     match.earned = 0;
     const list = [["🔁 Реванш", "primary", askRematch], ["🛒 Улучшения", "", () => { openShop(); $("shop-close").onclick = () => screen("screen-end"); }]];
-    if (mode === "online") list.push(["Выйти в меню", "ghost", toMenu]); else list.push(["⚔️ Позвать друга", "", () => { toMenu(); createRoom(); }], ["В меню", "ghost", toMenu]);
+    if (mode === "online") list.push(["Выйти в меню", "ghost", toMenu]); else list.push(["⚔️ Позвать друга", "", () => { toMenu(); mode = "online"; resetWallet(); createRoom(); }], ["В меню", "ghost", toMenu]);
     buttons("end-buttons", list);
     setTimeout(() => screen("screen-end"), 800);
   }
@@ -837,7 +828,7 @@
 
   // ---------- ввод прицела ----------
   let drag = null;
-  canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); drag = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); if (drag) return; drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; });
   document.addEventListener("pointerdown", () => Snd.unlock(), { once: true });
   $("emo-panel").innerHTML = EMOS.map((e) => `<button>${e}</button>`).join("");
   $("emo-btn").onclick = () => show("emo-panel", $("emo-panel").classList.contains("hidden"));
@@ -848,15 +839,16 @@
   });
   $("snd-btn").onclick = () => { $("snd-btn").textContent = Snd.toggle() ? "🔊" : "🔇"; };
   window.addEventListener("pointermove", (e) => {
-    if (!drag) return;
+    if (!drag || e.pointerId !== drag.id) return;          // второй палец (кнопка «Огонь») не двигает прицел
     if (R && !R.iHide && (phase === "live" || phase === "prep")) {
       const Z = 2.3 + 0.35 * me.up.zoom, k = 1 / (S * Z) * 1.15;
       aim.x = Math.max(0, Math.min(WW, aim.x + (e.clientX - drag.x) * k));
       aim.y = Math.max(90, Math.min(WH - 20, aim.y + (e.clientY - drag.y) * k));
     }
-    drag = { x: e.clientX, y: e.clientY };
+    drag.x = e.clientX; drag.y = e.clientY;
   });
-  window.addEventListener("pointerup", () => { drag = null; });
+  const endDrag = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+  window.addEventListener("pointerup", endDrag); window.addEventListener("pointercancel", endDrag);
   window.addEventListener("keydown", (e) => {
     if (!R) return;
     if (R.iHide) { if (e.key === "ArrowLeft") keys.l = true; if (e.key === "ArrowRight") keys.r = true; if (e.key === "ArrowDown") pos.st = 1; if (e.key === "ArrowUp") pos.st = 0; }
@@ -865,19 +857,18 @@
   window.addEventListener("keyup", (e) => { if (e.key === "ArrowLeft") keys.l = false; if (e.key === "ArrowRight") keys.r = false; });
 
   // ---------- старт ----------
-  $("m-invite").onclick = () => { mode = "online"; me.up = myUp(); createRoom(); };
-  $("m-bot").onclick = () => startBot();
-  $("m-shop").onclick = () => { openShop(); $("shop-close").onclick = toMenu; };
-  $("m-menu").onclick = () => { location.href = "../"; };
+  $("m-invite").onclick = () => { mode = "online"; resetWallet(); createRoom(); };
+  $("m-bot").onclick = () => { resetWallet(); startBot(); };
+    $("m-menu").onclick = () => { location.href = "../"; };
   T.init({ header: "#0b1226", bg: "#0b1226", back: "../" });
   me.name = T.playerName() === "Друг" ? "Ты" : T.playerName();
   resize();
   loadWallet(() => {
-    $("wallet").textContent = `🪙 ${wallet.coins}`;
+
     me.up = myUp();
     const inv = Net.readInvite();
     map = genMap(7); layerDirty = true;
-    if (inv) { mode = "online"; joinRoom(inv); } else toMenu();
+    if (inv) { mode = "online"; resetWallet(); joinRoom(inv); } else toMenu();
   });
   requestAnimationFrame(frame);
 
