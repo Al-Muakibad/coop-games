@@ -152,7 +152,7 @@
   function rle() { let s = "", last = -1, n = 0; for (let k = 0; k <= N * N; k++) { const v = k < N * N ? terr[k] * 8 + trail[k] : -2; if (v === last && n < 60) n++; else { if (n) s += String.fromCharCode(48 + last) + (n > 1 ? String.fromCharCode(160 + n) : ""); last = v; n = 1; } } return s; }
   function unrle(s) { let k = 0; for (let i = 0; i < s.length; i++) { const v = s.charCodeAt(i) - 48; let n = 1; if (i + 1 < s.length && s.charCodeAt(i + 1) >= 160) { n = s.charCodeAt(i + 1) - 160; i++; } for (let j = 0; j < n; j++, k++) { terr[k] = v >> 3; trail[k] = v & 7; } } }
   // Снимок уходит по быстрому каналу (может потеряться) — поэтому в нём изменения за последние 4 хода, а раз в секунду — вся карта.
-  let tickNo = 0, recent = [], lastK = -1, predK = -1;
+  let tickNo = 0, recent = [], lastK = -1, extra = 0, snapAt = 0;
   function snapshot(full) {
     recent.push([tickNo, diffs]); if (recent.length > 4) recent.shift();
     const s = { k: tickNo, P: ps.map((p) => [p.x, p.y, p.d, p.alive ? 1 : 0]), D: recent, T: Math.ceil(timeLeft) };
@@ -171,17 +171,22 @@
     if (s.k != null && s.k <= lastK) return;               // старый или повторный снимок
     if (s.F) unrle(s.F);
     else for (const [dk, D] of s.D || []) { if (dk <= lastK) continue; for (let j = 0; j < D.length; j += 2) { terr[D[j]] = D[j + 1] >> 3; trail[D[j]] = D[j + 1] & 7; } }
-    const ahead = Math.max(0, Math.min(3, predK - s.k));
-    s.P.forEach((v, i) => { const p = ps[i]; if (!p) return; p.x = v[0]; p.y = v[1]; p.d = v[2]; p.alive = !!v[3]; p.px = p.x; p.py = p.y; });
-    for (let a = 0; a < ahead; a++) ps.forEach((_, i) => predictStep(i));
-    if (!ahead) { ps.forEach((p, i) => { const v = s.P[i]; if (v && p.alive) { p.px = v[0] - DX[v[2]]; p.py = v[1] - DY[v[2]]; } }); sinceTick = 0; }
-    if (s.k != null) lastK = s.k; if (predK < lastK) predK = lastK;
+    // точные позиции от хозяина; плавно доезжаем от того места, где голова была нарисована
+    s.P.forEach((v, i) => {
+      const p = ps[i]; if (!p) return;
+      const f = Math.min(1, sinceTick / TICK), shownX = p.px + (p.x - p.px) * f, shownY = p.py + (p.y - p.py) * f;
+      p.x = v[0]; p.y = v[1]; p.d = v[2]; p.alive = !!v[3];
+      const far = Math.abs(shownX - p.x) + Math.abs(shownY - p.y) > 2.2;
+      p.px = far ? p.x : shownX; p.py = far ? p.y : shownY;
+    });
+    sinceTick = 0; extra = 0; snapAt = performance.now();
+    if (s.k != null) lastK = s.k;
     timeLeft = s.T;
   }
 
   // ---------- старт ----------
   function begin(c) {
-    cfg = c.cfg; room = c.room; ended = false; timeLeft = DURATION; phase = "play"; acc = 0; sinceTick = 0; fx = []; tickNo = 0; recent = []; lastK = -1; predK = -1;
+    cfg = c.cfg; room = c.room; ended = false; timeLeft = DURATION; phase = "play"; acc = 0; sinceTick = 0; fx = []; tickNo = 0; recent = []; lastK = -1; extra = 0;
     terr = new Uint8Array(N * N); trail = new Uint8Array(N * N); diffs = [];
     pal = cfg.players.map((p) => ({ land: shade(p.color, 0.45), edge: shade(p.color, 0.15), tail: shade(p.color, 0.25), head: p.color, dark: shade(p.color, -0.35) }));
     ps = cfg.players.map(() => ({ tr: [], plan: [], kills: 0 }));
@@ -320,19 +325,20 @@
   }
   let last = 0, fullT = 0, hudT = 0;
   function frame(ts) {
-    const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
+    const rawDt = (ts - (last || ts)) / 1000, dt = Math.min(rawDt, 0.05); last = ts;
     if (phase === "play") {
       sinceTick += dt;
       if (isHost()) {
-        acc += dt;
+        acc += Math.min(rawDt, 0.5);                   // ходы идут по настоящему времени, даже если кадр подвис
         while (acc >= TICK && !ended) {
           acc -= TICK; step(); sinceTick = 0;
           tickNo++;
           if (room) { fullT -= TICK; room.sendFast("snap", snapshot(fullT <= 0)); if (fullT <= 0) fullT = 1; } else diffs = [];
         }
       } else if (lastK >= 0) {
-        acc += dt;
-        while (acc >= TICK) { acc -= TICK; if (predK - lastK < 3) { predK++; ps.forEach((_, i) => predictStep(i)); sinceTick = 0; } else acc = 0; }
+        // снимок опаздывает — продолжаем движение сами, но не больше 2 клеток (без своего «опережающего» времени, чтобы не уплывать)
+        const late = (performance.now() - snapAt) / 1000 - TICK * 1.25;
+        if (late > 0 && extra < 2 && late > extra * TICK) { extra++; ps.forEach((_, i) => predictStep(i)); sinceTick = 0; }
       }
       hudT -= dt; if (hudT <= 0) { hud(); hudT = 0.25; }
     }
