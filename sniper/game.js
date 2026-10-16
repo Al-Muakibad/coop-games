@@ -130,6 +130,8 @@
   let aim = { x: 180, y: 190 }, remoteAim = { x: 180, y: 190, tx: 180, ty: 190 };
   let camX = 180, keys = { l: false, r: false }, fx = [], sendT = 0, aimSendT = 0, now = 0;
   let rematch = { me: false, opp: false };
+  let hist = [], rbuf = [], stT = 0;
+  const INTERP = 0.12;
 
   // ---------- рисование ----------
   const layer = document.createElement("canvas"); const LR = 4;
@@ -308,8 +310,6 @@
     drawBg(t); drawPickups(t);
     const hp = hiderPos();
     const hiderColor = iHide() ? "#3b82f6" : "#ef4444";
-    ctx.fillStyle = "rgba(14,7,4,.85)";                 // тень за укрытиями — в дырках видно темноту (и человечка за ней)
-    for (const c of map.covers) if (c.open.length) ctx.fillRect(c.x + 1, G - c.h + 1, c.w - 2, c.h - 1);
     if (R && (phase === "prep" || phase === "live" || phase === "over")) {
       ctx.save(); ctx.beginPath(); ctx.rect(-WW, -WH, WW * 3, WH + G); ctx.clip(); drawSoldier(hp, hiderColor); ctx.restore();
     }
@@ -390,7 +390,7 @@
     $("av1").textContent = (me.name[0] || "Я").toUpperCase(); $("av2").textContent = opp.name.startsWith("🤖") ? "🤖" : (opp.name[0] || "?").toUpperCase();
     $("h1").style.width = Math.max(0, match.hp.me) + "%"; $("h2").style.width = Math.max(0, match.hp.opp) + "%";
     $("hn1").textContent = Math.max(0, match.hp.me); $("hn2").textContent = Math.max(0, match.hp.opp);
-    $("coins").textContent = "🪙 +" + match.earned;
+    $("coins").textContent = "🪙 +" + (match.earned + hitCoins());
     if (R) {
       $("role").textContent = `Раунд ${R.n + 1}/${ROUNDS} · ` + (R.iHide ? "🏃 Прячься и собирай деньги" : "🎯 Найди и подстрели");
       const ammo = $("ammo");
@@ -508,7 +508,7 @@
     phase = "end"; controls(null); big("");
     $("end-emoji").textContent = "🚪"; $("end-title").textContent = `${opp.name} вышел из игры`;
     $("end-sub").textContent = match ? "Монеты за матч сохранены." : ""; $("end-coins").textContent = ""; $("end-status").textContent = "";
-    if (match && match.earned) { wallet.coins += match.earned; saveWallet(); match.earned = 0; }
+    if (match && (match.earned || match.hits)) { wallet.coins += match.earned + hitCoins(); match.earned = 0; match.hits = match.heads = 0; }
     buttons("end-buttons", [["⚔️ Позвать снова", "primary", () => { toMenu(); createRoom(); }], ["В меню", "ghost", toMenu]]);
     screen("screen-end");
   }
@@ -517,7 +517,17 @@
   function bindGame(rm) {
     rm.on("start", (d) => beginMatch(d.seed));
     rm.on("round", (d) => beginRound(d));
-    rm.on("pos", (d) => { if (R && !R.iHide) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; } });
+    rm.on("pos", (d) => {
+      if (!R || R.iHide) return;
+      if (d.t == null) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; return; }   // бот
+      rbuf.push({ rt: now, vt: d.t, x: d.x, st: d.st, dir: d.dir, m: !!d.m }); if (rbuf.length > 60) rbuf.shift();
+    });
+    rm.on("st", (d) => {                            // состояние соперника — его здоровье и сколько раз в него попали
+      if (!match) return;
+      if (d.hp !== match.hp.opp) { if (d.hp < match.hp.opp) flashBar("h2"); match.hp.opp = d.hp; }
+      if (d.ht > match.hits) match.hits = d.ht; if (d.hh > match.heads) match.heads = d.hh;
+      hud();
+    });
     rm.on("hp", (d) => { if (match) { match.hp.opp = d.hp; flashBar("h2"); hud(); } });
     rm.on("ko", (d) => { if (isHost()) setTimeout(() => hostEndRound("ko", d && d.n), 500); });
     rm.on("out", (d) => { if (isHost()) setTimeout(() => hostEndRound("ammo", d && d.n), 1600); });
@@ -526,7 +536,7 @@
     rm.on("shot", (d) => onShotAtMe(d));
     rm.on("pick", (d) => { if (R && R.pickups[d.i]) R.pickups[d.i].taken = true; });
     rm.on("rend", (d) => onRoundEnd(d));
-    rm.on("mend", () => endMatch());
+    rm.on("mend", (d) => { if (d && d.hp != null) match.hp.opp = d.hp; endMatch(); });
     rm.on("rematch", () => { rematch.opp = true; tryRematch(); });
   }
   const send = (t, d) => { if (room) room.send(t, d); };
@@ -539,7 +549,7 @@
   }
   function hostNextRound(n) {
     if (!match) return;
-    if (n >= ROUNDS || match.hp.me <= 0 || match.hp.opp <= 0) { send("mend", {}); endMatch(); return; }
+    if (n >= ROUNDS || match.hp.me <= 0 || match.hp.opp <= 0) { send("mend", { hp: match.hp.me }); endMatch(); return; }
     const pick = Array.from({ length: 4 }, () => Math.round(14 + Math.random() * (WW - 28)));
     const d = { n, hiderHost: n % 2 === 1, pick };
     send("round", d); beginRound(d);
@@ -560,7 +570,8 @@
     $("vs-a1").textContent = (me.name[0] || "Я").toUpperCase(); $("vs-a2").textContent = opp.name.startsWith("🤖") ? "🤖" : (opp.name[0] || "?").toUpperCase();
     show("vs", true); setTimeout(() => show("vs", false), 1400);
     show("tools", true); $("snd-btn").textContent = Snd.on ? "🔊" : "🔇";
-    match = { hp: { me: 100, opp: 100 }, earned: 0, hits: 0, survived: 0, picks: 0 };
+    match = { hp: { me: 100, opp: 100 }, earned: 0, hits: 0, heads: 0, taken: 0, takenHead: 0, survived: 0, picks: 0, seenShots: new Set() };
+    hist = []; rbuf = [];
     rematch = { me: false, opp: false };
     screen(null); show("hud", true); hud();
     window.Stats && Stats.gameStart({ mode, up: me.up });
@@ -582,6 +593,7 @@
     phase = "prep";
     if (iH) { pos = startPos(); controls("hider"); }
     else { aim = { x: WW / 2, y: G - 50 }; remote = { x: WW / 2, tx: WW / 2, st: 0, dir: 1, walk: 0, moving: false }; controls("sniper"); }
+    hist = []; rbuf = [];
     remoteAim = { x: WW / 2, y: 190, tx: WW / 2, ty: 190 };
     keys = { l: false, r: false };
     hud();
@@ -617,7 +629,7 @@
   function fire() {
     if (phase !== "live" || !R || R.iHide || R.bullets <= 0 || now - lastFire < 0.35) return;
     lastFire = now; R.bullets--; R.shots++;
-    const d = { id: ++shotId, x: aim.x, y: aim.y };
+    const d = { id: ++shotId, x: aim.x, y: aim.y, vt: remote.vt };
     send("shot", d); impact(d, true);
     T.haptic("impact", "heavy"); Snd.shot(); kick = 1;
     hud();
@@ -639,14 +651,17 @@
   function onShotAtMe(d) {                       // в меня стреляли
     if (!R || !R.iHide || R.ended) return;
     impact(d, false);
-    const res = hitTest(pos, d.x, d.y);
+    // компенсация задержки: проверяем и где я сейчас, и где я был в тот момент, который снайпер видел у себя на экране
+    let res = hitTest(pos, d.x, d.y);
+    if (!res && d.vt != null && d.vt > now - 1.2 && d.vt <= now + 0.05) { const hp0 = histAt(d.vt); if (hp0) res = hitTest(hp0, d.x, d.y); }
     const dmg = res ? Math.round((res === "head" ? HEAD : BODY) * (1 - 0.12 * me.up.armor)) : 0;
     const dist = Math.hypot(d.x - pos.x, d.y - (G - 35));
     send("hitres", { id: d.id, res, dmg, dist: Math.round(dist) });
     if (res) {
       fx.push({ kind: "txt", text: `−${dmg}`, color: "#ff5a5a", x: d.x, y: d.y - 8, t: 0, life: 1 });
       match.hp.me -= dmg; flashBar("h1"); shake = 1; Snd.hit();
-      send("hp", { hp: match.hp.me });
+      match.taken++; if (res === "head") match.takenHead++;
+      sendSt();
       msg(res === "head" ? "Тебе в голову! 😵" : "Тебя ранили! 🩸", 1300); T.haptic("notify", "error");
       if (match.hp.me <= 0) { const n = R.n; if (isHost()) setTimeout(() => hostEndRound("ko", n), 500); else send("ko", { n }); }
       if (mode === "bot" && Math.random() < 0.6) setTimeout(() => bubble("opp", pick(["😂", "😎", "🖕", "🔥"])), 700);
@@ -657,11 +672,18 @@
     if (!R || R.iHide) return;
     if (r.res) {
       fx.push({ kind: "txt", text: `−${r.dmg}`, color: "#ff5a5a", x: aim.x, y: aim.y - 8, t: 0, life: 1 });
-      match.earned += r.res === "head" ? 20 : 10; match.hits++; Snd.hit();
+      if (!match.seenShots.has(r.id) || mode === "bot") { match.seenShots.add(r.id); match.hits++; if (r.res === "head") match.heads++; }
+      Snd.hit();
       msg(r.res === "head" ? `В ГОЛОВУ! 💀<br>+20 🪙` : `Попал! +10 🪙`, 1400);
       if (mode === "bot") { match.hp.opp -= r.dmg; flashBar("h2"); if (match.hp.opp <= 0) { const n = R.n; setTimeout(() => hostEndRound("ko", n), 500); } if (Math.random() < 0.5) setTimeout(() => bubble("opp", pick(["😡", "😱", "🤡"])), 600); }
     } else msg(r.dist < 30 ? "Совсем рядом! 😬" : r.dist < 70 ? "Тепло…" : "Мимо", 900);
     hud();
+  }
+  const hitCoins = () => (match ? match.hits * 10 + match.heads * 10 : 0);
+  function sendSt() { if (match && room) send("st", { hp: match.hp.me, ht: match.taken, hh: match.takenHead }); }
+  function histAt(t) {
+    for (let i = hist.length - 1; i > 0; i--) if (hist[i - 1].t <= t) { const a = hist[i - 1], b = hist[i], k = (t - a.t) / Math.max(1e-3, b.t - a.t); return { x: a.x + (b.x - a.x) * Math.min(1, k), st: k < 0.5 ? a.st : b.st }; }
+    return hist[0] || null;
   }
   const plural = (n, a, b, c) => (n % 10 === 1 && n % 100 !== 11 ? a : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? b : c);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -693,7 +715,7 @@
     phase = "end"; controls(null); big("");
     const a = match.hp.me, b = match.hp.opp, win = a > b, draw = a === b;
     const bonus = draw ? 15 : win ? 30 : 10;
-    const total = match.earned + bonus;
+    const total = match.earned + hitCoins() + bonus;
     window.Stats && Stats.gameEnd({ mode, win, draw, hp_me: a, hp_opp: b, hits: match.hits, survived: match.survived, coins: total });
     wallet.coins += total; saveWallet();
     $("end-emoji").textContent = draw ? "🤝" : win ? "🏆" : "💀";
@@ -811,14 +833,22 @@
           if (!c.taken && Math.abs(c.x - pos.x) < 12) { c.taken = true; match.earned += 5; match.picks++; send("pick", { i }); Snd.coin(); fx.push({ kind: "txt", text: "+5 🪙", color: "#7CFC9A", x: c.x, y: G - 30, t: 0, life: 1 }); T.haptic("impact", "light"); hud(); }
         });
         sendT -= dt;
-        if (sendT <= 0) { send("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0 }); sendT = 1 / 12; }
+        hist.push({ t: now, x: pos.x, st: pos.st }); while (hist.length && hist[0].t < now - 1.5) hist.shift();
+        if (sendT <= 0) { send("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0, t: +now.toFixed(3) }); sendT = 1 / 20; }
 
       } else {
-        remote.x += (remote.tx - remote.x) * Math.min(1, dt * 12);
+        if (rbuf.length) {                        // показываем соперника чуть в прошлом — плавно, без рывков; запоминаем его время для честного попадания
+          const rt = now - INTERP; let a = rbuf[0], b = rbuf[rbuf.length - 1];
+          for (let i = rbuf.length - 1; i > 0; i--) if (rbuf[i - 1].rt <= rt) { a = rbuf[i - 1]; b = rbuf[i]; break; }
+          const k = rt <= a.rt ? 0 : Math.min(1, (rt - a.rt) / Math.max(1e-3, b.rt - a.rt));
+          remote.x = a.x + (b.x - a.x) * k; remote.vt = a.vt + (b.vt - a.vt) * k;
+          const c = k < 0.5 ? a : b; remote.st = c.st; remote.dir = c.dir; remote.moving = c.m;
+        } else remote.x += (remote.tx - remote.x) * Math.min(1, dt * 12);
         remote.walk = remote.moving ? remote.walk + dt * 12 : 0;
 
       }
       if (mode === "bot") bot.update(dt);
+      stT -= dt; if (stT <= 0) { stT = 0.4; sendSt(); }
       if (phase === "live" && isHost() && now > R.endAt + 0.3) hostEndRound("time");
 
     }
