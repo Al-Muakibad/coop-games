@@ -520,6 +520,7 @@
     rm.on("pos", (d) => {
       if (!R || R.iHide) return;
       if (d.t == null) { remote.tx = d.x; remote.st = d.st; remote.dir = d.dir; remote.moving = !!d.m; return; }   // бот
+      if (rbuf.length && d.t <= rbuf[rbuf.length - 1].vt) return;   // устаревший пакет
       rbuf.push({ rt: now, vt: d.t, x: d.x, st: d.st, dir: d.dir, m: !!d.m }); if (rbuf.length > 60) rbuf.shift();
     });
     rm.on("st", (d) => {                            // состояние соперника — его здоровье и сколько раз в него попали
@@ -834,7 +835,7 @@
         });
         sendT -= dt;
         hist.push({ t: now, x: pos.x, st: pos.st }); while (hist.length && hist[0].t < now - 1.5) hist.shift();
-        if (sendT <= 0) { send("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0, t: +now.toFixed(3) }); sendT = 1 / 20; }
+        if (sendT <= 0) { (room && room.sendFast ? room.sendFast.bind(room) : send)("pos", { x: Math.round(pos.x * 10) / 10, st: pos.st, dir: pos.dir, m: mv ? 1 : 0, t: +now.toFixed(3) }); sendT = 1 / 20; }
 
       } else {
         if (rbuf.length) {                        // показываем соперника чуть в прошлом — плавно, без рывков; запоминаем его время для честного попадания

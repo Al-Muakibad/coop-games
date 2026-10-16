@@ -151,21 +151,37 @@
   // ---------- сеть ----------
   function rle() { let s = "", last = -1, n = 0; for (let k = 0; k <= N * N; k++) { const v = k < N * N ? terr[k] * 8 + trail[k] : -2; if (v === last && n < 60) n++; else { if (n) s += String.fromCharCode(48 + last) + (n > 1 ? String.fromCharCode(160 + n) : ""); last = v; n = 1; } } return s; }
   function unrle(s) { let k = 0; for (let i = 0; i < s.length; i++) { const v = s.charCodeAt(i) - 48; let n = 1; if (i + 1 < s.length && s.charCodeAt(i + 1) >= 160) { n = s.charCodeAt(i + 1) - 160; i++; } for (let j = 0; j < n; j++, k++) { terr[k] = v >> 3; trail[k] = v & 7; } } }
+  // Снимок уходит по быстрому каналу (может потеряться) — поэтому в нём изменения за последние 4 хода, а раз в секунду — вся карта.
+  let tickNo = 0, recent = [], lastK = -1, predK = -1;
   function snapshot(full) {
-    const s = { P: ps.map((p) => [p.x, p.y, p.d, p.alive ? 1 : 0]), D: diffs, T: Math.ceil(timeLeft) };
+    recent.push([tickNo, diffs]); if (recent.length > 4) recent.shift();
+    const s = { k: tickNo, P: ps.map((p) => [p.x, p.y, p.d, p.alive ? 1 : 0]), D: recent, T: Math.ceil(timeLeft) };
     if (full) s.F = rle();
     diffs = []; return s;
   }
+  const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
+  function predictStep(i) {                         // гость сам двигает головы на ход вперёд, пока ждёт хозяина
+    const p = ps[i]; if (!p.alive) return;
+    let d = p.d; if (i === cfg.me && p.nd >= 0 && (p.nd + 2) % 4 !== p.d) d = p.nd;
+    const nx = p.x + DX[d], ny = p.y + DY[d];
+    p.px = p.x; p.py = p.y;
+    if (inside(nx, ny)) { p.x = nx; p.y = ny; p.d = d; }
+  }
   function applySnap(s) {
+    if (s.k != null && s.k <= lastK) return;               // старый или повторный снимок
     if (s.F) unrle(s.F);
-    for (let j = 0; j < s.D.length; j += 2) { terr[s.D[j]] = s.D[j + 1] >> 3; trail[s.D[j]] = s.D[j + 1] & 7; }
-    s.P.forEach((v, i) => { const p = ps[i]; if (!p) return; p.px = p.x; p.py = p.y; p.x = v[0]; p.y = v[1]; p.d = v[2]; p.alive = !!v[3]; });
-    timeLeft = s.T; sinceTick = 0;
+    else for (const [dk, D] of s.D || []) { if (dk <= lastK) continue; for (let j = 0; j < D.length; j += 2) { terr[D[j]] = D[j + 1] >> 3; trail[D[j]] = D[j + 1] & 7; } }
+    const ahead = Math.max(0, Math.min(3, predK - s.k));
+    s.P.forEach((v, i) => { const p = ps[i]; if (!p) return; p.x = v[0]; p.y = v[1]; p.d = v[2]; p.alive = !!v[3]; p.px = p.x; p.py = p.y; });
+    for (let a = 0; a < ahead; a++) ps.forEach((_, i) => predictStep(i));
+    if (!ahead) { ps.forEach((p, i) => { const v = s.P[i]; if (v && p.alive) { p.px = v[0] - DX[v[2]]; p.py = v[1] - DY[v[2]]; } }); sinceTick = 0; }
+    if (s.k != null) lastK = s.k; if (predK < lastK) predK = lastK;
+    timeLeft = s.T;
   }
 
   // ---------- старт ----------
   function begin(c) {
-    cfg = c.cfg; room = c.room; ended = false; timeLeft = DURATION; phase = "play"; acc = 0; sinceTick = 0; fx = [];
+    cfg = c.cfg; room = c.room; ended = false; timeLeft = DURATION; phase = "play"; acc = 0; sinceTick = 0; fx = []; tickNo = 0; recent = []; lastK = -1; predK = -1;
     terr = new Uint8Array(N * N); trail = new Uint8Array(N * N); diffs = [];
     pal = cfg.players.map((p) => ({ land: shade(p.color, 0.45), edge: shade(p.color, 0.15), tail: shade(p.color, 0.25), head: p.color, dark: shade(p.color, -0.35) }));
     ps = cfg.players.map(() => ({ tr: [], plan: [], kills: 0 }));
@@ -311,8 +327,12 @@
         acc += dt;
         while (acc >= TICK && !ended) {
           acc -= TICK; step(); sinceTick = 0;
-          if (room) { fullT -= TICK; send("snap", snapshot(fullT <= 0)); if (fullT <= 0) fullT = 2; } else diffs = [];
+          tickNo++;
+          if (room) { fullT -= TICK; room.sendFast("snap", snapshot(fullT <= 0)); if (fullT <= 0) fullT = 1; } else diffs = [];
         }
+      } else if (lastK >= 0) {
+        acc += dt;
+        while (acc >= TICK) { acc -= TICK; if (predK - lastK < 3) { predK++; ps.forEach((_, i) => predictStep(i)); sinceTick = 0; } else acc = 0; }
       }
       hudT -= dt; if (hudT <= 0) { hud(); hudT = 0.25; }
     }

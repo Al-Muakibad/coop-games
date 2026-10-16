@@ -280,7 +280,7 @@
         host(dt);
         if (room) { snapT -= dt; fullT -= dt; if (snapT <= 0) { snapT = 1 / 10; send("snap", snapshot(fullT <= 0)); if (fullT <= 0) fullT = 3; } }
         else { diffs = []; spawns = []; }
-      } else { meT -= dt; if (meT <= 0) { meT = 1 / 12; send("me", [Math.round(me.x), Math.round(me.y)]); } }
+      } else { meT -= dt; if (meT <= 0) { meT = 1 / 12; room.sendFast("me", [Math.round(me.x), Math.round(me.y)]); } }
       hudT -= dt; if (hudT <= 0) { hud(); hudT = 0.25; }
     }
     render(ts / 1000, dt);

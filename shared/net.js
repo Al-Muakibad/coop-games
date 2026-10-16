@@ -34,9 +34,11 @@
   // signal(d) — отправить сигнал второй стороне; onMsg(text); onState(open:boolean)
   function P2P(signal, offerer, onMsg, onState) {
     const self = { open: false, closed: false };
-    if (window.NET_NO_P2P || typeof RTCPeerConnection === "undefined") { self.signal = () => {}; self.send = () => false; self.close = () => {}; return self; }
+    if (window.NET_NO_P2P || typeof RTCPeerConnection === "undefined") { self.signal = () => {}; self.send = self.sendFast = () => false; self.close = () => {}; return self; }
     let pc, dc = null, pending = [];
-    try { pc = new RTCPeerConnection({ iceServers: ICE }); } catch (_) { self.signal = () => {}; self.send = () => false; self.close = () => {}; return self; }
+    try { pc = new RTCPeerConnection({ iceServers: ICE }); } catch (_) { self.signal = () => {}; self.send = self.sendFast = () => false; self.close = () => {}; return self; }
+    let fc = null;   // быстрый канал: без очереди и переотправки — для частых снимков состояния
+    const setupFast = (ch) => { fc = ch; ch.onmessage = (e) => onMsg(e.data); ch.onerror = () => {}; };
     const setup = (ch) => {
       dc = ch;
       ch.onopen = () => { self.open = true; onState(true); };
@@ -48,8 +50,9 @@
     pc.onconnectionstatechange = () => { if (["failed", "closed"].includes(pc.connectionState) && self.open) { self.open = false; onState(false); } };
     if (offerer) {
       setup(pc.createDataChannel("g", { ordered: true }));
+      try { setupFast(pc.createDataChannel("u", { ordered: false, maxRetransmits: 0 })); } catch (_) {}
       pc.createOffer().then((o) => pc.setLocalDescription(o)).then(() => signal({ sdp: pc.localDescription.toJSON ? pc.localDescription.toJSON() : pc.localDescription })).catch(() => {});
-    } else pc.ondatachannel = (e) => setup(e.channel);
+    } else pc.ondatachannel = (e) => (e.channel.label === "u" ? setupFast(e.channel) : setup(e.channel));
     self.signal = async (d) => {
       try {
         if (d.sdp) {
@@ -63,7 +66,8 @@
       } catch (_) {}
     };
     self.send = (text) => { if (!self.open || !dc || dc.readyState !== "open") return false; try { dc.send(text); return true; } catch (_) { return false; } };
-    self.close = () => { self.closed = true; self.open = false; try { dc && dc.close(); } catch (_) {} try { pc.close(); } catch (_) {} };
+    self.sendFast = (text) => { if (fc && fc.readyState === "open") { try { fc.send(text); return true; } catch (_) {} } return self.send(text); };
+    self.close = () => { self.closed = true; self.open = false; try { fc && fc.close(); } catch (_) {} try { dc && dc.close(); } catch (_) {} try { pc.close(); } catch (_) {} };
     setTimeout(() => { if (!self.open && !self.closed) self.close(); }, 15000);   // не смогли — остаёмся на брокере
     return self;
   }
@@ -90,10 +94,10 @@
     const emit = (type, data, from) => (handlers[type] || []).forEach((fn) => { try { fn(data, from); } catch (e) { console.error(e); } });
     const pack = (type, data) => JSON.stringify({ f: me.id, n: me.name, h: isHost ? 1 : 0, t: type, d: data === undefined ? null : data, i: ++seq });
     const relay = (s) => client.publish(topic, s, { qos: 0 });
-    const send = (type, data) => {
+    const send = (type, data, fast) => {
       if (closed) return;
       const s = pack(type, data);
-      if (!(p2p && p2p.send(s))) relay(s);
+      if (!(p2p && (fast ? p2p.sendFast(s) : p2p.send(s)))) relay(s);
     };
     const startP2P = () => {
       if (p2p) p2p.close();
@@ -137,7 +141,7 @@
       id, isHost, me, get peer() { return peer; }, topic, get rtt() { return rtt; }, get link() { return p2p && p2p.open ? "p2p" : "relay"; },
       on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); return room; },
       off(type) { delete handlers[type]; },
-      send,
+      send, sendFast: (type, data) => send(type, data, true),
       close() { if (closed) return; send("bye"); closed = true; clearInterval(hb); setTimeout(() => { try { p2p && p2p.close(); } catch (_) {} try { client.end(true); } catch (_) {} }, 200); }
     };
     window.addEventListener("pagehide", () => room.close());
@@ -169,16 +173,16 @@
     const pack = (t, d, extra) => JSON.stringify(Object.assign({ f: me.id, n: me.name, h: isHost ? 1 : 0, t, d: d === undefined ? null : d, i: ++seq }, extra || {}));
     const relay = (s) => { if (!closed) client.publish(topic, s); };
     // хозяин: каждому гостю — напрямую, если канал открыт; кому нет — одна публикация через брокер
-    const fanout = (s, except) => {
+    const fanout = (s, except, fast) => {
       let needRelay = false;
-      for (const p of players) { if (p.id === me.id || p.id === except) continue; const l = links[p.id]; if (!(l && l.send(s))) needRelay = true; }
+      for (const p of players) { if (p.id === me.id || p.id === except) continue; const l = links[p.id]; if (!(l && (fast ? l.sendFast(s) : l.send(s)))) needRelay = true; }
       if (needRelay) relay(s);
     };
-    const send = (t, d) => {
+    const send = (t, d, fast) => {
       if (closed) return;
       const s = pack(t, d);
-      if (isHost) fanout(s);
-      else { const l = hostId && links[hostId]; if (!(l && l.send(s))) relay(s); }
+      if (isHost) fanout(s, null, fast);
+      else { const l = hostId && links[hostId]; if (!(l && (fast ? l.sendFast(s) : l.send(s)))) relay(s); }
     };
     const roster = () => { send("roster", players); emit("roster", players); };
     const startLink = (peerId, offerer) => {
@@ -237,7 +241,7 @@
       get link() { return isHost ? (Object.values(links).some((l) => l.open) ? "p2p" : "relay") : (hostId && links[hostId] && links[hostId].open ? "p2p" : "relay"); },
       on(t, fn) { (handlers[t] = handlers[t] || []).push(fn); return room; },
       off(t) { delete handlers[t]; },
-      send, lock() { locked = true; }, unlock() { locked = false; },
+      send, sendFast: (t, d) => send(t, d, true), lock() { locked = true; }, unlock() { locked = false; },
       close() { if (closed) return; send("bye"); relay(pack("bye")); closed = true; clearInterval(hb); setTimeout(() => { Object.values(links).forEach((l) => l.close()); try { client.end(true); } catch (_) {} }, 200); }
     };
     if (isHost) setTimeout(() => emit("roster", players), 0);

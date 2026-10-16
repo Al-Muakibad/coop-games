@@ -445,7 +445,7 @@
     if (phase === "play") {
       if (isAuth()) {
         acc += dt; while (acc >= 1 / 60) { stepAuth(1 / 60); acc -= 1 / 60; if (phase !== "play") break; }
-        if (room && phase === "play") { snapT -= dt; if (snapT <= 0) { snapT = 1 / 15; send("s", { W: packW(false), P: proj.map((p) => [p.k, Math.round(p.x), Math.round(p.y), p.fuse != null ? +p.fuse.toFixed(1) : null]), A: aim ? [+aim.a.toFixed(3), +aim.p.toFixed(2)] : null, ph, tl: +tl.toFixed(1), wp: wpn }); } }
+        if (room && phase === "play") { snapT -= dt; if (snapT <= 0) { snapT = 1 / 15; room.sendFast("s", { W: packW(false), P: proj.map((p) => [p.k, Math.round(p.x), Math.round(p.y), p.fuse != null ? +p.fuse.toFixed(1) : null]), A: aim ? [+aim.a.toFixed(3), +aim.p.toFixed(2)] : null, ph, tl: +tl.toFixed(1), wp: wpn }); } }
       } else {
         acc = 0;
         if (isHost() && room && Date.now() - lastAuthMsg > 14000) { msg("Игрок не отвечает — пропускаем ход", 1500); lastAuthMsg = Date.now(); nextTurn(); }
