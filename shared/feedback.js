@@ -54,6 +54,11 @@
       const b = document.createElement("button"); b.className = "btn ghost"; b.dataset.fb = 1; b.textContent = "💬 Идея / баг";
       b.onclick = () => open(location.pathname.split("/").filter(Boolean).pop());
       box.appendChild(b);
+      if (T && T.openChannel) {                       // ссылка на канал с новыми играми
+        const c = document.createElement("button"); c.className = "btn ghost"; c.dataset.fb = 1; c.textContent = "📢 Новые игры — в канале";
+        c.onclick = () => { window.Stats && Stats.event("channel_click", { where: location.pathname }); T.openChannel(); };
+        box.appendChild(c);
+      }
     };
     new MutationObserver(add).observe(box, { childList: true });
   }
