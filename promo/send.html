@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>send</title><body>sending…<script>
+// Передаёт файлы из promo/ в открывшее окно (для загрузки в соцсети). ?f=avatar.png,coop-chervi.mp4
+(async () => {
+  const names = (new URLSearchParams(location.search).get('f') || '').split(',').filter(Boolean);
+  const files = [];
+  for (const n of names) { const r = await fetch(n); files.push({ name: n, type: r.headers.get('content-type'), blob: await r.blob() }); }
+  (window.opener || window.parent).postMessage({ promoFiles: files }, '*');
+  document.body.textContent = 'sent ' + files.length;
+  setTimeout(() => window.close(), 500);
+})();
+</script>
