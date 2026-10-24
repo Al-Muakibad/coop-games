@@ -51,6 +51,7 @@
     if (!box) return;
     const add = () => {
       if (!box.children.length || box.querySelector("[data-fb]")) return;
+      gameOver();
       if (T && T.inviteFriend) {                      // главная кнопка роста: позвать друга в эту игру
         const g = location.pathname.split("/").filter(Boolean).pop();
         const inv = document.createElement("button"); inv.className = "btn"; inv.style.background = "#ffd34d"; inv.dataset.fb = 1; inv.textContent = "👋 Позвать друга";
@@ -68,6 +69,38 @@
     };
     new MutationObserver(add).observe(box, { childList: true });
   }
-  window.Feedback = { open };
+  /* Карточка «Подпишись на канал»: один раз за всё время, после 2-й законченной партии. Играть не мешает. */
+  const CK = "kg_ch_card", NK = "kg_ends";
+  let lastEnd = 0;
+  function gameOver() {
+    const now = Date.now();
+    if (now - lastEnd < 5000) return;             // одна партия может сообщить о конце дважды
+    lastEnd = now;
+    let n = 0;
+    try { if (localStorage.getItem(CK)) return; n = (parseInt(localStorage.getItem(NK) || "0", 10) || 0) + 1; localStorage.setItem(NK, String(n)); } catch (_) { return; }
+    if (n >= 2 && T && T.openChannel) setTimeout(showChannelCard, 1200);
+  }
+  function showChannelCard() {
+    try { if (localStorage.getItem(CK)) return; localStorage.setItem(CK, "1"); } catch (_) { return; }
+    ui();                                          // общие стили карточек
+    const g = location.pathname.split("/").filter(Boolean).pop() || "hub";
+    const c = document.createElement("div");
+    c.className = "fb-screen";
+    c.innerHTML = `<div class="fb-card">
+      <div style="font-size:44px">🎮</div><h2>Понравилось?</h2>
+      <p class="sub" style="font-size:15px">Новые игры для компании выходят каждую неделю. Первым узнаешь в канале «Кооп с друзьями» — там же ищем напарников.</p>
+      <button class="btn primary" data-sub>📢 Подписаться на канал</button>
+      <button class="btn ghost" data-later>Позже</button></div>`;
+    document.body.appendChild(c);
+    window.Stats && Stats.event("channel_card", { action: "shown", where: g });
+    c.querySelector("[data-sub]").onclick = () => {
+      window.Stats && Stats.event("channel_card", { action: "subscribe", where: g });
+      window.Stats && Stats.event("channel_click", { where: g, from: "card" });
+      c.remove(); T.openChannel();
+    };
+    c.querySelector("[data-later]").onclick = () => { window.Stats && Stats.event("channel_card", { action: "later", where: g }); c.remove(); };
+  }
+
+  window.Feedback = { open, gameOver };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach); else attach();
 })();

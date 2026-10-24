@@ -56,7 +56,8 @@
   const api = {
     event: (n, p) => event(n, p),
     gameStart(p) { gameT0 = Date.now(); plays++; event("game_start", Object.assign({ play_no: plays }, p)); },
-    gameEnd(p) { event("game_end", Object.assign({ duration_sec: gameT0 ? Math.round((Date.now() - gameT0) / 1000) : null, play_no: plays }, p)); gameT0 = null; },
+    gameEnd(p) { event("game_end", Object.assign({ duration_sec: gameT0 ? Math.round((Date.now() - gameT0) / 1000) : null, play_no: plays }, p)); gameT0 = null;
+      try { window.Feedback && Feedback.gameOver(); } catch (_) {} },
     state(s) { lastState = s; },            // «на чём остановился» — уходит при закрытии
     flush
   };
