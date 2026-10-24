@@ -59,6 +59,23 @@
   }
   function openChannel() { openLink(CHANNEL); }
 
+  // «Позвать друга»: ссылка с меткой пригласившего (f<короткий хэш>), чтобы в статистике было видно, кто привёл друзей.
+  // Сам id игрока в ссылку не попадает — только хэш.
+  function refId() {
+    const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+    let seed = u ? "tg" + u.id : "";
+    if (!seed) { try { seed = localStorage.getItem("kg_anon") || ""; } catch (_) {} }
+    if (!seed) return "";
+    let h = 2166136261;
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(36);
+  }
+  function inviteFriend(gameId, text) {
+    const r = refId();
+    const link = gameId ? gameLink(gameId, r ? "f" + r : "") : `https://t.me/${BOT}?startapp${r ? "=f" + r : ""}`;
+    openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text || "Го со мной в мини-игры прямо в Телеге 🎮")}`);
+  }
+
   function loadBest(key, cb) {
     let best = 0;
     try { best = parseInt(localStorage.getItem(key) || "0", 10) || 0; } catch (_) {}
@@ -92,5 +109,5 @@
   }
 
   window.TG = { tg, BOT, CHANNEL, haptic, playerName, readChallenge, shareChallenge, shareGame, gameLink,
-    openChannel, openLink, loadBest, saveBest, init, b64url, unb64url };
+    openChannel, inviteFriend, refId, openLink, loadBest, saveBest, init, b64url, unb64url };
 })();

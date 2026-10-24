@@ -160,7 +160,7 @@
   </section>
 
   <div class="foot">
-    <button id="share">Позвать друга</button>
+    <button id="share">👋 Позвать друга</button>
     <button id="channel">Канал</button>
     <button id="fb">💬 Идея / баг</button>
   </div>
@@ -170,8 +170,7 @@
   if (TG.tg && TG.tg.BackButton) try { TG.tg.BackButton.hide(); } catch (_) {}
   document.getElementById("channel").onclick = TG.openChannel;
   document.getElementById("fb").onclick = () => Feedback.open("hub");
-  document.getElementById("share").onclick = () =>
-    TG.openLink(`https://t.me/share/url?url=${encodeURIComponent("https://t.me/" + TG.BOT + "?startapp")}&text=${encodeURIComponent("Го рубиться в мини-игры прямо в Телеге 🎮")}`);
+  document.getElementById("share").onclick = () => { Stats.event("invite_click", { where: "hub" }); TG.inviteFriend("", "Го рубиться в мини-игры прямо в Телеге 🎮"); };
   function tab(t) {
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
     document.querySelectorAll("section[data-sec]").forEach((s) => s.classList.toggle("hidden", s.dataset.sec !== t));

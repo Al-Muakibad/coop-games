@@ -51,6 +51,12 @@
     if (!box) return;
     const add = () => {
       if (!box.children.length || box.querySelector("[data-fb]")) return;
+      if (T && T.inviteFriend) {                      // главная кнопка роста: позвать друга в эту игру
+        const g = location.pathname.split("/").filter(Boolean).pop();
+        const inv = document.createElement("button"); inv.className = "btn"; inv.style.background = "#ffd34d"; inv.dataset.fb = 1; inv.textContent = "👋 Позвать друга";
+        inv.onclick = () => { window.Stats && Stats.event("invite_click", { where: g }); T.haptic("impact", "light"); T.inviteFriend(g, "Сыграем? Зайди по ссылке — игра прямо в Телеге 🎮"); };
+        box.appendChild(inv);
+      }
       const b = document.createElement("button"); b.className = "btn ghost"; b.dataset.fb = 1; b.textContent = "💬 Идея / баг";
       b.onclick = () => open(location.pathname.split("/").filter(Boolean).pop());
       box.appendChild(b);

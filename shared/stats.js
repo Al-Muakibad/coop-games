@@ -17,9 +17,11 @@
   const start = Date.now();
   const sp = new URLSearchParams(location.search);
   const startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || "";
-  const source = sp.get("c") ? (sp.get("c")[0] === "r" ? "invite" : "challenge") : startParam ? "link" : document.referrer.includes("/coop-games/") ? "hub" : "direct";
+  const cParam = sp.get("c") || "";
+  const friendRef = /^f[0-9a-z]{1,10}$/.test(cParam) ? cParam.slice(1) : /^f[0-9a-z]{1,10}$/.test(startParam) ? startParam.slice(1) : "";
+  const source = friendRef ? "friend" : cParam ? (cParam[0] === "r" ? "invite" : "challenge") : startParam ? "link" : document.referrer.includes("/coop-games/") ? "hub" : "direct";
   const base = {
-    game, source, start_param: startParam || undefined,
+    game, source, start_param: startParam || undefined, ref: friendRef || undefined,
     platform: tg ? tg.platform : "web", tg_version: tg ? tg.version : undefined,
     lang: u ? u.language_code : navigator.language, premium: u ? !!u.is_premium : undefined,
     screen: `${screen.width}x${screen.height}`
