@@ -3,7 +3,9 @@
    Stats.event(name, props)  Stats.gameStart(props)  Stats.gameEnd(props)  Stats.state(obj)  */
 (function () {
   "use strict";
-  const CFG = window.STATS_CONFIG || {
+  // Автотесты и запись роликов (headless-браузер) не считаем — они портили статистику (16.10 и 18.10 это были они).
+  const BOT_RUN = !!navigator.webdriver;
+  const CFG = BOT_RUN ? { key: "" } : window.STATS_CONFIG || {
     key: "phc_uwVWQ7yDjZYiUUasnKcpfaGPbhYn93GG9McX99P56YUs",   // публичный ключ проекта PostHog (его можно держать в коде)
     host: "https://us.i.posthog.com"
   };
