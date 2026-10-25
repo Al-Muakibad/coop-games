@@ -11,7 +11,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -68,6 +68,10 @@
 
   <section data-sec="friends">
   <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
+  <a class="game" href="./strelka/">
+    <div class="icon" style="background:#f4a261">🔫</div>
+    <div class="info"><b>Перестрелка <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Арена сверху: укрытия, кусты, аптечки. До 6 игроков, боты, команды.</span></div>
+  </a>
   <a class="game" href="./durak/">
     <div class="icon" style="background:#7fd1a3">🃏</div>
     <div class="info"><b>Дурак <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Подкидной на 2–4: с ботами сразу или с друзьями онлайн.</span></div>
@@ -106,6 +110,10 @@
 
   <section data-sec="party" class="hidden">
   <p class="secnote">До 6 человек: одна ссылка в общий чат — все заходят в комнату, каждый со своего телефона. Можно командами 2 на 2, 2 на 1… Пустые места займут боты.</p>
+  <a class="game" href="./strelka/">
+    <div class="icon" style="background:#f4a261">🔫</div>
+    <div class="info"><b>Перестрелка <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Арена сверху: укрытия, кусты, аптечки. До 6 игроков, боты, команды.</span></div>
+  </a>
   <a class="game" href="./zahvat/">
     <div class="icon" style="background:#c4b5fd">🏰</div>
     <div class="info"><b>Захват</b><span>Крепости копят армию — веди войска пальцем и захвати всю карту.</span>

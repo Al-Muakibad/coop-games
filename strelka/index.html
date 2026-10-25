@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Перестрелка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #1b2a1f; touch-action: none; }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + env(safe-area-inset-top)) 10px 0; z-index: 3; pointer-events: none; color: #fff; font-weight: 900; }
+  #score { display: flex; justify-content: space-between; align-items: center; font-size: 15px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #score .big { font-size: 22px; }
+  #feed { margin-top: 4px; font-size: 13px; text-align: right; min-height: 18px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #ammo { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom)); display: flex; gap: 5px; z-index: 3; pointer-events: none; }
+  #ammo i { width: 22px; height: 10px; border-radius: 4px; border: 2px solid #000; background: #ffd34d; }
+  #ammo i.e { background: #475569; }
+  #msg { position: fixed; left: 0; right: 0; top: 36%; text-align: center; font-size: 32px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; }
+  #msg.on { opacity: 1; }
+  #hint { position: fixed; bottom: calc(46px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; color: #e2e8f0; font-weight: 800; font-size: 14px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="top" class="hidden"><div id="score"><span id="s-me"></span><span id="s-time" class="big"></span><span id="s-lead"></span></div><div id="feed"></div></div>
+<div id="ammo" class="hidden"></div>
+<div id="hint" class="hidden">Левый палец — бег, правый — прицел и огонь. Короткий тап справа — выстрел в ближайшего</div>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🔫💥</div>
+    <h1>Перестрелка</h1>
+    <p class="sub">Арена, укрытия и кусты. Бегай, прячься и стреляй — первым наберёшь 10 фрагов или будешь лучшим за 2,5 минуты — победил. До 6 игроков, пустые места — боты.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу в бой: ты и 3 бота</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат. Каждый сам за себя или 2 команды</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
