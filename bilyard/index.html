@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Бильярд</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #10241a; touch-action: none; }
+  #hud { position: fixed; top: 0; left: 0; right: 0; z-index: 3; display: flex; gap: 6px; align-items: stretch; padding: calc(6px + env(safe-area-inset-top)) 8px 4px; pointer-events: none; color: #fff; }
+  .pl { flex: 1; min-width: 0; background: rgba(0,0,0,.35); border: 2px solid rgba(255,255,255,.18); border-radius: 12px; padding: 4px 8px; }
+  .pl.on { border-color: #ffd34d; background: rgba(255,211,77,.16); }
+  .pl .nm { display: flex; justify-content: space-between; gap: 4px; font-weight: 900; font-size: 14px; white-space: nowrap; overflow: hidden; }
+  .pl .nm span { overflow: hidden; text-overflow: ellipsis; }
+  .pl .nm small { font-weight: 800; color: #ffd34d; font-size: 12px; }
+  .pl .bl { display: flex; gap: 2px; margin-top: 3px; height: 15px; align-items: center; font-size: 11px; font-weight: 700; color: #cbd5e1; }
+  .pl.r .nm { flex-direction: row-reverse; } .pl.r .bl { justify-content: flex-end; }
+  .bi { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.6); flex: 0 0 14px; }
+  .bi.off { opacity: .2; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; align-items: center; gap: 8px; padding: 4px 10px calc(6px + env(safe-area-inset-bottom)); color: #fff; }
+  #status { flex: 1; font-weight: 800; font-size: 14px; line-height: 1.25; min-height: 36px; display: flex; align-items: center; -webkit-text-stroke: 3px #000; paint-order: stroke fill; pointer-events: none; }
+  #spin { position: relative; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; background: #f8fafc; border: 3px solid #1e293b; touch-action: none; }
+  #spin i { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #ef4444; border: 2px solid #7f1d1d; pointer-events: none; }
+  #spin::after { content: "винт"; position: absolute; left: -6px; right: -6px; bottom: -13px; text-align: center; font-size: 10px; font-weight: 800; color: #cbd5e1; }
+  #msg { position: fixed; left: 0; right: 0; top: 42%; text-align: center; font-size: 26px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; padding: 0 16px; }
+  #msg.on { opacity: 1; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .chips { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 8px 0 0; }
+  .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; background: #fff; font: inherit; font-weight: 800; font-size: 14px; color: var(--ink); }
+  .chip.on { background: #ffd34d; }
+</style>
+</head>
+<body>
+<canvas id="bg" class="full"></canvas>
+<canvas id="game" class="full"></canvas>
+<div id="hud" class="hidden">
+  <div class="pl" id="pl0"><div class="nm"><span></span><small></small></div><div class="bl"></div></div>
+  <div class="pl r" id="pl1"><div class="nm"><span></span><small></small></div><div class="bl"></div></div>
+</div>
+<div id="bar" class="hidden"><div id="status"></div><div id="spin"><i></i></div></div>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🎱</div>
+    <h1>Бильярд</h1>
+    <p class="sub">Американский пул «восьмёрка». Забей все свои шары — сплошные или полосатые, а потом чёрную восьмёрку.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против бота<small>Сразу, без ожидания</small></button>
+      <div class="chips" id="c-lvl"><button class="chip" data-v="0">Лёгкий</button><button class="chip on" data-v="1">Средний</button><button class="chip" data-v="2">Мастер</button></div>
+      <button class="btn" id="m-party">👥 С другом онлайн<small>Одна ссылка в чат — партия 1 на 1</small></button>
+      <button class="btn" id="m-local">📱 Вдвоём на одном телефоне<small>Передавайте телефон по очереди</small></button>
+    </div>
+    <p class="rules">Тяни от шара назад, как рогатку, и отпусти. Медленное движение пальцем — точная доводка. Кто первым забил — тот цвет. Фол (биток в лузе, первым задет чужой шар, никто не коснулся борта) — шар с руки у соперника. Восьмёрка раньше времени — поражение.</p>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🎱</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

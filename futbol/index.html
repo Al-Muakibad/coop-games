@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Футбол машинками</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #0f2e1c; touch-action: none; }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(6px + env(safe-area-inset-top)) 10px 0; z-index: 3; pointer-events: none; color: #fff; font-weight: 900; }
+  #score { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 22px; }
+  #score .t { min-width: 46px; text-align: center; padding: 2px 10px; border-radius: 12px; border: 3px solid #0b1a10; }
+  #s-a { background: #2563eb; } #s-b { background: #dc2626; }
+  #s-time { min-width: 76px; text-align: center; font-size: 20px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #s-time.ot { color: #fde047; font-size: 15px; }
+  #feed { margin-top: 3px; font-size: 13px; text-align: center; min-height: 18px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #boost { position: fixed; right: 16px; bottom: calc(22px + env(safe-area-inset-bottom)); width: 94px; height: 94px; border-radius: 50%; z-index: 4; touch-action: none; }
+  #msg { position: fixed; left: 0; right: 0; top: 34%; text-align: center; font-size: 34px; font-weight: 900; color: #fff; -webkit-text-stroke: 6px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s, transform .2s; transform: scale(.8); pointer-events: none; z-index: 5; }
+  #msg.on { opacity: 1; transform: scale(1); }
+  #msg.big { font-size: 58px; }
+  #hint { position: fixed; bottom: calc(140px + env(safe-area-inset-bottom)); left: 12px; right: 12px; text-align: center; color: #fff; font-weight: 800; font-size: 14px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="top" class="hidden"><div id="score"><span id="s-a" class="t">0</span><span id="s-time">2:00</span><span id="s-b" class="t">0</span></div><div id="feed"></div></div>
+<div id="boost" class="hidden"></div>
+<div id="hint" class="hidden">Веди пальцем в любом месте — машина едет туда.<br>Держи ⚡ — ускорение. Забей в ворота сверху!</div>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🚗⚽</div>
+    <h1>Футбол машинками</h1>
+    <p class="sub">Гоняй мяч машинкой, тарань, ускоряйся — и забивай в чужие ворота. Матч 2 минуты, при ничьей — золотой гол.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 2 на 2 с ботами<small>Ты и бот-напарник против двух ботов</small></button>
+      <button class="btn" id="m-bots1">🏎 1 на 1 против бота<small>Только ты и соперник</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>1 на 1 или 2 на 2 — пустые места займут боты</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

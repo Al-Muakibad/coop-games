@@ -16,6 +16,10 @@
   #ammo { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom)); display: flex; gap: 5px; z-index: 3; pointer-events: none; }
   #ammo i { width: 22px; height: 10px; border-radius: 4px; border: 2px solid #000; background: #ffd34d; }
   #ammo i.e { background: #475569; }
+  #ammo.sm { gap: 3px; } #ammo.sm i { width: 10px; }
+  #spec { position: fixed; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 4; text-align: center; color: #fff; font-weight: 900; font-size: 16px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #spec small { display: block; font-size: 12px; opacity: .85; margin-top: 2px; }
+  #spec .btn { pointer-events: auto; width: auto; display: inline-block; margin-top: 8px; padding: 10px 18px; font-size: 15px; -webkit-text-stroke: 0; }
   #msg { position: fixed; left: 0; right: 0; top: 36%; text-align: center; font-size: 32px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; }
   #msg.on { opacity: 1; }
   #hint { position: fixed; bottom: calc(46px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; color: #e2e8f0; font-weight: 800; font-size: 14px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
@@ -28,6 +32,7 @@
 <div id="ammo" class="hidden"></div>
 <div id="hint" class="hidden">Левый палец — бег, правый — прицел и огонь. Короткий тап справа — выстрел в ближайшего</div>
 <div id="msg"></div>
+<div id="spec" class="hidden"><div id="spec-t"></div><small>Тап по экрану — смотреть за другим</small><button class="btn" id="spec-skip">⏭ К итогам</button></div>
 
 <div id="screen-menu" class="screen">
   <div class="card">
@@ -36,7 +41,8 @@
     <p class="sub">Арена, укрытия и кусты. Бегай, прячься и стреляй — первым наберёшь 10 фрагов или будешь лучшим за 2,5 минуты — победил. До 6 игроков, пустые места — боты.</p>
     <div class="modes">
       <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу в бой: ты и 3 бота</small></button>
-      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат. Каждый сам за себя или 2 команды</small></button>
+      <button class="btn" id="m-br">👑 Королевская битва<small>Одна жизнь, сужающаяся зона, оружие с пола. Ты и 5 ботов</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат. Каждый сам за себя, 2 команды или королевская битва</small></button>
     </div>
     <button class="btn ghost" id="m-menu">Другие игры</button>
   </div>

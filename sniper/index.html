@@ -73,6 +73,23 @@
   .wallet { font-weight: 900; font-size: 20px; margin: 4px 0; }
   .card { max-height: calc(100vh - 40px); overflow-y: auto; }
   .status { margin: 10px 0 2px; font-weight: 700; color: var(--muted); }
+  .ctl { position: relative; }
+  .ctl i { position: absolute; right: -4px; top: -4px; min-width: 24px; height: 24px; border-radius: 12px; background: #ffd34d; border: 2.5px solid #000; font-style: normal; font-size: 14px; line-height: 19px; color: #000; text-align: center; }
+  .ctl.tool { background: rgba(255,247,234,.92); }
+  .ctl.used { opacity: .35; }
+  .ctl.used i { background: #bbb; }
+  #ammo span { font-size: 15px; line-height: 12px; filter: drop-shadow(0 1px 0 #000); }
+  #ammo span.used { opacity: .25; }
+  .rank { display: flex; align-items: center; gap: 10px; text-align: left; background: #fff; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; margin: 0 0 12px; box-shadow: 0 3px 0 var(--ink); }
+  .rank .rk-ic { font-size: 32px; }
+  .rank b { display: block; font-size: 17px; }
+  .rank small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .rk-end { font-weight: 800; font-size: 16px; margin-top: 6px; }
+  .rk-up { margin-top: 4px; font-weight: 900; color: #d95a12; font-size: 17px; }
+  .rk-note { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+  #vs .p small { display: block; font-size: 13px; opacity: .85; margin-top: 4px; white-space: nowrap; }
+  .tag2 { display: inline-block; vertical-align: 4px; margin-left: 6px; font-size: 15px; background: #e5484d; color: #fff; border: 2.5px solid var(--ink); border-radius: 8px; padding: 0 7px; transform: rotate(-6deg); }
+  @media (max-width: 380px) { .ctl { width: 80px; height: 80px; font-size: 32px; } .ctl.small { width: 64px; height: 64px; font-size: 26px; } .ctl.fire { width: 108px; height: 108px; } .mid { gap: 8px; } }
   .dots::after { content: ""; animation: dots 1.2s infinite; }
   @keyframes dots { 0% { content: ""; } 33% { content: "."; } 66% { content: ".."; } 100% { content: "..."; } }
 </style>
@@ -93,7 +110,7 @@
 <div id="emo-panel" class="hidden"></div>
 <div class="bubble" id="bub-me"></div><div class="bubble" id="bub-opp"></div>
 <div id="banner" class="hidden"><div class="b0" id="ban0"></div><div class="b1" id="ban1"></div><div class="b2" id="ban2"></div></div>
-<div id="vs" class="hidden"><div class="p"><div class="av" style="background:#2f7cf6" id="vs-a1"></div><b id="vs-n1"></b></div><div class="x">VS</div><div class="p"><div class="av" style="background:#e5484d" id="vs-a2"></div><b id="vs-n2"></b></div></div>
+<div id="vs" class="hidden"><div class="p"><div class="av" style="background:#2f7cf6" id="vs-a1"></div><b id="vs-n1"></b><small id="vs-r1"></small></div><div class="x">VS</div><div class="p"><div class="av" style="background:#e5484d" id="vs-a2"></div><b id="vs-n2"></b><small id="vs-r2"></small></div></div>
 <div id="msg"></div>
 <div id="big"></div>
 <div id="controls" class="hidden"></div>
@@ -101,9 +118,10 @@
 <div id="screen-menu" class="screen">
   <div class="card">
     <div class="logo">🎯🧱</div>
-    <h1>Снайпер: прятки</h1>
-    <p class="sub">Онлайн-батл 1 на 1. Один бегает между стенами, второй ищет его в снайперский прицел. Потом меняетесь.</p>
-    
+    <h1>Снайпер: прятки<span class="tag2">2</span></h1>
+    <p class="sub">Онлайн-батл 1 на 1. Один бегает между укрытиями, второй ищет его в снайперский прицел. Потом меняетесь. Новое: город, лес и снег, 💨 дымовые шашки и 💣 граната.</p>
+    <div class="rank" id="m-rank"></div>
+
     <div class="modes">
       <button class="btn primary" id="m-invite">⚔️ Позвать друга<small>Онлайн: каждый на своём телефоне</small></button>
       <button class="btn" id="m-bot">🤖 Тренировка с ботом<small>Тоже зарабатываешь монеты</small></button>
@@ -139,6 +157,7 @@
     <h2 id="end-title"></h2>
     <div class="breakdown" id="end-sub"></div>
     <div class="verdict" id="end-coins"></div>
+    <div id="end-rating"></div>
     <div class="status" id="end-status"></div>
     <div id="end-buttons"></div>
   </div>

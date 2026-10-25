@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Гонки</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #3f8f3f; touch-action: none; }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + env(safe-area-inset-top)) 10px 0; z-index: 3; pointer-events: none; color: #fff; font-weight: 900; }
+  #bar { display: flex; justify-content: space-between; align-items: flex-start; font-size: 16px; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #pos { font-size: 34px; line-height: 1; } #pos small { font-size: 18px; }
+  #lap { font-size: 18px; padding-top: 4px; } #tm { font-size: 18px; padding-top: 4px; font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
+  #mm { position: fixed; right: 8px; top: calc(44px + env(safe-area-inset-top)); width: 104px; height: 132px; z-index: 3; pointer-events: none; }
+  #feed { position: fixed; left: 10px; top: calc(50px + env(safe-area-inset-top)); font-size: 13px; color: #fff; font-weight: 800; -webkit-text-stroke: 3px #000; paint-order: stroke fill; z-index: 3; pointer-events: none; max-width: 60%; }
+  #itembtn { position: fixed; right: 16px; bottom: calc(22px + env(safe-area-inset-bottom)); width: 82px; height: 82px; border-radius: 50%; border: 4px solid rgba(255,255,255,.55); background: rgba(0,0,0,.28); z-index: 4;
+    display: flex; align-items: center; justify-content: center; font-size: 40px; color: rgba(255,255,255,.5); font-weight: 900; padding: 0; font-family: inherit; touch-action: none; }
+  #itembtn.on { border-color: #ffd34d; background: rgba(255,122,47,.85); color: #fff; animation: pop .35s; }
+  @keyframes pop { 0% { transform: scale(.6); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+  #msg { position: fixed; left: 0; right: 0; top: 34%; text-align: center; font-size: 34px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; }
+  #msg.on { opacity: 1; } #msg.big { font-size: 72px; }
+  #hint { position: fixed; bottom: calc(120px + env(safe-area-inset-bottom)); left: 12px; right: 12px; text-align: center; color: #fff; font-weight: 800; font-size: 14px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; z-index: 3; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; } .row.me { background: #fff0c9; border-radius: 8px; padding: 3px 6px; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="top" class="hidden"><div id="bar"><span id="pos"></span><span id="lap"></span><span id="tm"></span></div></div>
+<canvas id="mm" class="hidden"></canvas>
+<div id="feed"></div>
+<button id="itembtn" class="hidden">?</button>
+<div id="hint" class="hidden">Веди пальцем — машина едет туда, газ сам. Отпусти — тормоз. Резкий поворот на скорости — дрифт и ускорение! Коробки «?» — бонусы</div>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🏎️💨</div>
+    <h1>Гонки</h1>
+    <p class="sub">Маленькие машинки, большие заносы. 3 круга, дрифт даёт ускорение, а в коробках — ракеты, масло и нитро. До 6 гонщиков, пустые места — боты.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу на старт: ты и 4 бота</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат — заезд до 6 машин</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
