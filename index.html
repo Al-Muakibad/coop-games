@@ -11,7 +11,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -119,10 +119,9 @@
     <div class="info"><b>Захват</b><span>Крепости копят армию — веди войска пальцем и захвати всю карту.</span>
       <i class="tag new">НОВОЕ</i> <i class="tag">🎉 до 6</i> <i class="tag">🤖 боты</i></div>
   </a>
-  <a class="game" href="./territoria/">
-    <div class="icon" style="background:#93c5fd">🟦</div>
-    <div class="info"><b>Территория</b><span>Обводи землю хвостом и срезай чужие хвосты. Кто захватит больше?</span>
-      <i class="tag new">НОВОЕ</i> <i class="tag">🎉 до 6</i> <i class="tag">🤖 боты</i></div>
+  <a class="game" href="./arena/">
+    <div class="icon" style="background:#8bd3a8">🐍</div>
+    <div class="info"><b>Змеиная арена <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Ешь конфеты, расти и подрезай соперников. До 6 игроков, боты.</span></div>
   </a>
   <a class="game" href="./tolpa/">
     <div class="icon" style="background:#fda4af">🏃</div>

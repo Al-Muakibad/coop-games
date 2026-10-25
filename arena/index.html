@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Змеиная арена</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #101828; touch-action: none; }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + env(safe-area-inset-top)) 10px 0; z-index: 3; pointer-events: none; color: #fff; font-weight: 900; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  #row { display: flex; justify-content: space-between; font-size: 15px; }
+  #row .big { font-size: 21px; }
+  #board { margin-top: 4px; font-size: 12px; line-height: 1.35; }
+  #boost { position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 74px; height: 74px; border-radius: 50%; border: 4px solid #000; background: #ffd34d; font-size: 34px; z-index: 4; box-shadow: 0 4px 0 #000; touch-action: none; }
+  #boost.on { background: #ff7a2f; transform: translateY(3px); box-shadow: 0 1px 0 #000; }
+  #msg { position: fixed; left: 0; right: 0; top: 36%; text-align: center; font-size: 30px; font-weight: 900; color: #fff; -webkit-text-stroke: 5px #000; paint-order: stroke fill; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 5; }
+  #msg.on { opacity: 1; }
+  #hint { position: fixed; bottom: calc(110px + env(safe-area-inset-bottom)); left: 0; right: 0; text-align: center; color: #e2e8f0; font-weight: 800; font-size: 14px; pointer-events: none; -webkit-text-stroke: 3px #000; paint-order: stroke fill; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<canvas id="game" class="full"></canvas>
+<div id="top" class="hidden"><div id="row"><span id="s-me"></span><span id="s-time" class="big"></span><span id="s-place"></span></div><div id="board"></div></div>
+<button id="boost" class="hidden">⚡</button>
+<div id="hint" class="hidden">Веди пальцем — змея ползёт туда. ⚡ — ускорение (тратит длину). Врежешься в чужое тело — конец</div>
+<div id="msg"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🐍🍬</div>
+    <h1>Змеиная арена</h1>
+    <p class="sub">Ешь конфеты, расти и подрезай соперников — кто врежется в твоё тело, рассыплется на конфеты. Самая длинная змея через 2,5 минуты побеждает. До 6 игроков, пустые места — боты.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу в бой: ты и 4 бота</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в общий чат — до 6 игроков</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
