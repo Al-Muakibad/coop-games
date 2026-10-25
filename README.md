@@ -9,6 +9,7 @@
 | Хрупкий груз | `gruz/` | t.me/hrupkiy_gruz_bot?startapp=gruz |
 | Башня | `bashnya/` | t.me/hrupkiy_gruz_bot?startapp=bashnya |
 | Дуэль (онлайн 1 на 1) | `duel/` | t.me/hrupkiy_gruz_bot?startapp=duel |
+| Шпион (компания 3–8, или один телефон) | `shpion/` | t.me/hrupkiy_gruz_bot?startapp=shpion |
 
 Корневой `index.html` — меню игр и маршрутизация по `startapp=<игра>[-c<очки>x<имя>]`.
 Общий код: `shared/tg.js` (Telegram, рекорды, вызов другу), `shared/ui.css`.

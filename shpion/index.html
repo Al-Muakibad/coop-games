@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Шпион</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: linear-gradient(#1f2a44, #2e3b5e); }
+  #play { position: fixed; inset: 0; display: flex; flex-direction: column; padding: calc(10px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)); gap: 10px; color: #fff; overflow: auto; }
+  #top { display: flex; justify-content: space-between; align-items: center; font-weight: 800; }
+  #timer { font-size: 40px; font-weight: 900; line-height: 1; }
+  #timer.low { color: #ff6b6b; animation: pulse .5s infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.08); } }
+  #hint { color: #c7d2fe; font-weight: 700; font-size: 14px; text-align: center; }
+  #card { background: #fff7ea; color: var(--ink); border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 6px 0 #0b1020; padding: 16px; text-align: center; min-height: 150px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  #card.spy { background: #2b1d14; color: #fff; border-color: #ff6b6b; }
+  #card .big { font-size: clamp(28px, 9vw, 42px); font-weight: 900; line-height: 1.1; }
+  #card .em { font-size: 54px; line-height: 1; }
+  #card .small { color: inherit; opacity: .75; font-weight: 700; font-size: 14px; margin-top: 6px; }
+  #card.closed { background: repeating-linear-gradient(45deg, #ffd34d, #ffd34d 12px, #ffcb2b 12px, #ffcb2b 24px); }
+  #places { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
+  #places button { padding: 7px 4px; border: 2px solid #94a3b8; border-radius: 10px; background: #33416a; color: #fff; font: inherit; font-weight: 700; font-size: 12.5px; line-height: 1.15; }
+  #places button.x { opacity: .35; text-decoration: line-through; }
+  #places button.pick { border-color: #ffd34d; }
+  #acts { display: flex; flex-direction: column; gap: 8px; }
+  #acts .btn { margin: 0; }
+  .who { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .who .btn { margin: 0; font-size: 15px; padding: 12px 6px; }
+  .who .btn.on { background: #ffd34d; }
+  .lbl { font-weight: 900; font-size: 15px; color: #c7d2fe; margin-top: 2px; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .chips { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 6px 0; }
+  .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 6px 12px; background: #fff; font: inherit; font-weight: 800; font-size: 14px; }
+  .chip.on { background: #ffd34d; }
+</style>
+</head>
+<body>
+<div id="play" class="hidden">
+  <div id="top"><span id="round"></span><span id="timer"></span><span id="votes"></span></div>
+  <div id="hint"></div>
+  <div id="card"></div>
+  <div id="acts"></div>
+  <div class="lbl" id="places-lbl">Все локации (нажми, чтобы зачеркнуть):</div>
+  <div id="places"></div>
+</div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🕵️</div>
+    <h1>Шпион</h1>
+    <p class="sub">Все знают, где вы находитесь, — кроме одного. Задавайте друг другу вопросы и вычислите шпиона, пока он не догадался, где вы.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-party">🎉 Каждый со своего телефона<small>От 3 человек. Одна ссылка в общий чат — и все в комнате</small></button>
+      <button class="btn" id="m-one">📱 На одном телефоне<small>Передавайте телефон по кругу, чтобы посмотреть карты</small></button>
+    </div>
+    <div id="one-setup" class="hidden">
+      <p class="sub" style="margin:10px 0 0">Сколько игроков?</p>
+      <div class="chips" id="c-n"><button class="chip" data-v="3">3</button><button class="chip on" data-v="4">4</button><button class="chip" data-v="5">5</button><button class="chip" data-v="6">6</button><button class="chip" data-v="7">7</button><button class="chip" data-v="8">8</button></div>
+      <p class="sub" style="margin:6px 0 0">Время на раунд</p>
+      <div class="chips" id="c-min"><button class="chip" data-v="4">4 мин</button><button class="chip on" data-v="6">6 мин</button><button class="chip" data-v="8">8 мин</button></div>
+      <button class="btn primary" id="one-go">▶ Начать</button>
+    </div>
+    <p class="rules">Как играть: по очереди спрашивайте любого игрока о месте, где вы «находитесь» («Часто ты тут бываешь?», «Что на тебе надето?»). Отвечайте так, чтобы свои поняли, а шпион — нет. Шпион может в любой момент назвать локацию. В конце — голосование.</p>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🕵️</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="places.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

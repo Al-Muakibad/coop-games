@@ -11,7 +11,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -121,6 +121,10 @@
     <div class="icon" style="background:#f9a8c4">🪱</div>
     <div class="info"><b>Червячки</b><span>Команды червяков по очереди: базука, граната, динамит. Земля рушится, ветер дует.</span>
       <i class="tag new">НОВОЕ</i> <i class="tag">⚔️ до 4</i> <i class="tag">🤖 бот</i></div>
+  </a>
+  <a class="game" href="./shpion/">
+    <div class="icon" style="background:#9aa8d6">🕵️</div>
+    <div class="info"><b>Шпион <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Все знают, где вы, — кроме шпиона. Вопросы, подозрения и голосование. От 3 человек.</span></div>
   </a>
   <a class="game" href="./slovo/">
     <div class="icon" style="background:#fde68a">🗣️</div>
