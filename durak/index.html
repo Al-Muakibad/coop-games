@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Дурак</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: radial-gradient(circle at 50% 40%, #1f7a4a, #0f4d2e 70%); }
+  #play { position: fixed; inset: 0; display: flex; flex-direction: column; padding: calc(8px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom)); gap: 8px; color: #fff; }
+  #opps { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+  .opp { background: rgba(0,0,0,.25); border: 2px solid rgba(255,255,255,.25); border-radius: 14px; padding: 6px 10px; min-width: 86px; text-align: center; font-weight: 800; font-size: 13px; }
+  .opp.att { border-color: #ffd34d; } .opp.def { border-color: #ff6b6b; } .opp.out { opacity: .5; }
+  .opp .backs { display: flex; justify-content: center; margin-top: 4px; height: 26px; }
+  .opp .backs i { width: 16px; height: 24px; margin-left: -8px; border-radius: 3px; border: 1.5px solid #fff; background: repeating-linear-gradient(45deg, #c2410c, #c2410c 3px, #ea580c 3px, #ea580c 6px); }
+  .opp .backs i:first-child { margin-left: 0; }
+  .opp small { display: block; font-weight: 700; color: #d1fae5; font-size: 11px; }
+  #mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 0; position: relative; }
+  #deck { position: absolute; left: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: 900; }
+  #deck small { font-size: 11px; color: #d1fae5; font-weight: 800; }
+  #table { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 14px; max-width: 330px; margin-left: 50px; }
+  .pair { position: relative; width: 52px; height: 92px; }
+  .pair .c:nth-child(2) { position: absolute; left: 12px; top: 20px; }
+  #status { font-weight: 800; text-align: center; font-size: 15px; min-height: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .c { width: 48px; height: 70px; border-radius: 8px; background: #fff; border: 2px solid #1f2937; color: #111; font-weight: 900; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; box-shadow: 0 2px 0 rgba(0,0,0,.35); user-select: none; }
+  .c b { font-size: 19px; } .c span { font-size: 21px; }
+  .c.red { color: #dc2626; }
+  .c.tr { background: #fff7d6; }
+  .c.back { background: repeating-linear-gradient(45deg, #c2410c, #c2410c 4px, #ea580c 4px, #ea580c 8px); border-color: #fff; }
+  #hand { display: flex; justify-content: center; padding: 6px 0 2px; min-height: 84px; }
+  #hand .c { margin-left: -14px; transition: transform .12s; cursor: pointer; }
+  #hand .c:first-child { margin-left: 0; }
+  #hand .c.ok { transform: translateY(-10px); box-shadow: 0 0 0 3px #ffd34d, 0 2px 0 rgba(0,0,0,.35); }
+  #hand .c.dim { filter: brightness(.75); }
+  #acts { display: flex; gap: 8px; }
+  #acts .btn { flex: 1; margin: 0; padding: 13px 6px; font-size: 17px; }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="play" class="hidden">
+  <div id="opps"></div>
+  <div id="mid"><div id="deck"></div><div id="table"></div></div>
+  <div id="status"></div>
+  <div id="hand"></div>
+  <div id="acts"></div>
+</div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🃏</div>
+    <h1>Дурак</h1>
+    <p class="sub">Подкидной дурак на 2–4 игрока. Играй с ботами или позови друзей — пустые места займут боты.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Играть с ботами<small>Сразу, без ожидания</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат, до 4 человек, боты добивают места</small></button>
+    </div>
+    <p class="rules">Ходит тот, у кого младший козырь. Отбивайся старшей картой той же масти или козырем. Подкидывать можно карты того же достоинства, что уже на столе. Не можешь отбиться — бери. Кто последним остался с картами — дурак.</p>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🃏</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

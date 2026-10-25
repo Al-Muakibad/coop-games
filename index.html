@@ -11,7 +11,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -68,6 +68,10 @@
 
   <section data-sec="friends">
   <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
+  <a class="game" href="./durak/">
+    <div class="icon" style="background:#7fd1a3">🃏</div>
+    <div class="info"><b>Дурак <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Подкидной на 2–4: с ботами сразу или с друзьями онлайн.</span></div>
+  </a>
   <a class="game" href="./chervi/">
     <div class="icon" style="background:#f9a8c4">🪱</div>
     <div class="info"><b>Червячки</b><span>Команды червяков по очереди: базука, граната, динамит. Земля рушится, ветер дует.</span>
@@ -136,6 +140,10 @@
 
   <section data-sec="solo" class="hidden">
   <p class="secnote">Играй сам и кидай друзьям вызов на свой рекорд.</p>
+  <a class="game" href="./durak/">
+    <div class="icon" style="background:#7fd1a3">🃏</div>
+    <div class="info"><b>Дурак <span style="background:#ff7a2f;color:#fff;border-radius:8px;padding:1px 6px;font-size:12px;vertical-align:middle">NEW</span></b><span>Подкидной на 2–4: с ботами сразу или с друзьями онлайн.</span></div>
+  </a>
   <a class="game" href="./tanchiki/">
     <div class="icon" style="background:#f5c518">🪖</div>
     <div class="info"><b>Танчики</b><span>Защити штаб от волн танков. Кирпич ломается, бонусы, уровни.</span>
