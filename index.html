@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Кооп-игры</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="shared/i18n.js"></script>
 <script src="shared/tg.js"></script>
+<script src="shared/sfx.js"></script>
 <script src="shared/stats.js"></script>
 <script src="shared/feedback.js"></script>
 <script>
@@ -356,6 +358,7 @@
     <button id="channel"><span>📢</span>Канал с новыми играми</button>
     <button id="fb"><span>💬</span>Идея / баг</button>
   </div>
+  <div class="foot"><button id="lang"></button></div>
 </main>
 <script>
   TG.init({ header: "#090b14", bg: "#090b14" });
@@ -385,6 +388,15 @@
     const w = n % 10 === 1 && n % 100 !== 11 ? "мини-игра" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "мини-игры" : "мини-игр";
     el.textContent = n; el.nextSibling.textContent = ` ${w} прямо в Telegram`; }
   document.querySelectorAll("a.game").forEach((a) => a.addEventListener("click", () => Stats.event("hub_pick", { pick: a.getAttribute("href").replace(/[./]/g, "") })));
+  // язык: переключатель и пометка игр, которые пока только на русском
+  { const lb = document.getElementById("lang"), en = I18N.lang === "en";
+    lb.innerHTML = en ? "<span>🌐</span>Русский" : "<span>🌐</span>English";
+    lb.onclick = () => { Stats.event("lang_switch", { to: en ? "ru" : "en" }); I18N.set(en ? "ru" : "en"); };
+    if (en) document.querySelectorAll("a.game").forEach((a) => {
+      const g = a.getAttribute("href").replace(/[./]/g, "");
+      if (I18N.FULL.indexOf(g) < 0) { const t = document.createElement("i"); t.className = "tag"; t.textContent = "RU text"; a.querySelector(".info").appendChild(t); }
+      else a.parentNode.insertBefore(a, a.parentNode.querySelector("a.game"));
+    }); }
   document.querySelectorAll(".best[data-key]").forEach((el) =>
     TG.loadBest(el.dataset.key, (b) => { if (b > 0) el.textContent = "Твой рекорд: " + b; }));
 </script>

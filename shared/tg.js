@@ -7,6 +7,7 @@
     ? window.Telegram.WebApp : null;
 
   function haptic(kind, style) {
+    try { if (window.Sfx) Sfx.fromHaptic(kind, style); } catch (_) {}
     try {
       if (!tg || !tg.HapticFeedback) return;
       if (kind === "impact") tg.HapticFeedback.impactOccurred(style);
@@ -45,6 +46,10 @@
   }
 
   function openLink(url) {
+    // текст приглашения переводим на язык игрока
+    if (window.I18N && I18N.lang !== "ru" && url.indexOf("https://t.me/share/url?") === 0) {
+      try { const u = new URL(url); const tx = u.searchParams.get("text"); if (tx) { u.searchParams.set("text", I18N.t(tx)); url = u.toString(); } } catch (_) {}
+    }
     if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank");
   }
   function gameLink(gameId, param) {
