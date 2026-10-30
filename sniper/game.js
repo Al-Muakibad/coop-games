@@ -13,6 +13,7 @@
   };
   const PRICE = [40, 80, 140], MAXLV = 3;
   const RANKS = [[0, "🔰", "Новичок"], [1100, "🎯", "Стрелок"], [1250, "🔭", "Снайпер"], [1450, "👑", "Легенда"]];
+  const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
   const rankOf = (r) => { let k = RANKS[0]; for (const x of RANKS) if (r >= x[0]) k = x; return { ic: k[1], name: k[2] }; };
 
   // ---------- рейтинг (ELO за онлайн, отдельно победы над ботом): localStorage + CloudStorage ----------
@@ -514,14 +515,14 @@
   }
   function bindRoom() {
     room.on("peer", (p) => {
-      opp.name = p.name || "Друг"; opp.rt = 1000;
+      opp.name = String(p.name || "Друг").slice(0, 20); opp.rt = 1000;
       window.Stats && Stats.event(room.isHost ? "invite_accepted" : "invite_join", {});
       room.send("info", { name: me.name, up: me.up, rt: rating.r });
       $("room-emoji").textContent = "✅"; $("room-title").textContent = `${opp.name} в игре!`; $("room-status").textContent = "Начинаем…";
       T.haptic("notify", "success");
       if (room.isHost) setTimeout(() => { if (room && room.peer) hostStartMatch(); }, 1200);
     });
-    room.on("info", (d) => { if (d) { opp.name = (d.name || opp.name).slice(0, 20); opp.up = d.up || opp.up; if (typeof d.rt === "number" && isFinite(d.rt)) opp.rt = Math.max(100, Math.min(4000, Math.round(d.rt))); hud(); } });
+    room.on("info", (d) => { if (d) { opp.name = String(d.name || opp.name).slice(0, 20); opp.up = d.up || opp.up; if (typeof d.rt === "number" && isFinite(d.rt)) opp.rt = Math.max(100, Math.min(4000, Math.round(d.rt))); hud(); } });
     room.on("full", () => { $("room-title").textContent = "Комната занята"; $("room-status").textContent = "В этой комнате уже играют двое."; });
     room.on("peer-left", () => {
       if (phase === "menu") return;
@@ -786,12 +787,12 @@
   function askRematch() {
     if (mode === "bot") { startBot(); return; }
     rematch.me = true; me.up = myUp(); send("info", { name: me.name, up: me.up, rt: rating.r }); send("rematch", {});
-    $("end-status").innerHTML = `<span class="dots">Ждём ${opp.name}</span>`;
+    $("end-status").innerHTML = `<span class="dots">Ждём ${esc(opp.name)}</span>`;
     tryRematch();
   }
   function tryRematch() {
     if (phase !== "end") return;
-    if (!rematch.me) { $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${opp.name} хочет реванш!</b>`; { const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш"; } T.haptic("notify", "warning"); return; }
+    if (!rematch.me) { $("end-status").innerHTML = `<b style="color:#e5484d;font-size:18px">🔥 ${esc(opp.name)} хочет реванш!</b>`; { const b = $("end-buttons").querySelector(".btn.primary"); if (b) b.textContent = "✅ Принять реванш"; } T.haptic("notify", "warning"); return; }
     if (rematch.opp && isHost()) hostStartMatch();
   }
 
