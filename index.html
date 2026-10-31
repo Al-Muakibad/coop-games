@@ -13,7 +13,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";

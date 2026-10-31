@@ -1,0 +1,14 @@
+3D-модели в этой папке — бесплатные паки KayKit от Kay Lousberg (www.kaylousberg.com).
+Лицензия всех паков: Creative Commons Zero (CC0) — http://creativecommons.org/publicdomain/zero/1.0/
+Можно использовать в личных, учебных и коммерческих проектах; указание автора не обязательно (но мы указываем).
+
+Источники (GitHub, ветка main):
+- KayKit Character Pack: Adventurers 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+    knight.glb, barbarian.glb, mage.glb, rogue.glb, merchant.glb (Rogue_Hooded), оружие crossbow_1handed / crossbow_2handed / staff / wand / arrow (weapons.glb)
+- KayKit Character Pack: Skeletons 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0
+    sk_minion.glb, sk_warrior.glb, sk_rogue.glb, sk_mage.glb, anims.glb (анимации из Skeleton_Minion),
+    оружие Skeleton_Blade / Skeleton_Axe / Skeleton_Staff / Skeleton_Shield_* (weapons.glb)
+- KayKit Medieval Hexagon Pack 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+    world.glb: дома, башни, заборы, стены, деревья, камни, горы, облака, реквизит
+
+Изменения: убраны лишние анимации, файлы объединены и сжаты (gltf-transform, meshopt). Сами модели не менялись.

@@ -87,7 +87,7 @@
     }
   }
   function setMusic(want) {
-    wantMusic = want && on;
+    wantMusic = want && on && !window.SFX_NO_MUSIC;   // игра может отключить музыку (Аванпост)
     if (!ac) return;
     const g = musBus.gain, t = ac.currentTime;
     g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(wantMusic ? 0.5 : 0, t + 0.8);

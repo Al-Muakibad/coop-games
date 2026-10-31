@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Аванпост</title>
+<script>window.SFX_NO_MUSIC = true;</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  html, body { background: #2a3b2c; }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ov { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  .tx { color: #fff; font-weight: 900; -webkit-text-stroke: 3px rgba(20,12,6,.85); paint-order: stroke fill; }
+  #hud { position: fixed; left: 0; right: 0; top: 0; z-index: 3; padding: calc(8px + env(safe-area-inset-top)) 10px 0; pointer-events: none; }
+  #hud-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+  .pill { background: rgba(28,20,14,.72); border: 2px solid rgba(255,220,160,.35); border-radius: 14px; padding: 5px 10px; color: #fff7ea; font-weight: 900; font-size: 15px; line-height: 1.2; box-shadow: 0 3px 0 rgba(0,0,0,.35); }
+  #wave small { display: block; font-size: 12px; font-weight: 800; color: #ffd38a; }
+  #res { display: flex; gap: 8px; font-size: 15px; }
+  #res span { white-space: nowrap; }
+  #me-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  #lvl { flex: 0 0 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(#ffd96b, #e09a1d); border: 2px solid #3b2410; color: #3b2410; font-weight: 900; font-size: 15px; box-shadow: 0 2px 0 rgba(0,0,0,.4); }
+  .bars { flex: 1; max-width: 220px; }
+  .bar { height: 12px; border-radius: 7px; background: rgba(0,0,0,.55); border: 2px solid rgba(20,12,6,.8); overflow: hidden; position: relative; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(#ff7272, #d42a2a); transition: width .15s; }
+  .bar.xp { height: 8px; margin-top: 3px; } .bar.xp i { background: linear-gradient(#9fe6ff, #3aa5ff); }
+  .bar b { position: absolute; inset: 0; font-size: 9px; line-height: 8px; text-align: center; color: #fff; font-weight: 900; }
+  #houses { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .hs { display: flex; align-items: center; gap: 4px; background: rgba(28,20,14,.6); border-radius: 9px; padding: 2px 6px; font-size: 11px; font-weight: 900; color: #fff; }
+  .hs .bar { width: 48px; height: 7px; border-width: 1px; } .hs .bar i { background: linear-gradient(#7dff8a, #2fb34a); } .hs .bar u { position: absolute; left: 0; top: 0; height: 2px; background: #ffd34d; }
+  .hs.dead { opacity: .45; text-decoration: line-through; }
+  #boss { display: none; margin: 6px auto 0; max-width: 240px; text-align: center; padding: 3px 10px; }
+  #boss .bar { height: 10px; } #boss .bar i { background: linear-gradient(#c77dff, #6d28d9); }
+  #boss div { font-size: 13px; }
+  #acts { position: fixed; right: 10px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+  .ab { pointer-events: auto; min-width: 58px; height: 58px; border-radius: 18px; border: 3px solid #2b1d14; background: #fff7ea; font: inherit; font-size: 26px; font-weight: 900; color: #2b1d14; box-shadow: 0 4px 0 #2b1d14; position: relative; padding: 0 10px; }
+  .ab:active { transform: translateY(3px); box-shadow: 0 1px 0 #2b1d14; }
+  .ab small { position: absolute; right: -6px; top: -8px; background: #ff4d4d; color: #fff; border-radius: 10px; font-size: 12px; padding: 1px 6px; border: 2px solid #2b1d14; }
+  .ab.go { background: #4ade80; font-size: 17px; height: 52px; } .ab.go.on { background: #ffd34d; }
+  .ab.hot { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.08); } }
+  #msg { position: fixed; left: 0; right: 0; top: 30%; text-align: center; font-size: 34px; z-index: 6; pointer-events: none; opacity: 0; transform: scale(.8); transition: opacity .25s, transform .25s; }
+  #msg.on { opacity: 1; transform: scale(1); }
+  #msg small { display: block; font-size: 17px; margin-top: 4px; }
+  #toast { position: fixed; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 7; pointer-events: none; opacity: 0; transition: opacity .2s; font-size: 16px; white-space: nowrap; }
+  #toast.on { opacity: 1; }
+  #near { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 3; pointer-events: none; font-size: 14px; color: #fff; text-align: center; }
+  #joy { position: fixed; z-index: 3; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255,255,255,.12); border: 3px solid rgba(255,255,255,.35); pointer-events: none; display: none; }
+  #joy i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,247,234,.85); border: 3px solid #2b1d14; }
+  #dead { position: fixed; left: 0; right: 0; top: 42%; text-align: center; font-size: 22px; z-index: 5; pointer-events: none; }
+  /* панели */
+  #panel { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 72vh; overflow: auto; background: #fff7ea; border-top: 3px solid #2b1d14; border-radius: 22px 22px 0 0; padding: 12px 12px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 -6px 0 rgba(43,29,20,.25); transform: translateY(105%); transition: transform .25s ease-out; color: #2b1d14; }
+  #panel.on { transform: translateY(0); }
+  #panel h3 { margin: 0 0 4px; font-size: 21px; font-weight: 900; display: flex; justify-content: space-between; align-items: center; }
+  #panel h3 button { border: 0; background: #2b1d14; color: #fff; border-radius: 50%; width: 32px; height: 32px; font-size: 16px; }
+  #panel .wallet { font-weight: 900; color: #8a5a2b; font-size: 15px; margin-bottom: 8px; }
+  .sec { font-weight: 900; font-size: 13px; color: #8a7462; text-transform: uppercase; margin: 10px 2px 5px; letter-spacing: .5px; }
+  .it { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 2px solid #2b1d14; border-radius: 14px; background: #fff; margin-bottom: 7px; }
+  .it .ic { font-size: 28px; flex: 0 0 36px; text-align: center; }
+  .it .tx2 { flex: 1; min-width: 0; } .it .tx2 b { display: block; font-size: 15px; } .it .tx2 span { display: block; font-size: 12.5px; color: #8a7462; font-weight: 700; line-height: 1.25; }
+  .it button { flex: 0 0 auto; border: 2px solid #2b1d14; border-radius: 11px; background: #ff7a2f; color: #fff; font: inherit; font-weight: 900; font-size: 13px; padding: 8px 9px; box-shadow: 0 3px 0 #2b1d14; max-width: 128px; }
+  .it button:disabled { background: #d8cfc4; color: #8a7462; box-shadow: none; }
+  .it.own { background: #fff3c4; }
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .slot { border: 2px solid #2b1d14; border-radius: 13px; background: #fff; padding: 7px 4px; text-align: center; font-weight: 900; font-size: 13px; }
+  .slot .ic { font-size: 26px; display: block; } .slot.sel { background: #ffd34d; } .slot small { display: block; color: #8a7462; font-size: 11px; }
+  /* перки */
+  #perks { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; background: rgba(20,12,6,.6); }
+  #perks h2 { color: #ffd34d; margin: 0 0 4px; font-size: 30px; }
+  #perks p { color: #fff; margin: 0 0 12px; font-weight: 700; }
+  .pk { width: 100%; max-width: 340px; display: flex; align-items: center; gap: 12px; text-align: left; margin-bottom: 10px; padding: 12px 14px; border: 3px solid #2b1d14; border-radius: 18px; background: #fff7ea; box-shadow: 0 5px 0 #2b1d14; font: inherit; color: #2b1d14; animation: pop .35s backwards; }
+  .pk:nth-child(3) { animation-delay: .07s; } .pk:nth-child(4) { animation-delay: .14s; } .pk:nth-child(5) { animation-delay: .21s; }
+  .pk .ic { font-size: 36px; } .pk b { display: block; font-size: 17px; } .pk span { font-size: 13px; color: #8a7462; font-weight: 700; } .pk em { font-style: normal; color: #d95a12; font-size: 12px; font-weight: 900; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  #screen-menu { background: linear-gradient(rgba(20,30,20,.15), rgba(20,12,6,.55)); }
+  #screen-menu .card { background: rgba(255,247,234,.96); }
+  .title { font-size: 40px; margin: 4px 0 2px; letter-spacing: 1px; color: #2b1d14; }
+  #load { height: 8px; border-radius: 6px; background: #e8dccb; overflow: hidden; margin: 8px 0 0; } #load i { display: block; height: 100%; width: 0; background: #ff7a2f; transition: width .2s; }
+  #qual { margin-top: 6px; font-size: 13px; color: #8a7462; font-weight: 700; } #qual b { color: #d95a12; text-decoration: underline; cursor: pointer; }
+  .stats { text-align: left; font-size: 14px; margin: 8px 0; } .stats div { display: flex; justify-content: space-between; padding: 4px 2px; border-bottom: 1px dashed #d8cfc4; font-weight: 700; }
+  .big { font-size: 46px; font-weight: 900; margin: 0; line-height: 1; color: #d95a12; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
+<div id="hud" class="hidden">
+  <div id="hud-row">
+    <div class="pill" id="wave">Волна 1<small>⏳ стройка 0:30</small></div>
+    <div class="pill" id="res"><span id="r-c">🪙 0</span><span id="r-w">🪵 0</span><span id="r-s">🪨 0</span></div>
+  </div>
+  <div id="me-row"><div id="lvl">1</div><div class="bars"><div class="bar" id="hpbar"><i></i><b></b></div><div class="bar xp" id="xpbar"><i></i></div></div></div>
+  <div id="houses"></div>
+  <div id="boss" class="pill"><div>💀 Король костей</div><div class="bar"><i></i></div></div>
+</div>
+<div id="acts" class="hidden">
+  <button class="ab hidden" id="b-shop">🛒</button>
+  <button class="ab hidden" id="b-build">🔨</button>
+  <button class="ab hidden" id="b-pot">🧪<small>0</small></button>
+  <button class="ab go hidden" id="b-ready">✅ Готов</button>
+</div>
+<div id="near" class="tx"></div>
+<div id="joy"><i></i></div>
+<div id="msg" class="tx"></div>
+<div id="toast" class="tx"></div>
+<div id="dead" class="tx hidden"></div>
+<div id="panel"></div>
+<div id="perks" class="hidden"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🏰🧟</div>
+    <h1 class="title">Аванпост</h1>
+    <p class="sub">У каждого свой аванпост. Ночью идут скелеты — стреляй, руби лес, строй башни и стены, торгуйся с купцом. Продержитесь как можно больше волн! До 6 игроков.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-party">🎉 Позвать друзей<small>Одна ссылка в чат — до 6 игроков</small></button>
+      <button class="btn" id="m-solo">🎮 Играть одному<small>Один аванпост — сразу в бой</small></button>
+    </div>
+    <div id="load"><i></i></div>
+    <div id="qual">Графика: <b id="q-btn">авто</b></div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏚️</div>
+    <h2 id="end-title">Аванпосты пали</h2>
+    <p class="big" id="end-wave"></p>
+    <div class="stats" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/sfx.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
