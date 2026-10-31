@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>up</title><body>sending…<script>
+(async()=>{const f=new URLSearchParams(location.search).get('f').split(',');const out=[];
+for(const n of f){const r=await fetch(n);out.push({name:n,type:r.headers.get('content-type')||'video/mp4',buf:await r.arrayBuffer()});}
+(window.opener||parent).postMessage({kgUpload:out},'*',out.map(o=>o.buf));document.body.textContent='sent '+out.length;})();
+</script>
