@@ -1,6 +1,6 @@
 /* Кэш «Аванпоста»: тяжёлые файлы (модели, текстуры, музыка, three.js) берём из памяти телефона,
    код игры и страницы — сначала из сети (чтобы обновления приходили сразу), без сети — из кэша. */
-const CACHE = "avanpost-v6";
+const CACHE = "avanpost-v7";
 const HEAVY = /\.(glb|webp|hdr|mp3|png|jpg)(\?|$)/i;
 const PINNED_CDN = /^https:\/\/cdn\.jsdelivr\.net\/npm\/(three@0\.160\.0|mqtt@5\.10\.1|es-module-shims@1\.10\.0)\//;
 

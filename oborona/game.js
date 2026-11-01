@@ -479,7 +479,7 @@ function begin(c, snap) {
   if (merchView) { world.remove(merchView.root); merchView = null; }
   shots = []; G.enemies.clear(); G.drops.clear(); G.F = []; G.over = false; G.t = 0; G.wave = 0; G.ph = "build"; G.timer = D.BUILD_FIRST; G.queue = []; G.merchant = null; G.bossId = 0; G.eid = 1; G.did = 1; G.clouds = []; G.lost = 0; G.bossKills = 0;
   G.loc = cfg.loc || SE.STEPS[0].id;
-  const siege = G.loc === "siege"; G.sg = null; SG.dispose();
+  const siege = G.loc === "siege"; G.sg = null; SG.dispose(); SG.resetNet(); lastHzT = -1;
   if (siege) D.LOC.siege.waves = SG.wavesFor(cfg.slv || 1);
   const n = siege ? 1 : cfg.houses || cfg.players.length, spots = siege ? [{ x: 0, z: SG.KZ }] : houseSpots(n);
   buildLocation(G.loc, cfg.seed, n);
@@ -527,11 +527,11 @@ function begin(c, snap) {
 let lastSnapT = 0, snapRx = 0, otherRx = 0, hostGoneT = 0, seenAt = {};
 function wireRoom() {
   ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2", "sync", "revive", "myprog", "hz"].forEach((t) => room.off(t));
-  room.on("hz", (d) => { if (!isHost() && G.sg && phase === "play") SG.applyHorde(d); });
+  room.on("hz", (d) => { if (!isHost() && G.sg && phase === "play") { const t = performance.now(); SG.applyHorde(d); const hs = window.__hzStat; if (hs) { const ms = performance.now() - t; hs.n++; hs.sum += ms; if (ms > hs.max) hs.max = ms; } } });
   room.on("s", (s, from) => {
     // два хозяина (после смены): побеждает более поздняя эпоха, при равенстве — меньший номер игрока
     let yielded = false;
-    if (hosting) { if (s.ep > ep || (s.ep === ep && s.hi < me)) { hosting = false; yielded = true; probeUntil = 0; shots = []; acc = 0; (G.mlog = G.mlog || []).push(["yield", s.hi, s.ep, ep]); } else return; }   // старый хозяин сразу уступает и бросает свой мир
+    if (hosting) { if (s.ep > ep || (s.ep === ep && s.hi < me)) { hosting = false; yielded = true; SG.resetNet(); probeUntil = 0; shots = []; acc = 0; (G.mlog = G.mlog || []).push(["yield", s.hi, s.ep, ep]); } else return; }   // старый хозяин сразу уступает и бросает свой мир
     else if (s.ep < ep || (s.ep === ep && s.hi > hostIdx)) return;
     ep = s.ep; hostIdx = s.hi;
     lastSnapT = snapRx = performance.now(); hostGoneT = 0;
@@ -625,7 +625,7 @@ function migrate(why) {
   // я — новый хозяин: восстанавливаем точные значения из того, что приходило в снимках
   hosting = true;
   for (const e of G.enemies.values()) { const M = D.MON[e.type]; e.max = e.max > 1 ? e.max : M.hp * D.hpMul(G.wave || 1, G.players.length, D.LOC[G.loc].diff) * (M.boss ? 1.6 : 1) * (e.el ? 2.5 : 1); e.hp = Math.max(1, (e.hpPct || 100) / 100 * e.max); e.x = e.tx ?? e.x; e.z = e.tz ?? e.z; e.cd = 1; e.spawnT = 0; e.h = nearestHouse(e.x, e.z)?.idx ?? 0; e.dmgBy = {}; e.ab = {}; }
-  if (G.sg) { const pr = G.players.filter((p) => p.present); SG.adoptHost(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length)); }
+  if (G.sg) { SG.resetNet(); lastHzT = -1; for (const [id, e] of [...G.enemies]) if (e.hz) { if (e.die) G.enemies.delete(id); else e.vis = 1; } const pr = G.players.filter((p) => p.present); SG.adoptHost(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length)); }
   else if (G.ph === "wave") { const L = D.LOC[G.loc]; const full = D.makeWave(G.loc, G.wave, activePlayers(), Math.random).filter((k) => !D.MON[k].boss); G.queue = full.slice(0, Math.max(0, qLeft)); }
   G.eid = Math.max(G.eid, ...[...G.enemies.keys()], 0) + 100; G.did = Math.max(G.did, ...[...G.drops.keys()], 0) + 100;
   dirtyFull = true; navDirty = true;
@@ -2073,7 +2073,7 @@ let lobbyInfo = {};
 function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: { ts: S.cos.ts, out: S.cos.out, ban: S.cos.ban } }; }
 async function hostParty(loc, slv) {
   phase = "lobby"; showLobby({ status: "Создаём комнату…" });
-  try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true }); }
+  try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true, p2pRetry: true }); }
   catch (e) { showLobby({ error: "Нет связи с сервером 😕 Проверь интернет" }); return; }
   saveRoom(room.id);
   lobbyInfo = { [room.me.id]: myHello() };
@@ -2113,7 +2113,7 @@ async function hostParty(loc, slv) {
 let welcoming = false;
 async function joinParty(id) {
   phase = "lobby"; showLobby({ status: "Подключаемся к комнате…" });
-  try { room = await Net.openParty(GAME, id, { name: myHello().name }); }
+  try { room = await Net.openParty(GAME, id, { name: myHello().name, p2pRetry: true }); }
   catch (e) { showLobby({ error: "Нет связи с сервером 😕 Проверь интернет" }); return; }
   saveRoom(id);
   // ссылка из памяти (после перезапуска) могла устареть: если за 20 с никто не ответил — комната закрыта
@@ -2148,7 +2148,17 @@ function showLobby(o) {
 // ?fps=1 — счётчик кадров для проверки на телефоне
 const fpsEl = /[?&]fps=1/.test(location.search) ? Object.assign(document.body.appendChild(document.createElement("div")), { style: "position:fixed;left:6px;bottom:6px;z-index:99;font:700 11px monospace;color:#9f9;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:6px;pointer-events:none" }) : null;
 let fpsN2 = 0, fpsT2 = 0;
-let last = 0, lastWall = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0, hzT = 0;
+// ?net=1 — сеть для отладки на телефоне: канал (прямой/брокер), RTT, пакеты орды, задержка буфера, опоздавшие/потерянные
+const netEl = /[?&]net=1/.test(location.search) ? Object.assign(document.body.appendChild(document.createElement("div")), { style: "position:fixed;left:6px;bottom:24px;z-index:99;font:700 10px/1.35 monospace;color:#9ef;background:rgba(0,0,0,.65);padding:4px 7px;border-radius:6px;pointer-events:none;white-space:pre" }) : null;
+let netT = 0, netRx0 = 0, netRxT = 0;
+window.__netInfo = () => { if (!room) return null; const N = SG.NETSTAT, st = room.stat || {}; return { link: room.link, links: room.links, rtt: room.rtt, hzRate: +(N.pkRate || 0).toFixed(1), delay: Math.round(N.delay), gap: Math.round(N.gap), jit: Math.round(N.jit), late: N.late, noBase: N.noBase, dropped: N.dropped, key: N.key, procMs: +N.procMs.toFixed(2), rx: st.rx, relayRx: st.rxRelay, p2pRx: st.rxP2p, linkTries: st.linkTries }; };
+function netOverlay(now) {
+  if (!netEl || now - netT < 500) return; netT = now;
+  if (!room) { netEl.textContent = "сеть: одиночная игра"; return; }
+  const n = window.__netInfo(), st = room.stat || {}, kbs = netRxT ? ((st.rxBytes - netRx0) / 1024 / ((now - netRxT) / 1000)).toFixed(1) : "?"; netRx0 = st.rxBytes; netRxT = now;
+  netEl.textContent = `канал: ${n.link === "p2p" ? "прямой (p2p)" : "через брокер"}${hosting ? " · хозяин" : ""}\nRTT ${n.rtt || "?"} мс · приём ${kbs} КБ/с\n` + (G.sg && !hosting ? `орда: ${n.hzRate}/с · буфер ${n.delay} мс\nинтервал ${n.gap} · джиттер ${n.jit} мс\nопозд ${n.late} · без базы ${n.noBase} · пропущ ${n.dropped}\nразбор ${n.procMs} мс/кадр` : "") + (hosting ? `\nканалы: ${Object.values(n.links || {}).join(",") || "—"} · попыток p2p ${n.linkTries}` : "");
+}
+let last = 0, lastWall = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0, hzT = 0, lastHzT = -1;
 function frame(ts) {
   requestAnimationFrame(frame);
   // вкладка спала: меряем по настоящим часам (метка кадра после долгой паузы бывает «старой»)
@@ -2166,14 +2176,16 @@ function frame(ts) {
     if (isHost() && !probeUntil) { acc += dt; let n = 0; while (acc >= 1 / 30 && n < 8) { hostStep(1 / 30); acc -= 1 / 30; n++; } }   // пока «прислушиваемся» после фона — мир не двигаем
     localStep(dt); remoteFire(dt); updateShots(dt);
     if (G.sg && !isHost()) SG.clientStep(dt);
-    if (G.sg && isHost() && room) { hzT -= realDt; if (hzT <= 0) { hzT = 1 / 3; sendFast("hz", SG.packHorde()); } }
+    if (G.sg && isHost() && room) { hzT -= realDt; if (hzT <= 0) { hzT += 1 / SG.HZ_RATE; if (hzT < 0) hzT = 0; if (G.t <= lastHzT) { hzT = 0; } else { lastHzT = G.t; const [pk, key] = SG.packHorde(); if (key) send("hz", pk); else sendFast("hz", pk); } } }
     coneT -= dt;
     if (isHost() && room) { snapT -= realDt; if (snapT <= 0) { snapT = 1 / 10; sendFast("s", makeSnap()); } }
     hudT -= realDt; if (hudT <= 0 || hudDirty) { hudT = 0.15; hudDirty = false; hud(); }
   } else if (phase === "play" && isHost() && room) { snapT -= realDt; if (snapT <= 0) { snapT = 0.5; sendFast("s", makeSnap()); } }
   if (phase === "over") { updateShots(dt); if (isHost() && room) { snapT -= realDt; if (snapT <= 0) { snapT = 1; } } }
   if (!paused()) { updateViews(phase === "menu" || phase === "lobby" ? dt * 0.5 : dt); fx.update(dt); }
+  { const fs = window.__ftStat; if (fs) { const ms = performance.now() - t0; fs.n++; fs.sum += ms; if (ms > fs.max) fs.max = ms; if (ms > 33) fs.over33++; } }
   updateCamera(realDt);
+  netOverlay(wall);
   if (window.__norender) return;   // только для автотестов
   const t1 = performance.now();
   renderer.info.autoReset = false; renderer.info.reset();

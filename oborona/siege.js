@@ -527,51 +527,188 @@ export function applyStateStr(str) {
   sg.left = +left; sg.killed = +killed; sg.slv = +slv; sg.breaches = +br; sg.keepMin = +km / 100;
   chS.forEach(updSegView); chT.forEach(updSlotView);
 }
-export function packHorde() {
-  const g = G(), out = []; let last = 0;
-  const vint = (v) => { while (v >= 128) { out.push((v & 127) | 128); v >>>= 7; } out.push(v); };
-  let n = 0;
-  for (const e of g.enemies.values()) {
-    if (!e.hz) continue;
-    vint(e.id - last); last = e.id; n++;
-    const qx = clamp(Math.round((e.x - XMIN) * 8), 0, 511), qz = clamp(Math.round((e.z - ZMIN) * 8), 0, 1023), ty = HZ_T.indexOf(e.type), hp = clamp(Math.ceil(e.hp / e.max * 15), 0, 15), st = (e.st === 2 ? 2 : e.st === 3 ? 3 : e.atk ? 1 : 0) | ((e.burnT > 0 ? 1 : 0) << 2);
-    const v = qx | (qz << 9) | (ty << 19) | (hp << 22) | (st << 26);   // 9 + 10 + 3 + 4 + 3 = 29 бит
-    out.push(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255);
+// ---------- орда по сети ----------
+// Хозяин, 8 раз в секунду: раз в секунду «ключевой кадр» (все юниты: id + 4 байта, по надёжному каналу), между ними — дельты
+// к последнему ключевому кадру по быстрому каналу (3 байта на юнита: сдвиг x, z в 1/8 м и состояние). Потеря дельты не страшна.
+// Гость: буфер снимков с отметкой времени хозяина, рисуем «прошлое» с задержкой ≈ 1.5 интервала + разброс; НИКОГДА не экстраполируем.
+// Отображаемая точка не может пройти сквозь целую стену: её прижимает к той стороне, где юнит по последнему снимку хозяина.
+export const HZ_RATE = 8, HZ_KEY_EVERY = 8;
+const HK = { seq: 0, kSeq: 0, n: 0, ids: new Int32Array(1024), qx: new Int16Array(1024), qz: new Int16Array(1024), idx: new Map() };
+let outBuf = new Uint8Array(8192);
+const putB = (o, b) => { if (o >= outBuf.length) { const nb = new Uint8Array(outBuf.length * 2); nb.set(outBuf); outBuf = nb; } outBuf[o] = b; return o + 1; };
+function b64(n) { let s = ""; for (let i = 0; i < n; i += 4096) s += String.fromCharCode.apply(null, outBuf.subarray(i, Math.min(n, i + 4096))); return btoa(s); }
+const qX = (x) => clamp(Math.round((x - XMIN) * 8), 0, 511), qZ = (z) => clamp(Math.round((z - ZMIN) * 8), 0, 1023);
+const stByte = (e) => { const hp = clamp(Math.ceil(e.hp / e.max * 15), 0, 15), st = (e.st === 2 ? 2 : e.st === 3 ? 3 : e.atk ? 1 : 0) | ((e.burnT > 0 ? 1 : 0) << 2); return hp | (st << 4); };
+// возвращает [строка, ключевой ли кадр]
+export function packHorde(forceKey) {
+  const g = G(); HK.seq = (HK.seq + 1) & 65535;
+  const key = forceKey || HK.seq % HZ_KEY_EVERY === 1 || !HK.n && HK.kSeq === 0;
+  const tms = Math.round(g.t * 1000) >>> 0;
+  let o = 0; o = putB(o, 2); o = putB(o, key ? 1 : 0); o = putB(o, HK.seq & 255); o = putB(o, HK.seq >> 8);
+  o = putB(o, tms & 255); o = putB(o, (tms >>> 8) & 255); o = putB(o, (tms >>> 16) & 255); o = putB(o, (tms >>> 24) & 255);
+  const vint = (v) => { while (v >= 128) { o = putB(o, (v & 127) | 128); v >>>= 7; } o = putB(o, v); };
+  const full = (e, last) => { vint(e.id - last); const ty = HZ_T.indexOf(e.type), v = qX(e.x) | (qZ(e.z) << 9) | (ty << 19) | (stByte(e) << 22); o = putB(o, v & 255); o = putB(o, (v >>> 8) & 255); o = putB(o, (v >>> 16) & 255); o = putB(o, (v >>> 24) & 255); };
+  if (key) {
+    HK.kSeq = HK.seq; HK.n = 0; HK.idx.clear();
+    let cnt = 0; for (const e of g.enemies.values()) if (e.hz) cnt++;
+    if (HK.ids.length < cnt) { HK.ids = new Int32Array(cnt * 2); HK.qx = new Int16Array(cnt * 2); HK.qz = new Int16Array(cnt * 2); }
+    vint(cnt); let last = 0;
+    for (const e of g.enemies.values()) { if (!e.hz) continue; full(e, last); last = e.id; HK.ids[HK.n] = e.id; HK.qx[HK.n] = qX(e.x); HK.qz[HK.n] = qZ(e.z); HK.idx.set(e.id, HK.n); HK.n++; }
+  } else {
+    o = putB(o, HK.kSeq & 255); o = putB(o, HK.kSeq >> 8);
+    // кто из ключевого кадра жив — битовая маска; затем по 3 байта на живого
+    const nb = (HK.n + 7) >> 3, maskAt = o; for (let i = 0; i < nb; i++) o = putB(o, 0);
+    let extra = 0;
+    for (let i = 0; i < HK.n; i++) {
+      const e = g.enemies.get(HK.ids[i]); if (!e) continue;
+      outBuf[maskAt + (i >> 3)] |= 1 << (i & 7);
+      const dx = qX(e.x) - HK.qx[i], dz = qZ(e.z) - HK.qz[i];
+      if (dx < -127 || dx > 127 || dz < -127 || dz > 127) { o = putB(o, 128); o = putB(o, 0); o = putB(o, stByte(e)); extra++; e.__x = 1; continue; }
+      o = putB(o, dx & 255); o = putB(o, dz & 255); o = putB(o, stByte(e));
+    }
+    // новые юниты (и далеко ушедшие) — полной записью
+    let cnt = extra; for (const e of g.enemies.values()) if (e.hz && !HK.idx.has(e.id)) cnt++;
+    vint(cnt); let last = 0;
+    for (const e of g.enemies.values()) { if (!e.hz) continue; if (!HK.idx.has(e.id) || e.__x) { e.__x = 0; full(e, last); last = e.id; } }
   }
-  let s = ""; for (let i = 0; i < out.length; i += 4096) s += String.fromCharCode.apply(null, out.slice(i, i + 4096));
-  return n + ":" + btoa(s);
-}
-let lastPack = 0;
-export function applyHorde(str) {
-  const g = G(); if (!g.sg || !str) return;
-  const ci0 = str.indexOf(":"), bin = atob(str.slice(ci0 + 1)), now = performance.now(), dtp = lastPack ? Math.min(0.6, (now - lastPack) / 1000) : 0.3; lastPack = now;
-  let i = 0, id = 0; const seen = new Set();
-  const rd = () => bin.charCodeAt(i++);
-  while (i < bin.length) {
-    let v = 0, sh = 0, b; do { b = rd(); v |= (b & 127) << sh; sh += 7; } while (b & 128);
-    id += v;
-    const w = (rd() | (rd() << 8) | (rd() << 16) | (rd() << 24)) >>> 0;
-    const x = (w & 511) / 8 + XMIN, z = ((w >>> 9) & 1023) / 8 + ZMIN, type = HZ_T[(w >>> 19) & 7], hp = (w >>> 22) & 15, st = (w >>> 26) & 7;
-    seen.add(id);
-    let e = g.enemies.get(id);
-    if (!e) { const M = HZ[type]; e = { id, type, hz: 1, x, z, tx: x, tz: z, vx: 0, vz: 0, ry: Math.PI, r: M.r, hp: M.hp, max: M.hp * (g.sg.hpMul || 1), spawnT: 0, dmgBy: {}, ph: (id * 2.39) % 6.28, ram: type === "ram" ? 1 : 0, st: 0 }; g.enemies.set(id, e); }
-    else { e.vx = lerp(e.vx || 0, (x - e.tx) / dtp, 0.6); e.vz = lerp(e.vz || 0, (z - e.tz) / dtp, 0.6); e.tx = x; e.tz = z; }
-    e.hpPct = hp / 15 * 100; e.hp = e.max * hp / 15; const s2 = st & 3; if (s2 === 2 && e.st !== 2) e.ct = 0; e.st = s2 === 1 ? 0 : s2; e.atk = s2 === 1; e.burnT = st & 4 ? 1 : 0;
-  }
-  for (const [id, e] of g.enemies) if (e.hz && !seen.has(id)) { g.enemies.delete(id); onDeath(e); }
-}
-// гость: плавно ведём юнитов к последним позициям с поправкой на скорость
-export function clientStep(dt) {
-  for (const e of G().enemies.values()) {
-    if (!e.hz) continue;
-    e.tx += (e.vx || 0) * dt * 0.85; e.tz += (e.vz || 0) * dt * 0.85;
-    const k = 1 - Math.exp(-dt * 7); const ox = e.x, oz = e.z;
-    e.x = lerp(e.x, e.tx, k); e.z = lerp(e.z, e.tz, k);
-    const mx = e.x - ox, mz = e.z - oz; if (mx * mx + mz * mz > 1e-5) { const want = Math.atan2(mx, mz); let dr = want - e.ry; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283; e.ry += dr * Math.min(1, dt * 8); }
-    if (e.st === 2) e.ct = Math.min(1, (e.ct || 0) + dt / 2.9);
-  }
+  return [b64(o), key];
 }
 
+// ----- гость -----
+export const NETSTAT = { pk: 0, key: 0, late: 0, noBase: 0, dropped: 0, delay: 0, gap: 0, jit: 0, lastSeq: -1, rate: 0, rateT: 0, rateN: 0, procMs: 0 };
+const RB = { kT: -1, off: -1e15, offs: new Float64Array(48), oi: 0, on: 0, lastArr: 0, lastHostT: -1, kSeq: -1, kN: 0, kIds: new Int32Array(1024), kX: new Float32Array(1024), kZ: new Float32Array(1024), kType: new Uint8Array(1024) };
+let inBuf = new Uint8Array(8192);
+const pending = [];
+export function applyHorde(str) { pending.push(str); NETSTAT.pk++; if (pending.length > 24) { pending.splice(0, pending.length - 24); NETSTAT.dropped++; } }
+function resetBuffer() { RB.off = -1e15; RB.on = 0; RB.lastHostT = -1; RB.kSeq = -1; RB.kT = -1; NETSTAT.lastSeq = -1; for (const e of G().enemies.values()) if (e.hz) e.hn = 0; }
+function pushSample(e, t, x, z) {
+  if (!e.hb) { e.hb = new Float64Array(18); e.hn = 0; }
+  const b = e.hb; if (e.hn && t <= b[(e.hn - 1) % 6 * 3]) return;
+  const i = e.hn % 6; b[i * 3] = t; b[i * 3 + 1] = x; b[i * 3 + 2] = z; e.hn++;
+}
+function newUnit(id, type, x, z, t) {
+  const M = HZ[type], g = G();
+  const e = { id, type, hz: 1, x, z, ry: Math.PI, r: M.r, hp: M.hp, max: M.hp * (g.sg.hpMul || 1), spawnT: 0, dmgBy: {}, ph: (id * 2.39) % 6.28, ram: type === "ram" ? 1 : 0, st: 0, fresh: 1, born: t, die: 0, mk: 0 };
+  g.enemies.set(id, e); return e;
+}
+function setState(e, sb) { const hp = sb & 15, st = (sb >> 4) & 7, s2 = st & 3; e.hpPct = hp / 15 * 100; e.hp = e.max * hp / 15; if (s2 === 2 && e.st !== 2) e.ct = 0; e.st = s2 === 1 ? 0 : s2; e.atk = s2 === 1; e.burnT = st & 4 ? 1 : 0; }
+function decode(str) {
+  const g = G(), sg = g.sg; if (!sg) return;
+  const bin = atob(str), n = bin.length; if (inBuf.length < n) inBuf = new Uint8Array(n * 2);
+  for (let i = 0; i < n; i++) inBuf[i] = bin.charCodeAt(i);
+  let i = 0; const rd = () => inBuf[i++];
+  const vint = () => { let v = 0, sh = 0, b; do { b = rd(); v |= (b & 127) << sh; sh += 7; } while (b & 128); return v >>> 0; };
+  if (rd() !== 2) return;
+  const key = rd(), seq = rd() | (rd() << 8), t = (rd() | (rd() << 8) | (rd() << 16) | (rd() << 24)) >>> 0;
+  // новый хозяин / время назад — начинаем буфер заново
+  if (RB.lastHostT >= 0 && t + 1500 < RB.lastHostT) resetBuffer();
+  // опоздавший/переставленный пакет: ключевой кадр всё равно берём как базу (если он новее прежней базы), позиции — только если новее
+  // уже известных (кольцо юнита само отбрасывает старое), а «кто погиб» по нему не решаем
+  const late = RB.lastHostT >= 0 && t <= RB.lastHostT;
+  if (late) { NETSTAT.late++; if (!key || t <= RB.kT) return; }   // опоздавший или переставленный пакет — старее уже полученного
+  const now = performance.now();
+  // часы хозяина: offset = t - now; «самый быстрый» пакет из последних — лучшая оценка; разброс задержки — джиттер
+  const off = t - now; if (!late) { RB.offs[RB.oi] = off; RB.oi = (RB.oi + 1) % RB.offs.length; RB.on = Math.min(RB.on + 1, RB.offs.length);
+  let mx = -1e15; for (let k = 0; k < RB.on; k++) if (RB.offs[k] > mx) mx = RB.offs[k];
+  RB.off = mx; }
+  if (RB.lastArr) { const gap = now - RB.lastArr; NETSTAT.gap = NETSTAT.gap ? NETSTAT.gap * 0.9 + gap * 0.1 : gap; }
+  if (!late) NETSTAT.jit = NETSTAT.jit * 0.92 + (RB.off - off) * 0.08;
+  RB.lastArr = now; if (!late) RB.lastHostT = t;
+  const mark = seq + 1;
+  if (key) {
+    NETSTAT.key++;
+    const cnt = vint(); if (RB.kIds.length < cnt) { RB.kIds = new Int32Array(cnt * 2); RB.kX = new Float32Array(cnt * 2); RB.kZ = new Float32Array(cnt * 2); RB.kType = new Uint8Array(cnt * 2); }
+    let id = 0;
+    for (let k = 0; k < cnt; k++) {
+      id += vint(); const w = (rd() | (rd() << 8) | (rd() << 16) | (rd() << 24)) >>> 0;
+      const x = (w & 511) / 8 + XMIN, z = ((w >>> 9) & 1023) / 8 + ZMIN, ty = (w >>> 19) & 7;
+      RB.kIds[k] = id; RB.kX[k] = x; RB.kZ[k] = z; RB.kType[k] = ty;
+      let e = g.enemies.get(id); if (!e) e = newUnit(id, HZ_T[ty], x, z, t);
+      e.mk = mark; e.die = 0; pushSample(e, t, x, z); setState(e, (w >>> 22) & 255);
+    }
+    RB.kN = cnt; RB.kSeq = seq; RB.kT = t;
+  } else {
+    const ks = rd() | (rd() << 8);
+    if (ks !== RB.kSeq) { NETSTAT.noBase++; return; }   // ключевой кадр, к которому дельта, ещё не пришёл — ждём следующий
+    const nb = (RB.kN + 7) >> 3, maskAt = i; i += nb;
+    for (let k = 0; k < RB.kN; k++) {
+      if (!(inBuf[maskAt + (k >> 3)] & (1 << (k & 7)))) continue;
+      const dxb = rd(), dzb = rd(), sb = rd(); const e = g.enemies.get(RB.kIds[k]); if (!e) continue;
+      e.mk = mark; e.die = 0; setState(e, sb);
+      if (dxb === 128 && dzb === 0) continue;   // далеко ушёл — придёт полной записью ниже
+      const dx = dxb > 127 ? dxb - 256 : dxb, dz = dzb > 127 ? dzb - 256 : dzb;
+      pushSample(e, t, RB.kX[k] + dx / 8, RB.kZ[k] + dz / 8);
+    }
+    const cnt = vint(); let id = 0;
+    for (let k = 0; k < cnt; k++) {
+      id += vint(); const w = (rd() | (rd() << 8) | (rd() << 16) | (rd() << 24)) >>> 0;
+      const x = (w & 511) / 8 + XMIN, z = ((w >>> 9) & 1023) / 8 + ZMIN;
+      let e = g.enemies.get(id); if (!e) e = newUnit(id, HZ_T[(w >>> 19) & 7], x, z, t);
+      e.mk = mark; e.die = 0; pushSample(e, t, x, z); setState(e, (w >>> 22) & 255);
+    }
+  }
+  // кого нет в пакете — погиб; убираем, когда «прошлое» на экране дойдёт до этого момента
+  if (!late) for (const e of g.enemies.values()) if (e.hz && e.mk !== mark && !e.die) e.die = t;
+  NETSTAT.lastSeq = seq;
+}
+// стена: целый пролёт (или ворота) у гостя — по снимку хозяина; точка не может оказаться в нём или за ним, если юнит снаружи
+function constrain(e, x, z) {
+  if (e.st === 2 || e.st === 3 || Math.abs(x) > 16.6) return z;
+  const lo = WZ - WT - 0.05, hi = WZ + WT + 0.05; if (z <= lo || !G().sg) return z;
+  const i = segOf(x); if (!intact(G().sg, i)) return z;
+  const b = e.hb, nz = e.hn ? b[(e.hn - 1) % 6 * 3 + 2] : z;   // где юнит по последнему снимку
+  if (nz < WZ) return lo;            // снаружи — стену не проходит
+  return z < hi ? hi : z;            // уже внутри (через пролом) — остаётся внутри
+}
+// гость, каждый кадр: разбор пачки пакетов с ограничением по времени, затем интерполяция всех юнитов
+export function clientStep(dt) {
+  const g = G(); if (!g.sg) return;
+  const t0 = performance.now();
+  // пачка пакетов за кадр (брокер «залип» и отдал разом): ключевые кадры обязательно, из дельт — только свежие, в пределах ~3 мс
+  if (pending.length) {
+    for (let k = 0; k < pending.length; k++) {
+      const s = pending[k], late = pending.length - k > 2 && performance.now() - t0 > 3;
+      if (late && atob(s.slice(0, 4)).charCodeAt(1) !== 1) { NETSTAT.dropped++; continue; }   // не успеваем — пропускаем промежуточные дельты, ключевые кадры разбираем всегда
+      decode(s);
+    }
+    pending.length = 0;
+  }
+  const now = performance.now();
+  NETSTAT.rateN++; if (now - NETSTAT.rateT > 1000) { NETSTAT.rate = NETSTAT.pkRate = (NETSTAT.pk - (NETSTAT.pk0 || 0)) * 1000 / (now - NETSTAT.rateT); NETSTAT.pk0 = NETSTAT.pk; NETSTAT.rateT = now; }
+  if (RB.off < -1e14) return;
+  // задержка показа: 1.5 интервала + 2 джиттера (+ запас), 90…900 мс
+  const want = clamp(1.5 * (NETSTAT.gap || 125) + 2 * NETSTAT.jit + 25, 90, 900);
+  NETSTAT.delay = NETSTAT.delay ? NETSTAT.delay + (want - NETSTAT.delay) * Math.min(1, dt * 1.5) : want;
+  const R = now + RB.off - NETSTAT.delay;
+  const kb = 1 - Math.exp(-dt / 0.07);   // большие поправки — плавно за ~200 мс
+  for (const [id, e] of g.enemies) {
+    if (!e.hz) continue;
+    if (e.die && R >= e.die) { g.enemies.delete(id); onDeath(e); continue; }
+    const n = e.hn || 0; if (!n) continue;
+    const b = e.hb; let tx, tz;
+    const ni = (n - 1) % 6, oi = n >= 6 ? n % 6 : 0, cnt = Math.min(n, 6);
+    if (e.fresh && R < b[oi * 3]) { e.vis = 0; e.x = b[oi * 3 + 1]; e.z = b[oi * 3 + 2]; continue; }   // ещё «не родился» на экране
+    if (R >= b[ni * 3]) { tx = b[ni * 3 + 1]; tz = b[ni * 3 + 2]; }                   // новее последнего снимка не рисуем — стоим, не угадываем
+    else if (R <= b[oi * 3]) { tx = b[oi * 3 + 1]; tz = b[oi * 3 + 2]; }
+    else {
+      tx = b[ni * 3 + 1]; tz = b[ni * 3 + 2];
+      for (let c = cnt - 1; c > 0; c--) { const j1 = (oi + c) % 6, j0 = (oi + c - 1) % 6, t1 = b[j1 * 3], t0b = b[j0 * 3]; if (R >= t0b) { const k = (R - t0b) / Math.max(1, t1 - t0b); tx = b[j0 * 3 + 1] + (b[j1 * 3 + 1] - b[j0 * 3 + 1]) * k; tz = b[j0 * 3 + 2] + (b[j1 * 3 + 2] - b[j0 * 3 + 2]) * k; break; } }
+    }
+    tz = constrain(e, tx, tz);
+    if (e.fresh) { e.fresh = 0; e.vis = 1; e.x = tx; e.z = tz; continue; }
+    e.vis = 1;
+    const ox = e.x, oz = e.z, d = Math.hypot(tx - ox, tz - oz);
+    if (d > 8) { e.x = tx; e.z = tz; }                       // настоящий скачок — сразу
+    else if (d > 0.9) { e.x += (tx - ox) * kb; e.z += (tz - oz) * kb; }   // большая поправка — плавно
+    else { e.x = tx; e.z = tz; }
+    e.z = constrain(e, e.x, e.z);
+    const mx = e.x - ox, mz = e.z - oz;
+    if (mx * mx + mz * mz > 1e-6) { const want2 = Math.atan2(mx, mz); let dr = want2 - e.ry; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283; e.ry += dr * Math.min(1, dt * 8); }
+    if (e.st === 2) e.ct = Math.min(1, (e.ct || 0) + dt / 2.9);
+  }
+  NETSTAT.procMs = NETSTAT.procMs * 0.9 + (performance.now() - t0) * 0.1;
+}
+export function resetNet() { pending.length = 0; resetBuffer(); HK.seq = 0; HK.kSeq = 0; HK.n = 0; HK.idx.clear(); }
 // ================= ОТРИСОВКА: ОРДА =================
 // для каждого типа — два «запечённых» кадра походки (вершинная анимация в шейдере) + упрощённая модель для дальних
 const hr = { types: {}, uT: { value: 0 }, ready: false, blob: null, ladderIM: null, cap: 640 };
@@ -702,7 +839,7 @@ export function updateHorde(dt, camX, camZ, t, isHost) {
     if (!e.hz) continue;
     const dx = e.x - camX, dz = e.z - camZ;
     if (Math.abs(dx) > 24 || dz < -46 || dz > 20) { cul++; continue; }
-    if (e.ram) continue;
+    if (e.ram || e.vis === 0) continue;
     const T = hr.types[e.type]; if (!T) continue;
     const cnt = counts[e.type], isNear = Math.abs(dx) < 12 && dz > -15 && dz < 12 && cnt[0] < NEAR_CAP && nearAll < NEAR_TOTAL;
     const im = isNear ? T.near : T.far, i = isNear ? cnt[0]++ : cnt[1]++;
