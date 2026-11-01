@@ -27,7 +27,7 @@ export function halfW(z) {
 
 // ---------- уровни построек ----------
 export const WALL = [null,
-  { name: "Частокол", hp: 700, icon: "🪵" },
+  { name: "Частокол", hp: 520, icon: "🪵" },
   { name: "Каменная стена", hp: 1600, icon: "🧱", cost: { c: 20, s: 45 } },
   { name: "Стена с зубцами", hp: 2800, icon: "🏯", cost: { c: 45, s: 85 } },
   { name: "Крепостная стена", hp: 4500, icon: "🏰", cost: { c: 90, w: 20, s: 140 } }];
@@ -210,7 +210,7 @@ export const fieldInfo = () => ({ dist: fDist, dx: fDx, dz: fDz, GX, GZ, XMIN, Z
 // ================= ВОЛНЫ (НОЧИ) =================
 export function planWave(w, np, heroLvl) {
   const sg = G().sg, slv = sg.slv;
-  const n = Math.round((34 + 21 * w + 2.4 * w * w) * (0.72 + 0.28 * np) * (1 + 0.22 * (slv - 1)));
+  const n = Math.round((34 + 21 * w + 2.4 * w * w) * (0.72 + 0.28 * np) * (1.15 + 0.22 * (slv - 1)));
   sg.left = n; sg.total = n; sg.spawnT = 2.5;
   sg.hpMul = (1 + 0.1 * (w - 1)) * (1 + 0.28 * (slv - 1)) * (1 + 0.12 * (np - 1)) * (1 + 0.012 * Math.max(0, heroLvl - 1));
   sg.dmgMul = (1 + 0.08 * (w - 1)) * (1 + 0.15 * (slv - 1));
@@ -221,7 +221,10 @@ export function planWave(w, np, heroLvl) {
 // новый хозяин (прежний вышел): дополняем то, что гость не знал, — и орда продолжает идти
 export function adoptHost(w, np, heroLvl) {
   const g = G(), sg = g.sg; if (!sg) return;
-  const left = sg.left; planWave(Math.max(1, w), np, heroLvl); sg.left = g.ph === "wave" ? left : 0; sg.ladLeft = 0; sg.ramAt = []; sg.fieldDirty = true;
+  // очередь ночи (сколько ещё выйдет, тараны, лестницы, множители) пришла в снимке — продолжаем с того же места
+  const keep = { left: sg.left, lad: sg.ladLeft, rams: (sg.ramAt || []).slice(), hm: sg.hpMul, dm: sg.dmgMul, tot: sg.total };
+  planWave(Math.max(1, w), np, heroLvl);
+  sg.left = g.ph === "wave" ? keep.left : 0; sg.ladLeft = keep.lad || 0; sg.ramAt = keep.rams; if (keep.hm) sg.hpMul = keep.hm; if (keep.dm) sg.dmgMul = keep.dm; if (keep.tot) sg.total = keep.tot; sg.spawnT = 1; sg.fieldDirty = true;
   for (const e of g.enemies.values()) if (e.hz) {
     const M = HZ[e.type]; e.cd = Math.random(); e.lc = Math.random(); e.slowT = e.slowT || 0; e.burnT = 0; e.poisonT = 0; e.dmgBy = e.dmgBy || {}; e.r = M.r; e.lane = e.x;
     if (e.type === "hz_ladder" && e.st !== 2 && e.st !== 3) { const s0 = segOf(e.x); e.lseg = s0 === GATE ? s0 - 1 : s0; e.lx = segX(e.lseg); e.st = 5; }
@@ -507,11 +510,13 @@ export function stateStr() {
   const gt = sg.gate, gs = `${gt.lv}.${Math.round(gt.hp / gt.max * 1000)}.${gt.br}.${gt.oil}.${Math.ceil(gt.oilCd * 10)}`;
   const sl = sg.slot.map((t) => (t ? t.type + ":" + t.lv : "")).join(",");
   const ld = sg.lad.map((L) => `${L.id}.${Math.round(L.x * 10)}.${Math.round(L.push * 10)}`).join(",");
-  return [segs, gs, sl, ld, sg.left, sg.killed, sg.slv, sg.breaches, Math.round(sg.keepMin * 100)].join("|");
+  const cur = [sg.wave || 0, sg.total || 0, sg.ladLeft || 0, (sg.ramAt || []).join("_"), Math.round((sg.hpMul || 1) * 1000), Math.round((sg.dmgMul || 1) * 1000)].join(";");
+  return [segs, gs, sl, ld, sg.left, sg.killed, sg.slv, sg.breaches, Math.round(sg.keepMin * 100), cur].join("|");
 }
 export function applyStateStr(str) {
   const sg = G().sg; if (!sg || !str) return;
-  const [segs, gs, sl, ld, left, killed, slv, br, km] = str.split("|");
+  const [segs, gs, sl, ld, left, killed, slv, br, km, cur] = str.split("|");
+  if (cur) { const [w, tot, lad, rams, hm, dm] = cur.split(";"); sg.wave = +w; sg.total = +tot; sg.ladLeft = +lad; sg.ramAt = rams ? rams.split("_").map(Number) : []; sg.hpMul = +hm / 1000; sg.dmgMul = +dm / 1000; }
   const chS = [];
   segs.split(",").forEach((x, i) => { if (!x || !sg.seg[i]) return; const [lv, hp, b, rock] = x.split(".").map(Number); const s = sg.seg[i]; if (s.lv !== lv || s.br !== b || s.rock !== rock) chS.push(i); s.lv = lv; s.max = WALL[lv].hp * sg.hk; s.hp = s.max * hp / 1000; s.br = b; s.rock = rock; });
   { const [lv, hp, b, oil, cd] = gs.split(".").map(Number), gt = sg.gate; const ch = gt.lv !== lv || gt.br !== b || gt.oil !== oil; gt.lv = lv; gt.max = GATE_LV[lv].hp * sg.hk; gt.hp = gt.max * hp / 1000; gt.br = b; gt.oil = oil; gt.oilCd = cd / 10; if (ch) chS.push(GATE); }
