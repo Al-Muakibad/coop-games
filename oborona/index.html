@@ -164,6 +164,32 @@
 </style>
 </head>
 <body>
+<div id="boot" style="position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:radial-gradient(120% 80% at 50% 0%,#2a3a55 0%,#141c2b 60%,#0e141f 100%);color:#fff;font-family:Manrope,system-ui,sans-serif;text-align:center;transition:opacity .5s">
+  <div style="font-size:54px;line-height:1">🏰</div>
+  <div style="font-family:'Russo One',Impact,sans-serif;font-size:40px;letter-spacing:2px;background:linear-gradient(180deg,#fff6d8,#ffb347 60%,#e8742a);-webkit-background-clip:text;background-clip:text;color:transparent">АВАНПОСТ</div>
+  <div style="width:min(320px,80vw);height:12px;border-radius:12px;background:rgba(255,255,255,.12);overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.4)"><i id="boot-bar" style="display:block;height:100%;width:2%;border-radius:12px;background:linear-gradient(90deg,#ffb347,#ff5f6d);transition:width .3s"></i></div>
+  <div style="display:flex;gap:10px;align-items:baseline;font-weight:800"><span id="boot-pct" style="font-size:22px">0%</span><span id="boot-mb" style="font-size:13px;color:#aab4cc"></span></div>
+  <div id="boot-st" style="font-weight:700;font-size:14px;color:#cfd6e6;min-height:20px">Загружаем движок…</div>
+  <div id="boot-hint" style="max-width:300px;font-size:13px;line-height:1.4;color:#8e98b3;font-weight:600">Первый запуск может занять до минуты: скачиваем 3D-модели и текстуры (~10 МБ).<br>Дальше игра открывается за несколько секунд.</div>
+</div>
+<script>
+(function () {
+  var p = 0, shown = 0, el = function (id) { return document.getElementById(id); };
+  var cached = false; try { cached = localStorage.getItem("ob_loaded") === "1"; } catch (e) {}
+  if (cached) el("boot-hint").innerHTML = "Загружаем из памяти телефона — обычно пара секунд.";
+  function paint() { el("boot-bar").style.width = Math.max(2, shown * 100).toFixed(1) + "%"; el("boot-pct").textContent = Math.floor(shown * 100) + "%"; }
+  // пока качается движок (three.js) — плавно ползём до 15%
+  var creep = setInterval(function () { if (p < 0.15) { p += (0.15 - p) * 0.04; if (p > shown) { shown = p; paint(); } } }, 200);
+  var slow = setTimeout(function () { el("boot-st").textContent = "Интернет не торопится… ещё немного ⏳"; }, 25000);
+  window.Boot = {
+    set: function (k, text, mb) { clearInterval(creep); p = Math.max(p, Math.min(1, k)); shown = p; paint(); if (text) el("boot-st").textContent = text; if (mb) el("boot-mb").textContent = mb; },
+    done: function () { clearInterval(creep); clearTimeout(slow); shown = 1; paint(); try { localStorage.setItem("ob_loaded", "1"); } catch (e) {} var b = el("boot"); b.style.opacity = 0; setTimeout(function () { b.remove(); }, 550); },
+    fail: function () { clearInterval(creep); el("boot-st").innerHTML = "Не удалось загрузить игру 😕<br>Проверь интернет и открой игру ещё раз"; }
+  };
+  // кэш: повторные запуски берут файлы из памяти телефона
+  if ("serviceWorker" in navigator) { try { navigator.serviceWorker.register("sw.js").catch(function () {}); } catch (e) {} }
+})();
+</script>
 <canvas id="gl"></canvas>
 <canvas id="ov"></canvas>
 <div id="hud" class="hidden">

@@ -12,12 +12,23 @@ const QM = ["m_spider", "m_rat", "m_frog", "m_slime", "m_bat", "m_wasp", "m_drag
 const UPPER = /^(chest|upperarm|lowerarm|wrist|hand|handslot|head)/;
 export const A = { chars: {}, clips: {}, world: {}, weapons: {}, nature: {}, props: {}, q: {}, qclips: {}, qh: {}, ready: false, wind: { value: 0 } };
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-const loadGLB = (n) => new Promise((res, rej) => loader.load(`assets/${n}.glb${V}`, res, undefined, rej));
+const GLB_BYTES = 7136072; // суммарный размер моделей (для полосы загрузки); обновить при замене .glb
+const loadGLB = (n, onp) => new Promise((res, rej) => loader.load(`assets/${n}.glb${V}`, res, onp, rej));
 
+// onProgress(доля 0..1, загружено байт, всего байт)
 export async function loadAll(onProgress) {
   const files = [...KK, "anims", "world", "weapons", "nature", "props", ...QM];
-  let done = 0;
-  const res = await Promise.all(files.map((n) => loadGLB(n).then((g) => { done++; onProgress && onProgress(done / files.length); return g; })));
+  const got = {}, tot = {}; let done = 0;
+  const report = () => {
+    let g = 0, t = 0, known = 0;
+    for (const n of files) { g += got[n] || 0; if (tot[n]) { t += tot[n]; known++; } }
+    // пока размеры не у всех известны — оцениваем по среднему
+    const est = Math.max(GLB_BYTES, known === files.length ? t : 0);
+    const byBytes = est ? Math.min(1, g / est) : 0;
+    onProgress && onProgress(Math.max(byBytes, done / files.length * 0.98), g, est);
+  };
+  const res = await Promise.all(files.map((n) => loadGLB(n, (e) => { got[n] = e.loaded; if (e.total) tot[n] = e.total; report(); })
+    .then((g) => { done++; if (tot[n]) got[n] = tot[n]; report(); return g; })));
   const get = (n) => res[files.indexOf(n)];
   for (const c of get("anims").animations) A.clips[c.name] = c;
   const mask = (clip, upper) => { const c = clip.clone(); c.tracks = c.tracks.filter((t) => UPPER.test(t.name) === upper); c.name = clip.name + (upper ? "_U" : "_L"); return c; };

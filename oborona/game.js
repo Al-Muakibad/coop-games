@@ -1901,14 +1901,19 @@ applyQuality();
 requestAnimationFrame(frame);
 (async () => {
   await loadSave(); readQ(); AU.applyVol();
-  $("menu").classList.remove("hidden"); $("m-gems").textContent = S.gems || 0;
-  await loadAll((k) => { $("load").firstElementChild.style.width = (k * 100).toFixed(0) + "%"; });
-  $("load").style.opacity = 0.25;
+  $("m-gems").textContent = S.gems || 0;
+  const B = window.Boot || { set() {}, done() {}, fail() {} };
+  B.set(0.15, "Загружаем героев, монстров и мир…");
+  const mb = (b) => (b / 1048576).toFixed(1);
+  await loadAll((k, g, t) => { B.set(0.15 + k * 0.8, null, t ? `${mb(g)} из ~${mb(t)} МБ` : ""); $("load").firstElementChild.style.width = (k * 100).toFixed(0) + "%"; });
+  B.set(0.96, "Готовим карту…", "");
+  $("load").style.display = "none";
   loadEnv(renderer, (env) => { envMap = env; scene.environment = env; });
   const inv = readInvite();
-  if (inv) { $("menu").classList.add("hidden"); buildMenuScene(); joinParty(inv); return; }
-  buildMenuScene(); UI.showMenu(menuHandlers); AU.music("menu");
-})().catch((e) => { console.error(e); const l = $("m-camp-sub"); if (l) l.textContent = "Не удалось загрузить игру 😕 Проверь интернет"; });
+  $("menu").classList.remove("hidden");
+  if (inv) { $("menu").classList.add("hidden"); buildMenuScene(); B.done(); joinParty(inv); return; }
+  buildMenuScene(); UI.showMenu(menuHandlers); AU.music("menu"); B.done();
+})().catch((e) => { console.error(e); window.Boot && Boot.fail(); const l = $("m-camp-sub"); if (l) l.textContent = "Не удалось загрузить игру 😕 Проверь интернет"; });
 
 // отладка и автотесты
 window.__game = {
