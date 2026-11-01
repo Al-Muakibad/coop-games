@@ -1759,7 +1759,7 @@ function setW(el, k) { const s = (clamp(k, 0, 1) * 100).toFixed(1) + "%"; if (el
 function hud() {
   const p = P(); if (!p) return;
   const L = LOCD(), tm = Math.max(0, Math.ceil(G.timer));
-  setTxt("wave", G.ph === "build" ? `${G.wave ? "Волна " + G.wave + " / " + L.waves + " ✔" : L.icon + " Подготовка"}<small>⏳ до волны ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}</small>` : `Волна ${G.wave} / ${L.waves}<small>💀 врагов: ${G.enemies.size + (isHost() ? G.queue.length : qLeft)}</small>`);
+  setTxt("wave", G.ph === "build" ? `${G.wave ? "Волна " + G.wave + " / " + L.waves + " ✔" : L.icon + " Подготовка"}<small>${Number.isFinite(tm) && tm < 600 ? `⏳ до волны ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}` : "⏳ Готовься к бою"}</small>` : `Волна ${G.wave} / ${L.waves}<small>💀 врагов: ${G.enemies.size + (isHost() ? G.queue.length : qLeft)}</small>`);
   setTxt("r-c", "🪙 " + p.wallet.c); setTxt("r-w", "🪵 " + p.wallet.w); setTxt("r-s", "🪨 " + p.wallet.s);
   setTxt("lvl", `<b>${p.lvl}</b>`); $("lvl").style.setProperty("--xp", (p.xp / D.xpNeed(p.lvl) * 100).toFixed(0) + "%");
   const mh = p.st ? p.st.maxhp : 100;

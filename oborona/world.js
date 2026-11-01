@@ -77,6 +77,13 @@ function waterMaterial(kind, sky) {
 }
 
 // ---------- построение мира ----------
+// заснеженная листва: зелень уходит в бело-голубую гамму (кусты зимой)
+const snowMats = new Map();
+function snowify(base) {
+  if (snowMats.has(base)) return snowMats.get(base);
+  const m = base.clone(); m.onBeforeCompile = (sh, r) => { if (base.onBeforeCompile) base.onBeforeCompile(sh, r); sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n float sl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(0.6, 0.66, 0.74), vec3(0.95, 0.97, 1.0), clamp(sl * 2.2, 0.0, 1.0));"); };
+  m.customProgramCacheKey = () => "snowleaf"; snowMats.set(base, m); return m;
+}
 export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   const L = D.LOC[locId] || D.LOCS[0], G = L.ground, r = rng(seed);
   const W = { L, obstacles: [], water: [], nodes: [], fxPoints: [], resInst: {}, update: null, lights: [], colors };
@@ -229,7 +236,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     src.traverse((o) => {
       if (!o.isMesh) return;
       let mat = o.material;
-      if (L.snowy && /Leaves|Leaf/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.85, 0.92, 1.0); }
+      if (L.snowy && /Bush|Fern|Plant/.test(name) && /Leaves|Leaf/.test(mat.name)) mat = snowify(mat); else if (L.snowy && /Leaves|Leaf/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.85, 0.92, 1.0); }
       if (L.charred && /Bark/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.35, 0.3, 0.3); }
       if ((L.base || L.id) === "autumn" && /Leaves_Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.2, 0.7, 0.35); }
       if (L.blossom && /Leaves_NormalTree|Leaves_TwistedTree/.test(mat.name) && /CommonTree_2|CommonTree_3|TwistedTree/.test(name)) { const base = mat; mat = mat.clone(); mat.onBeforeCompile = (sh, r) => { if (base.onBeforeCompile) base.onBeforeCompile(sh, r); sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n float bl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(0.8, 0.36, 0.5), vec3(0.97, 0.72, 0.82), clamp(bl * 1.8, 0.0, 1.0));"); }; mat.customProgramCacheKey = () => "blossom"; }   // весна: цветущие деревья — листва в розовую гамму

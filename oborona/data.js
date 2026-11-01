@@ -43,7 +43,7 @@ export const LOCS = [
     waves: 12, diff: 1.6, fam: ["undead", "orcs", "flyers", "beasts"], bosses: { 12: "boss_giant" }, mid: { 6: "boss_skel" }, music: "snow",
     ground: { base: "snow", alt: "snow2", path: "snowpath", plaza: "stone", tint: [1, 1, 1.04], tintAlt: [1, 1, 1.05] },
     trees: [["Pine_2", 3], ["Pine_3", 3], ["Pine_5", 2], ["DeadTree_1", 0.4]], deadTrees: 0.1, snowy: true,
-    deco: ["Pebble_Round_1", "Pebble_Square_2", "Fern_1"],
+    deco: ["Pebble_Round_1", "Pebble_Square_2", "Bush_Common", "DeadTree_3"],   // зимой — заснеженные кусты и сухие коряги, без зелени
     grass: [0.3, 0.2, 0.75], water: "ice", weather: "snow", house: "nordic",
     sky: { day: 0xcfe4f4, night: 0x2a3560, fog: 0xdbe9f5, sun: 0xffffff, sunNight: 0x9fb8ff, hemi: [0xf0f7ff, 0x8899aa] } },
   { id: "volcano", name: "Огненная крепость", icon: "🌋", desc: "Крепость у вулкана. Лава, пепел и огненный дракон — последний рубеж.",
