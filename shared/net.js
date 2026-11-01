@@ -169,6 +169,7 @@
     const me = { id: "p_" + rid(8), name: (opts.name || "Игрок").slice(0, 20), host: isHost };
     const handlers = {}, seen = {}, links = {}, dup = Dedupe();
     let players = isHost ? [me] : [], locked = false, closed = false, hostSeen = Date.now(), hostId = null, seq = 0, rtt = 0;
+    let lastTick = Date.now(), probe = null, hiddenAt = 0;
     const emit = (t, d, f) => (handlers[t] || []).forEach((fn) => { try { fn(d, f); } catch (e) { console.error(e); } });
     const pack = (t, d, extra) => JSON.stringify(Object.assign({ f: me.id, n: me.name, h: isHost ? 1 : 0, t, d: d === undefined ? null : d, i: ++seq }, extra || {}));
     const relay = (s) => { if (!closed) client.publish(topic, s); };
@@ -191,11 +192,16 @@
     };
     function handle(buf, viaLink) {
       let m; try { m = JSON.parse(typeof buf === "string" ? buf : buf.toString()); } catch (_) { return; }
+      if (m && m.f === me.id && m.t === "probe") { if (probe && m.d === probe.id) { probe = null; emit("net-ok"); } return; }   // эхо своей пробы: брокер жив
       if (!m || m.f === me.id) return;
       if (m.to && m.to !== me.id) return;
       if (dup(m.f, m.i)) return;
       seen[m.f] = Date.now();
-      if (m.t === "rtc") { if (!links[m.f] && !isHost) startLink(m.f, false); if (links[m.f]) links[m.f].signal(m.d); return; }
+      if (m.t === "rtc") {
+        // новое предложение от хозяина (например, после возвращения из фона) — старый канал выбрасываем
+        if (!isHost && m.d && m.d.sdp && m.d.sdp.type === "offer" && links[m.f]) { links[m.f].close(); delete links[m.f]; }
+        if (!links[m.f] && !isHost) startLink(m.f, false); if (links[m.f]) links[m.f].signal(m.d); return;
+      }
       if (m.t === "ping" && m.d && m.d.ts && m.to === me.id) { send("pong", { ts: m.d.ts, to: m.f }); return; }
       if (m.t === "pong") { if (m.d && m.d.to === me.id && m.d.ts) rtt = Math.round(rtt ? rtt * 0.7 + (Date.now() - m.d.ts) * 0.3 : Date.now() - m.d.ts); return; }
       if (isHost) {
@@ -205,7 +211,7 @@
             players.push({ id: m.f, name: m.n || "Игрок", host: false }); roster();
             startLink(m.f, true);
             if (locked) emit("join-late", m.f);   // opts.late: вход в уже идущую игру (Аванпост)
-          } else if (m.t === "hi") send("roster", players);
+          } else if (m.t === "hi") { send("roster", players); if (!(links[m.f] && links[m.f].open)) startLink(m.f, true); }   // вернулся из фона — заново прямой канал
           return;
         }
         if (m.t === "bye") { players = players.filter((p) => p.id !== m.f); if (links[m.f]) { links[m.f].close(); delete links[m.f]; } roster(); emit("left", m.f); return; }
@@ -221,10 +227,31 @@
       emit(m.t, m.d, m.f);
     }
     client.on("message", (_t, buf) => handle(buf, null));
-    client.on("connect", () => { client.subscribe(topic); relay(pack("hi")); });
+    client.on("connect", () => { client.subscribe(topic, { qos: 0 }, () => { relay(pack("hi")); if (probe) { probe = { id: rid(6), t: Date.now() }; relay(pack("probe", probe.id)); } if (isHost) roster(); emit("net-up"); }); });
     await new Promise((res) => client.subscribe(topic, { qos: 0 }, res));
     relay(pack("hi"));
+    // Возвращение из фона (Telegram свернули, телефон уснул): таймеры стояли, сокеты могли умереть.
+    // Не считаем никого ушедшим по «старым» часам, проверяем брокер эхом, пересоздаём прямые каналы, заново представляемся.
+    const revive = (why) => {
+      if (closed) return;
+      const now = Date.now(); lastTick = now; hostSeen = now; for (const k in seen) seen[k] = now;
+      for (const k of Object.keys(links)) { links[k].close(); delete links[k]; }
+      const pid = rid(6); probe = { id: pid, t: now };
+      relay(pack("probe", pid));
+      setTimeout(() => { if (!closed && probe && probe.id === pid) { try { client.reconnect(); } catch (_) {} } }, 2500);   // эха нет — сокет мёртв, переподключаемся
+      relay(pack("hi"));
+      if (isHost) { roster(); players.forEach((p) => { if (p.id !== me.id) startLink(p.id, true); }); }
+      emit("revive", why);
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 1500) { hiddenAt = 0; revive("visible"); }
+    });
+    window.addEventListener("pageshow", (e) => { if (e.persisted) revive("pageshow"); });
     const hb = setInterval(() => {
+      if (closed) return;
+      if (Date.now() - lastTick > 6000) { revive("freeze"); return; }   // таймер «проспал» — страница была заморожена
+      lastTick = Date.now();
       if (isHost) {
         relay(pack("ping"));
         const now = Date.now();
@@ -245,8 +272,10 @@
       send, sendFast: (t, d) => send(t, d, true), lock() { locked = true; }, unlock() { locked = false; },
       close() { if (closed) return; send("bye"); relay(pack("bye")); closed = true; clearInterval(hb); setTimeout(() => { Object.values(links).forEach((l) => l.close()); try { client.end(true); } catch (_) {} }, 200); }
     };
+    room.revive = revive;
+    room.alive = () => !!client.connected && !probe;
     if (isHost) setTimeout(() => emit("roster", players), 0);
-    window.addEventListener("pagehide", () => room.close());
+    window.addEventListener("pagehide", (e) => { if (!e.persisted) room.close(); });   // свёрнутую в кэш страницу не закрываем
     return room;
   }
 

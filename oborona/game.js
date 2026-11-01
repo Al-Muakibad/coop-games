@@ -453,13 +453,13 @@ function begin(c, snap) {
   buildGates();
   G.players = cfg.players.map((pc, i) => newPlayer(pc, i, spots));
   G.players.forEach((p) => { p.st = D.stats(p); p.hp = p.st.maxhp; makePlayerView(p); });
-  lastLvl = 1; perkQueue = 0; myTarget = null; fireCd = 0.5; gatherCd = 0; lastSnapT = snapRx = performance.now(); hostGoneT = 0; camPos.set(P().x, 0, P().z);
+  lastLvl = 1; perkQueue = 0; myTarget = null; fireCd = 0.5; gatherCd = 0; lastSnapT = snapRx = performance.now(); hostGoneT = 0; camPos.set(P().x, 0, P().z); resyncing = 0; probeUntil = 0; lastOverD = null;
   if (snap) applySnap(snap, true);
   phase = "play";
   ["hud", "acts", "btn-set"].forEach((id) => $(id).classList.remove("hidden"));
   $("net").classList.toggle("hidden", !room); $("team").classList.toggle("hidden", !room);
   $("perks").classList.add("hidden");
-  if (room) wireRoom();
+  if (room) { wireRoom(); saveRoom(room.id); }
   const L = D.LOC[G.loc];
   msg(`${L.icon} ${L.name}`, `Продержись ${L.waves} волн · первая через ${D.BUILD_FIRST} с`, 3600);
   St.gameStart({ players: G.players.length, mode: room ? "party" : "solo", loc: G.loc });
@@ -476,18 +476,27 @@ function wireRoom() {
   ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2"].forEach((t) => room.off(t));
   room.on("s", (s, from) => {
     // два хозяина (после смены): побеждает более поздняя эпоха, при равенстве — меньший номер игрока
-    if (hosting) { if (s.ep > ep || (s.ep === ep && s.hi < me)) { hosting = false; (G.mlog = G.mlog || []).push(["yield", s.hi, s.ep, ep]); } else return; }
+    let yielded = false;
+    if (hosting) { if (s.ep > ep || (s.ep === ep && s.hi < me)) { hosting = false; yielded = true; probeUntil = 0; shots = []; acc = 0; (G.mlog = G.mlog || []).push(["yield", s.hi, s.ep, ep]); } else return; }   // старый хозяин сразу уступает и бросает свой мир
     else if (s.ep < ep || (s.ep === ep && s.hi > hostIdx)) return;
     ep = s.ep; hostIdx = s.hi;
-    lastSnapT = snapRx = performance.now(); hostGoneT = 0; applySnap(s);
+    lastSnapT = snapRx = performance.now(); hostGoneT = 0;
+    const fresh = yielded || resyncing;
+    applySnap(s, fresh);   // после возвращения — всё, включая своё место, берём у хозяина
+    if (fresh && !s.G) { dirtyMine = true; send("sync", { uid: S.uid }); }   // нужен полный снимок (постройки, ресурсы)
+    if (resyncing && s.G) endResync();
   });
-  room.on("i", (d, from) => { const p = G.players.find((q) => q.id === from); if (!p || p.idx === me) return; if (p.idx !== hostIdx) otherRx = performance.now(); p.x = d[0] / 10; p.z = d[1] / 10; p.ry = d[2] / 100; p.tgt = d[3]; p.mv = d[4]; p.gn = d[5]; p.seen = performance.now(); if (isHost() && !p.present) { p.present = true; dirtyFull = true; } });
+  room.on("i", (d, from) => { if (phase === "over" && hosting && lastOverD && performance.now() - lastOverSent > 2000) { lastOverSent = performance.now(); send("over", lastOverD); }   /* вернувшийся гость ещё «в бою» — сообщаем итог */
+    const p = G.players.find((q) => q.id === from); if (!p || p.idx === me) return; if (hosting && probeUntil) probeUntil = Math.min(probeUntil, performance.now() + 1500); /* товарищи на связи, никто не ведёт мир вместо нас — продолжаем скорее */ if (p.idx !== hostIdx) otherRx = performance.now(); p.x = d[0] / 10; p.z = d[1] / 10; p.ry = d[2] / 100; p.tgt = d[3]; p.mv = d[4]; p.gn = d[5]; p.seen = performance.now(); if (isHost() && !p.present) { p.present = true; dirtyFull = true; } });
   room.on("h", (d, from) => { if (!isHost()) return; const p = G.players.find((q) => q.id === from); if (p) (d || []).forEach((hh) => hitEnemy(hh[0], hh[1], p.idx, hh[2], hh[3])); });
   room.on("a", (d, from) => { if (!isHost()) return; const p = G.players.find((q) => q.id === from); if (p) doAct(p.idx, d); });
   room.on("over", (d) => { if (!isHost()) onOver(d); });
   room.on("left", (id) => { const p = G.players.find((q) => q.id === id); if (p && p.present) { p.present = false; dirtyFull = true; msg(`${p.name} вышел`, "Он может вернуться по той же ссылке", 2200); teamDirty = true; } });
+  room.on("revive", (why) => onResume("net:" + why));
+  room.on("sync", (d, from) => { if (isHost() && phase === "over" && lastOverD) { send("over", lastOverD); return; } if (!isHost() || phase !== "play") return; const p = G.players.find((q) => q.id === from); if (p) { p.present = true; p.seen = performance.now(); teamDirty = true; } dirtyFull = true; });   // гость вернулся — шлём полный снимок
   room.on("host-left", () => {   // ушёл хозяин комнаты (сетевой). Если мир уже ведёт другой игрок — просто отмечаем ушедшего
     if (phase !== "play") return;
+    if (performance.now() - resumeT < GRACE) return;   // сами только что вернулись из фона — это наши «старые часы»
     const nh = (room.players || []).find((q) => q.host), gone = nh && G.players.find((q) => q.id === nh.id);
     if (gone && gone.idx !== hostIdx) { if (gone.present) { gone.present = false; teamDirty = true; if (hosting) dirtyFull = true; } return; }
     if (!hosting) hostGoneT = performance.now();   // сеть могла «проспать» (телефон свернули) — решаем в netStatus, если снимков так и нет
@@ -513,9 +522,43 @@ function lateJoin(from, d) {
   msg(`${p.name} вернулся в бой`, "", 1800);
 }
 // смена хозяина: оставшийся игрок с наименьшим номером продолжает считать мир
+// ---------- возвращение из фона (Telegram свернули, телефон уснул) ----------
+// Пока нас не было, мир мог вести другой игрок. Возвращаемся: переподключаем сеть, хозяин ждёт 4 с — нет ли нового хозяина
+// (если есть — уступает и берёт его мир), гость просит полный снимок. В первые 12 с после возвращения сами никого не «смещаем».
+const GRACE = 12000;
+let lastOverD = null, lastOverSent = 0, resumeT = -1e9, resyncing = 0, probeUntil = 0, dirtyMine = false, lastRToast = 0;
+function onResume(why) {
+  if (!room || (phase !== "play" && phase !== "over")) return;
+  const now = performance.now();
+  if (now - resumeT < 2500) return;
+  resumeT = now; lastSnapT = now; hostGoneT = 0;
+  G.players.forEach((p) => { if (p.seen) p.seen = now; });
+  (G.mlog = G.mlog || []).push(["resume", why, hosting ? "host" : "guest", ep]);
+  if (phase !== "play") return;
+  resyncing = now; toast("Переподключение…"); lastRToast = now;
+  if (room.revive && !String(why).startsWith("net:")) room.revive(why);
+  if (hosting) probeUntil = now + 4000;   // слушаем: вдруг мир уже ведёт кто-то другой
+  else send("sync", { uid: S.uid });
+}
+function endResync() {
+  if (!resyncing) return;
+  resyncing = 0; probeUntil = 0; teamDirty = true; hudDirty = true;
+  toast("Вы снова в игре"); vib("notify", "success");
+}
+function resyncTick(now) {
+  if (!resyncing) return;
+  if (hosting && probeUntil && now > probeUntil) { probeUntil = 0; dirtyFull = true; endResync(); return; }   // никто не перехватил — продолжаем вести мир
+  if (!hosting && now - resyncing > 2500 && now - lastRToast > 3000) { lastRToast = now; send("sync", { uid: S.uid }); toast("Переподключение…"); }
+  if (now - resyncing > 45000) endResync();
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") onResume("visible"); });
+addEventListener("pageshow", (e) => { if (e.persisted) onResume("pageshow"); });
+try { if (T && T.tg && T.tg.onEvent) T.tg.onEvent("activated", () => onResume("tg")); } catch (_) {}
 function migrate(why) {
   if (hosting || !room || phase !== "play") return;
   const now = performance.now();
+  if (now - resumeT < GRACE) return;
+  if (room.alive && !room.alive()) return;   // мы сами без связи — не можем знать, ушёл ли хозяин; мир не перехватываем
   const cands = G.players.filter((p) => p.present && p.idx !== hostIdx && (p.idx === me || now - (p.seen || 0) < 7000));
   if (!cands.length) return;
   const nh = Math.min(...cands.map((p) => p.idx));
@@ -970,6 +1013,7 @@ function giveXp(p, x) { p.xp += x; while (p.xp >= D.xpNeed(p.lvl)) { p.xp -= D.x
 function gameOver(win) {
   if (G.over) return; G.over = true;
   const d = { win, wave: G.wave, loc: G.loc, lost: G.lost, houses: G.houses.length, bossKills: G.bossKills, stats: G.players.map(pStat) };
+  lastOverD = d; lastOverSent = performance.now();
   send("over", d); onOver(d);
   // повторяем итог несколько раз: гость мог переподключаться к серверу в этот момент
   for (let k = 1; k <= 6; k++) setTimeout(() => { if (room && phase === "over") send("over", d); }, k * 2000);
@@ -1640,7 +1684,8 @@ function netStatus() {
   if (!room) return;
   const el = $("net"), now = performance.now();
   let txt, col;
-  if (isHost()) { const n = G.players.filter((p) => p.present && p.idx !== me).length; txt = `👑 ты ведёшь · ${n} в игре`; col = "#9fe8ff"; }
+  if (resyncing) { txt = "🔄 переподключение…"; col = "#ffd36a"; }
+  else if (isHost()) { const n = G.players.filter((p) => p.present && p.idx !== me).length; txt = `👑 ты ведёшь · ${n} в игре`; col = "#9fe8ff"; }
   else { const lag = now - lastSnapT; const link = room.link === "p2p" ? "прямая" : "сервер"; if (lag > 3000) { txt = `🔴 связь потеряна… ${Math.ceil(lag / 1000)} с`; col = "#ff8a8a"; } else if (lag > 600 || room.rtt > 400) { txt = `🟡 ${link} · ${room.rtt || "?"} мс`; col = "#ffd36a"; } else { txt = `🟢 ${link} · ${room.rtt || "?"} мс`; col = "#9fffb0"; } }
   if (el.textContent !== txt) { el.textContent = txt; el.style.color = col; }
   // хозяин молчит → новый хозяин
@@ -1767,6 +1812,7 @@ const slowMo = () => !room && UI.sheetOpen() && G.ph === "wave";
 // ---------- конец матча: звёзды, кристаллы ----------
 function onOver(d) {
   if (phase === "over") return;
+  clearRoom();
   phase = "over"; G.over = true;
   const L = D.LOC[d.loc] || LOCD();
   const stars = d.win ? (d.lost === 0 ? 3 : d.lost <= Math.floor((d.houses || 1) / 2) ? 2 : 1) : 0;
@@ -1800,7 +1846,13 @@ async function restart(loc) {
   const mi = Math.max(0, c2.players.findIndex((pc) => pc.id === (room ? room.me.id : "me")));
   begin({ room, cfg: Object.assign({}, c2, { me: mi }), host: true, hostIdx: mi, ep: ep + 1 });
 }
+// комната запоминается, чтобы после перезапуска мини-приложения вернуться в ту же игру
+function saveRoom(id) { try { localStorage.setItem("ob_room", JSON.stringify({ id, t: Date.now() })); } catch (_) {} }
+function clearRoom() { try { localStorage.removeItem("ob_room"); } catch (_) {} }
+function savedRoom() { try { const r = JSON.parse(localStorage.getItem("ob_room") || "null"); return r && Date.now() - r.t < 10 * 60000 ? r.id : null; } catch (_) { return null; } }
+setInterval(() => { if (room && (phase === "play" || phase === "lobby")) saveRoom(room.id); }, 10000);
 function toMenu() {
+  clearRoom();
   phase = "menu"; ["hud", "acts", "btn-set", "net", "team", "screen-end", "dead", "lobby"].forEach((id) => $(id).classList.add("hidden")); $("near").textContent = "";
   closePanel(); UI.closeSheet();
   buildMenuScene();
@@ -1814,6 +1866,7 @@ async function hostParty(loc) {
   phase = "lobby"; showLobby({ status: "Создаём комнату…" });
   try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true }); }
   catch (e) { showLobby({ error: "Нет связи с сервером 😕 Проверь интернет" }); return; }
+  saveRoom(room.id);
   lobbyInfo = { [room.me.id]: myHello() };
   room.on("roster", () => drawLobby(loc));
   room.on("hello", (d, from) => { lobbyInfo[from] = d; drawLobby(loc); if (phase === "play") lateJoin(from, d); });
@@ -1853,6 +1906,9 @@ async function joinParty(id) {
   phase = "lobby"; showLobby({ status: "Подключаемся к комнате…" });
   try { room = await Net.openParty(GAME, id, { name: myHello().name }); }
   catch (e) { showLobby({ error: "Нет связи с сервером 😕 Проверь интернет" }); return; }
+  saveRoom(id);
+  // ссылка из памяти (после перезапуска) могла устареть: если за 20 с никто не ответил — комната закрыта
+  setTimeout(() => { if (phase === "lobby" && room && !room.players.length && !welcoming) { clearRoom(); showLobby({ error: "Эта игра уже закончилась — начни новую или попроси ссылку у друга" }); } }, 20000);
   St.event("party_join", { game: GAME });
   const hello = () => { if (phase === "lobby" && room) room.send("hello", myHello()); };
   hello(); const hi = setInterval(() => { if (phase !== "lobby") { clearInterval(hi); return; } hello(); }, 2500);
@@ -1883,10 +1939,13 @@ function showLobby(o) {
 // ?fps=1 — счётчик кадров для проверки на телефоне
 const fpsEl = /[?&]fps=1/.test(location.search) ? Object.assign(document.body.appendChild(document.createElement("div")), { style: "position:fixed;left:6px;bottom:6px;z-index:99;font:700 11px monospace;color:#9f9;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:6px;pointer-events:none" }) : null;
 let fpsN2 = 0, fpsT2 = 0;
-let last = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0;
+let last = 0, lastWall = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0;
 function frame(ts) {
   requestAnimationFrame(frame);
-  if (last && ts - last > 1500) { const n = performance.now(); lastSnapT = n; G.players.forEach((p) => { if (p.seen) p.seen = n; }); }   // вкладка спала — никого не считаем пропавшим
+  // вкладка спала: меряем по настоящим часам (метка кадра после долгой паузы бывает «старой»)
+  const wall = performance.now();
+  if (lastWall && wall - lastWall > 1500) { lastSnapT = wall; G.players.forEach((p) => { if (p.seen) p.seen = wall; }); if (wall - lastWall > 3000) onResume("frames"); }
+  lastWall = wall;
   let dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
   if (!A.ready) return;
   const realDt = dt, t0 = performance.now();
@@ -1894,7 +1953,8 @@ function frame(ts) {
   if (slowMo()) dt *= 0.35;
   if (phase === "play" && !paused()) {
     if (!isHost()) G.t += dt;
-    if (isHost()) { acc += dt; let n = 0; while (acc >= 1 / 30 && n < 8) { hostStep(1 / 30); acc -= 1 / 30; n++; } }
+    resyncTick(performance.now());
+    if (isHost() && !probeUntil) { acc += dt; let n = 0; while (acc >= 1 / 30 && n < 8) { hostStep(1 / 30); acc -= 1 / 30; n++; } }   // пока «прислушиваемся» после фона — мир не двигаем
     localStep(dt); remoteFire(dt); updateShots(dt);
     coneT -= dt;
     if (isHost() && room) { snapT -= realDt; if (snapT <= 0) { snapT = 1 / 10; sendFast("s", makeSnap()); } }
@@ -1974,7 +2034,7 @@ requestAnimationFrame(frame);
   B.set(0.96, "Готовим карту…", "");
   $("load").style.display = "none";
   loadEnv(renderer, (env) => { envMap = env; scene.environment = env; });
-  const inv = readInvite();
+  const inv = readInvite() || savedRoom();
   $("menu").classList.remove("hidden");
   if (inv) { $("menu").classList.add("hidden"); buildMenuScene(); B.done(); joinParty(inv); return; }
   // меню доступно сразу; 3D-фон строится в следующем кадре (если игрок уже начал бой — не нужен)
