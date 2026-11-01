@@ -11,7 +11,8 @@ import { buildTowerDeep, buildHouseDeep, buildGatherer } from "./builders.js";
 import { buildWorld, buildNodeViews, updNode, updateWorld, grassT, rng, makeBanner } from "./world.js";
 import { FX, COL } from "./fx.js";
 import * as D from "./data.js";
-import { S, load as loadSave, save, finishRun, locState, saveOutpost, currentStep } from "./save.js";
+import { S, load as loadSave, save, finishRun, finishSiege, locState, saveOutpost, currentStep } from "./save.js";
+import * as SG from "./siege.js";
 import * as SE from "./seasons.js";
 import * as AU from "./audio.js";
 import * as UI from "./ui.js";
@@ -126,6 +127,7 @@ function buildLocation(locId, seed, n) {
   world.clear(); obstacles = []; gateViews = [];
   const L = D.LOC[locId] || D.LOCS[0];
   const spots = houseSpots(n), msp = merchantSpot(n);
+  if (locId === "siege") WD = SG.buildSiegeWorld(world, renderer, seed); else
   WD = buildWorld(world, renderer, locId, seed, spots, msp, spots.map((_, i) => { const pc = cfg && cfg.players && cfg.players[i], bn = pc && pc.cos && SE.BANNER[pc.cos.ban]; return (bn && bn.color) || (pc && pc.color) || COLORS[i % 6]; }));
   buildNodeViews(world, WD);
   G.nodes = WD.nodes;
@@ -162,6 +164,7 @@ const cx = (i) => (i % GN) * GR - OFF + GR / 2, cz = (i) => Math.floor(i / GN) *
 function markCircle(arr, x, z, r) { const r2 = r * r; for (let i = Math.floor((x - r + OFF) / GR); i <= Math.floor((x + r + OFF) / GR); i++) for (let j = Math.floor((z - r + OFF) / GR); j <= Math.floor((z + r + OFF) / GR); j++) { if (i < 0 || j < 0 || i >= GN || j >= GN) continue; const px = i * GR - OFF + GR / 2, pz = j * GR - OFF + GR / 2; if ((px - x) * (px - x) + (pz - z) * (pz - z) <= r2) arr[i + j * GN] = 1; } }
 function rebuildNav() {
   navDirty = false;
+  if (G.sg) { flows = []; G.sg.fieldDirty = true; return; }
   blocked = new Uint8Array(GN * GN);
   for (let k = 0; k < GN * GN; k++) { const x = cx(k), z = cz(k); if (Math.hypot(x, z) > D.MAP_R - 0.6) blocked[k] = 1; else if (WD && WD.lakes.length && WD.L.water !== "ice" && WD.lakeD(x, z) < 0.2) blocked[k] = 1; }
   for (const o of obstacles) markCircle(blocked, o.x, o.z, o.r * 0.85);
@@ -476,15 +479,30 @@ function begin(c, snap) {
   if (merchView) { world.remove(merchView.root); merchView = null; }
   shots = []; G.enemies.clear(); G.drops.clear(); G.F = []; G.over = false; G.t = 0; G.wave = 0; G.ph = "build"; G.timer = D.BUILD_FIRST; G.queue = []; G.merchant = null; G.bossId = 0; G.eid = 1; G.did = 1; G.clouds = []; G.lost = 0; G.bossKills = 0;
   G.loc = cfg.loc || SE.STEPS[0].id;
-  const n = cfg.houses || cfg.players.length, spots = houseSpots(n);
+  const siege = G.loc === "siege"; G.sg = null; SG.dispose();
+  if (siege) D.LOC.siege.waves = SG.wavesFor(cfg.slv || 1);
+  const n = siege ? 1 : cfg.houses || cfg.players.length, spots = siege ? [{ x: 0, z: SG.KZ }] : houseSpots(n);
   buildLocation(G.loc, cfg.seed, n);
   const wallMul = 1;
   // аванпост каждого игрока приходит из его сохранения: дом, стены, башни, добытчики — ничего не сбрасывается
   const msp0 = merchantSpot(n);
-  G.houses = spots.map((s, i) => houseFromOp(s, i, cfg.players[i] || {}, msp0));
+  if (siege) {
+    // общая цитадель: донжон в глубине ущелья, прочный (на всех игроков)
+    const np = cfg.players.length, slv = cfg.slv || 1, kh = houseFromOp(spots[0], 0, { op: { lv: 3 + Math.min(3, Math.floor((slv - 1) / 2)), wall: 0, tw: ["arrow:1", "", "", "arrow:1", "", ""] }, style: "medieval" }, msp0);
+    kh.shared = 1; kh.mh = 5 * (0.75 + 0.25 * np); kh.max = kh.hp = D.HOUSE_LV[kh.lv].hp * kh.mh; kh.g = Object.fromEntries(D.GATHER_KEYS.map((k) => [k, { lv: 0, hp: 1, max: 1, pile: 0, ok: true, x: 0, z: 40, autoT: 0 }]));
+    G.houses = [kh];
+    G.sg = SG.newState(cfg, np);
+  } else G.houses = spots.map((s, i) => houseFromOp(s, i, cfg.players[i] || {}, msp0));
   G.houses.forEach(makeHouseView);
-  buildGates();
+  if (!siege) buildGates();
   G.players = cfg.players.map((pc, i) => newPlayer(pc, i, spots));
+  if (siege) {
+    G.timer = 55;
+    // у каждого — свой кошелёк осады (свои сохранённые ресурсы не тратятся), герой и прокачка — свои
+    const slv = cfg.slv || 1;
+    G.players.forEach((p, i) => { p.x = -4.5 + 1.8 * i; p.z = SG.KZ - 5; p.wallet = { c: 90 + 15 * slv, w: 70 + 10 * slv, s: 60 + 10 * slv }; p.house = 0; });
+    SG.prepareHorde(); SG.attachHorde(world); SG.buildStructViews();
+  }
 
   G.players.forEach((p) => { p.st = pstats(p); p.hp = p.st.maxhp; makePlayerView(p); });
   { const p0 = P(), spent = Object.values(p0.perks).reduce((a, b) => a + b, 0); lastLvl = p0.lvl; perkQueue = Math.max(0, p0.lvl - 1 - spent); } myTarget = null; fireCd = 0.5; gatherCd = 0; lastSnapT = snapRx = performance.now(); hostGoneT = 0; camPos.set(P().x, 0, P().z); resyncing = 0; probeUntil = 0; lastOverD = null;
@@ -495,7 +513,8 @@ function begin(c, snap) {
   $("perks").classList.add("hidden");
   if (room) { wireRoom(); saveRoom(room.id); }
   const L = D.LOC[G.loc];
-  msg(`${L.icon} ${L.name}`, `Продержись ${L.waves} волн · первая через ${D.BUILD_FIRST} с`, 3600);
+  if (siege) msg("🏰 Осада цитадели", `Продержись ${L.waves} ночей · строй стены, пока светло`, 3800);
+  else msg(`${L.icon} ${L.name}`, `Продержись ${L.waves} волн · первая через ${D.BUILD_FIRST} с`, 3600);
   St.gameStart({ players: G.players.length, mode: room ? "party" : "solo", loc: G.loc });
   vib("notify", "success");
   AU.music("build");
@@ -507,7 +526,8 @@ function begin(c, snap) {
 // ================= СЕТЬ =================
 let lastSnapT = 0, snapRx = 0, otherRx = 0, hostGoneT = 0, seenAt = {};
 function wireRoom() {
-  ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2", "sync", "revive", "myprog"].forEach((t) => room.off(t));
+  ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2", "sync", "revive", "myprog", "hz"].forEach((t) => room.off(t));
+  room.on("hz", (d) => { if (!isHost() && G.sg && phase === "play") SG.applyHorde(d); });
   room.on("s", (s, from) => {
     // два хозяина (после смены): побеждает более поздняя эпоха, при равенстве — меньший номер игрока
     let yielded = false;
@@ -605,7 +625,8 @@ function migrate(why) {
   // я — новый хозяин: восстанавливаем точные значения из того, что приходило в снимках
   hosting = true;
   for (const e of G.enemies.values()) { const M = D.MON[e.type]; e.max = e.max > 1 ? e.max : M.hp * D.hpMul(G.wave || 1, G.players.length, D.LOC[G.loc].diff) * (M.boss ? 1.6 : 1) * (e.el ? 2.5 : 1); e.hp = Math.max(1, (e.hpPct || 100) / 100 * e.max); e.x = e.tx ?? e.x; e.z = e.tz ?? e.z; e.cd = 1; e.spawnT = 0; e.h = nearestHouse(e.x, e.z)?.idx ?? 0; e.dmgBy = {}; e.ab = {}; }
-  if (G.ph === "wave") { const L = D.LOC[G.loc]; const full = D.makeWave(G.loc, G.wave, activePlayers(), Math.random).filter((k) => !D.MON[k].boss); G.queue = full.slice(0, Math.max(0, qLeft)); }
+  if (G.sg) { const pr = G.players.filter((p) => p.present); SG.adoptHost(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length)); }
+  else if (G.ph === "wave") { const L = D.LOC[G.loc]; const full = D.makeWave(G.loc, G.wave, activePlayers(), Math.random).filter((k) => !D.MON[k].boss); G.queue = full.slice(0, Math.max(0, qLeft)); }
   G.eid = Math.max(G.eid, ...[...G.enemies.keys()], 0) + 100; G.did = Math.max(G.did, ...[...G.drops.keys()], 0) + 100;
   dirtyFull = true; navDirty = true;
   msg("Хозяин вышел", "Теперь мир ведёшь ты — игра продолжается!", 3000);
@@ -617,7 +638,7 @@ const ENEMY_T = D.MON_IDS;
 let snapT = 0, lastFull = 0, dirtyFull = true, qLeft = 0;
 function makeSnap(full) {
   const E = [];
-  for (const e of G.enemies.values()) E.push(e.id, ENEMY_T.indexOf(e.type), Math.round(e.x * 10), Math.round(e.z * 10), Math.round(e.ry * 10), Math.max(1, Math.round(e.hp / e.max * 100)),
+  for (const e of G.enemies.values()) if (!e.hz) E.push(e.id, ENEMY_T.indexOf(e.type), Math.round(e.x * 10), Math.round(e.z * 10), Math.round(e.ry * 10), Math.max(1, Math.round(e.hp / e.max * 100)),
     (e.slowT > 0 ? 1 : 0) | (e.atk ? 2 : 0) | (e.spawnT > 0 ? 4 : 0) | (e.burnT > 0 ? 8 : 0) | (e.poisonT > 0 ? 16 : 0) | (e.enr ? 32 : 0) | (e.chg > 0 ? 64 : 0), e.el || 0);
   const s = { ep, hi: me, ph: G.ph === "build" ? 0 : 1, tm: Math.ceil(G.timer), w: G.wave, E, b: G.bossId, q: G.queue.length,
     P: G.players.map((p) => [Math.round(p.x * 10), Math.round(p.z * 10), Math.round(p.ry * 100), Math.ceil(p.hp), p.alive ? 1 : 0, p.tgt || 0, Math.floor(p.xp), p.lvl, p.wallet.c, p.wallet.w, p.wallet.s, p.kills, p.seq, p.ready ? 1 : 0, p.present ? 1 : 0, Math.ceil(p.downT), p.gn, p.mv, p.rageT > 0 ? 1 : 0]) };
@@ -630,6 +651,7 @@ function makeSnap(full) {
     s.N = G.nodes.map((n) => n.amt).join("");
     s.M = G.merchant ? G.merchant.stock : 0;
     s.L = G.loc; s.lost = G.lost;
+    if (G.sg) s.SG = SG.stateStr();
   }
   return s;
 }
@@ -653,7 +675,7 @@ function applySnap(s, initial) {
     e.tx = x; e.tz = z; e.try = s.E[i + 4] / 10; e.hpPct = s.E[i + 5]; e.slowT = fl & 1 ? 1 : 0; e.atk = !!(fl & 2); e.spawnT = fl & 4 ? 1 : 0; e.burnT = fl & 8 ? 1 : 0; e.poisonT = fl & 16 ? 1 : 0; e.enr = !!(fl & 32); e.chg = fl & 64 ? 1 : 0; e.extra = 0;
     if (e.predHp == null || e.hpPct < e.predHp || G.t - (e.predT || 0) > 0.6) e.predHp = e.hpPct;
   }
-  for (const id of [...G.enemies.keys()]) if (!seen.has(id)) { G.enemies.delete(id); killEnemyView(id); }
+  for (const [id, e] of [...G.enemies]) if (!seen.has(id) && !e.hz) { G.enemies.delete(id); killEnemyView(id); }
   if (s.G) s.G.forEach((g, i) => {
     let p = G.players[i];
     if (!p) { const pc = { id: "", name: g[7], color: g[8], uid: g[5], style: g[6], hero: g[11] }; if (!cfg.players[i]) cfg.players[i] = pc; p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); G.players[i] = p; p.st = pstats(p); makePlayerView(p); teamDirty = true; }
@@ -690,12 +712,14 @@ function applySnap(s, initial) {
   if (s.N) [...s.N].forEach((ch, i) => { const nd = G.nodes[i]; if (nd && nd.amt !== +ch) { if (+ch > nd.amt && nd.amt === 0) nd.grow = 0.05; nd.amt = +ch; if (updNode(WD, nd)) { renderer.shadowMap.needsUpdate = true; navDirty = true; } } });
   if (s.M !== undefined) { const was = !!G.merchant; G.merchant = s.M ? { stock: s.M } : null; if (was !== !!G.merchant) { updMerchantView(); if (G.merchant && !initial) msg("🛒 Пришёл торговец!", "Он у центра карты до начала волны", 2600); } }
   if (s.lost != null) G.lost = s.lost;
+  if (s.SG && G.sg) SG.applyStateStr(s.SG);
   hudDirty = true;
 }
 function popRes(id) { const el = $(id); el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); }
 // события (эффекты и звук) — у всех одинаково
 function onEvent(f) {
   const k = f[0];
+  if (k.length === 2 && k[0] === "S") { SG.onEvent(f); return; }
   if (k === "t") { const h = G.houses[f[1]]; if (!h) return; const t = h.turrets[f[2]]; const e = G.enemies.get(f[3]); if (!t || !e) return; turretShot(h, f[2], t, e, false); }
   else if (k === "tz") { const h = G.houses[f[1]]; if (!h) return; const top = towerTop(h, f[2]); const pts = [new THREE.Vector3(top.x, top.y, top.z)]; for (const id of f.slice(3)) { const e = G.enemies.get(id); if (e) pts.push(new THREE.Vector3(e.x, 1, e.z)); } if (pts.length > 1) { fx.lightning(pts, COL.purple); AU.play("zap", { x: top.x, z: top.z, vol: 0.5 }); } }
   else if (k === "a") { const e = G.enemies.get(f[1]); if (e) enemyShot(e, f[2] / 10, f[3] / 10, f[4] || "acid", false); }
@@ -759,7 +783,8 @@ function outpostPower() {
 const powerMul = () => 1 + 0.035 * Math.max(0, outpostPower() - 3);
 function startWave() {
   G.wave++; G.ph = "wave"; G.timer = 0;
-  G.queue = D.makeWave(G.loc, G.wave, activePlayers() * (1 + 0.012 * Math.max(0, outpostPower() - 3)), Math.random);
+  if (G.sg) { G.queue = []; const pr = G.players.filter((p) => p.present); SG.planWave(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length)); }
+  else G.queue = D.makeWave(G.loc, G.wave, activePlayers() * (1 + 0.012 * Math.max(0, outpostPower() - 3)), Math.random);
   // босс выходит в середине волны, а не первым
   const bi = G.queue.findIndex((k) => D.MON[k].boss); if (bi >= 0) { const b = G.queue.splice(bi, 1)[0]; G.queue.splice(Math.floor(G.queue.length * 0.35), 0, b); }
   G.spawnT = 1.5; G.merchant = null; dirtyFull = true; updMerchantView();
@@ -768,7 +793,8 @@ function startWave() {
 }
 function onWaveStart(w) {
   const L = LOCD(), boss = L.bosses[w] || L.mid[w], last = w === L.waves;
-  msg(`ВОЛНА ${w}${L.waves ? " / " + L.waves : ""}`, boss ? `${D.MON[boss].name} идёт сюда 💀` : last ? "Последняя волна — держись!" : "Чудовища идут — защищай аванпост!", 2600);
+  if (G.loc === "siege") msg(`НОЧЬ ${w} / ${L.waves}`, last ? "Последняя ночь — держись!" : w >= 3 ? "Орда идёт с тараном и лестницами" : "Орда идёт по насыпи к воротам", 2600);
+  else msg(`ВОЛНА ${w}${L.waves ? " / " + L.waves : ""}`, boss ? `${D.MON[boss].name} идёт сюда 💀` : last ? "Последняя волна — держись!" : "Чудовища идут — защищай аванпост!", 2600);
   AU.play(boss ? "gong2" : "gong"); AU.music(boss ? "boss" : "battle"); vib("notify", "warning");
   St.event("wave_reached", { game: GAME, wave: w, players: G.players.length, loc: G.loc });
   St.state({ wave: w, loc: G.loc });
@@ -779,13 +805,14 @@ const opOf = (h) => ({ lv: h.lv, wall: h.wall, tw: h.turrets.map((t) => (t ? t.t
 const progOf = (p) => ({ lvl: p.lvl, xp: Math.floor(p.xp), perks: Object.assign({}, p.perks), arm: p.arm, amu: p.amu, wpn: p.wpn, items: Object.assign({}, p.items), c: p.wallet.c, w: p.wallet.w, s: p.wallet.s });
 function persistMine() {
   const p = P(); if (!p) return;
-  const h = G.houses[me];
-  saveOutpost(h && h.owner === me ? opOf(h) : null, progOf(p));
+  const h = G.houses[me], pr = progOf(p);
+  if (G.sg) { pr.c = S.prog.c; pr.w = S.prog.w; pr.s = S.prog.s; }   // в осаде кошелёк свой, сохранённые ресурсы не трогаем
+  saveOutpost(h && h.owner === me && !h.shared ? opOf(h) : null, pr);
 }
 function onWaveCleared(w, bonus) {
   setTimeout(persistMine, 300);
   const L = LOCD();
-  if (w < L.waves) { msg(`Волна ${w} отбита!`, `+${bonus}🪙 каждому · стены починены`, 2600); AU.sting("win"); AU.music("build"); }
+  if (w < L.waves) { if (G.sg) msg(`Ночь ${w} позади!`, `+${bonus}🪙 · +20🪵 +15🪨 каждому — чини стены`, 2600); else msg(`Волна ${w} отбита!`, `+${bonus}🪙 каждому · стены починены`, 2600); AU.sting("win"); AU.music("build"); }
   vib("notify", "success");
   playerViews.forEach((v) => { if (v && v.p.alive) { playOnce(v, "Cheer", 1.2); v.cheer = 1.6; } });
 }
@@ -825,12 +852,13 @@ function hostStep(dt) {
       G.spawnT = Math.max(0.28, 1.5 - G.wave * 0.07) / Math.sqrt(activePlayers()) * (0.6 + Math.random() * 0.8);
       if (D.MON[type].boss) G.spawnT += 3;
     }
-    if (!G.queue.length && !G.enemies.size) waveCleared();
+    if (!G.queue.length && !G.enemies.size && !(G.sg && G.sg.left > 0)) waveCleared();
   }
   // монстры
   grid.clear();
-  for (const e of G.enemies.values()) { const k = Math.floor(e.x / 2) * 1000 + Math.floor(e.z / 2); let c = grid.get(k); if (!c) grid.set(k, (c = [])); c.push(e); }
-  for (const e of [...G.enemies.values()]) enemyAI(e, dt);
+  for (const e of G.enemies.values()) { if (e.hz) continue; const k = Math.floor(e.x / 2) * 1000 + Math.floor(e.z / 2); let c = grid.get(k); if (!c) grid.set(k, (c = [])); c.push(e); }
+  for (const e of [...G.enemies.values()]) if (!e.hz) enemyAI(e, dt);
+  if (G.sg) SG.hostStep(dt, G.ph === "wave");
   // ядовитые облака
   G.clouds = G.clouds.filter((c) => (c.t -= dt) > 0);
   for (const c of G.clouds) if (c.dps) for (const e of G.enemies.values()) if (dist(e.x, e.z, c.x, c.z) < c.r + e.r) { e.poisonT = Math.max(e.poisonT, 0.5); e.poisonD = Math.max(e.poisonD || 0, c.dps); e.poisonBy = c.owner; }
@@ -904,7 +932,7 @@ function waveCleared() {
   const L = LOCD();
   G.ph = "build"; G.timer = D.BUILD_TIME + Math.min(10, G.wave);
   const bonus = 8 + G.wave * 3;
-  G.players.forEach((p) => { if (p.present) { p.wallet.c += bonus; if (!p.alive) respawn(p); p.hp = Math.min(p.st.maxhp, p.hp + p.st.maxhp * 0.3); } });
+  G.players.forEach((p) => { if (p.present) { p.wallet.c += bonus; if (G.sg) { p.wallet.w += 20; p.wallet.s += 15; } if (!p.alive) respawn(p); p.hp = Math.min(p.st.maxhp, p.hp + p.st.maxhp * 0.3); } });
   G.houses.forEach((h) => { if (h.alive && h.wall) h.whp = h.wmax; if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) { g.ok = true; g.hp = g.max = D.gatherHp(g.lv); } } });   // за ночь всё чинится
   // вся добыча ночи летит к своим хозяевам — ничего не пропадает
   const tot = {};
@@ -1060,6 +1088,7 @@ function explode(e) {
 // попадание по монстру: src ≥ 0 — игрок, < 0 — башня дома (-1-idx)
 function hitEnemy(id, dmg, src, crit, flags) {
   const e = G.enemies.get(id); if (!e || e.spawnT > 0) return;
+  if (e.hz) { e.fl = 1; if (e.ram && !(flags & 18)) dmg *= 0.4; }   // таран под крышей: стрелы почти не берут, смола и камни — да
   // щит элиты рядом
   for (const o of G.enemies.values()) if (o.el === 2 && dist(o.x, o.z, e.x, e.z) < 4) { dmg *= 0.5; break; }
   e.hp -= dmg;
@@ -1074,6 +1103,20 @@ function hitEnemy(id, dmg, src, crit, flags) {
 function killEnemy(e, src) {
   const M = D.MON[e.type];
   if (!G.enemies.has(e.id)) return;
+  if (e.hz) {   // орда: без монет на земле (их сотни) — монетка сразу в кошелёк добившему, опыт делится
+    G.enemies.delete(e.id); SG.onDeath(e); if (G.sg) G.sg.killed++;
+    let killer = src >= 0 ? src : -1;
+    if (killer < 0 || !G.players[killer] || !G.players[killer].present) { let bd = 1e9; for (const p of G.players) if (p.present) { const dd = dist(p.x, p.z, e.x, e.z); if (dd < bd) { bd = dd; killer = p.idx; } } }
+    const kp = G.players[killer];
+    if (kp) {
+      const c = M.coin >= 1 ? Math.round(M.coin) : Math.random() < M.coin ? 1 : 0; kp.wallet.c += c; kp.kills++;
+      giveXp(kp, M.xp * 0.35); if (kp.st && kp.st.vamp && kp.alive) kp.hp = Math.min(kp.st.maxhp, kp.hp + kp.st.vamp * 0.3);
+      if (kp.st && kp.st.chain && (kp.killN = (kp.killN || 0) + 1) % 6 === 0) { emit(["x", Math.round(e.x * 10), Math.round(e.z * 10), 22]); for (const o of [...G.enemies.values()]) if (dist(o.x, o.z, e.x, e.z) < 2.2) hitEnemy(o.id, 20 * (1 + 0.18 * (kp.perks.dmg || 0)), killer, 0, 0); }
+      if (M.coin >= 10) { emit(["as", killer, c]); }
+    }
+    for (const p of G.players) if (p.present && p !== kp) giveXp(p, M.xp * 0.1);
+    return;
+  }
   G.enemies.delete(e.id); killEnemyView(e.id);
   if (e.type === "bomber") { emit(["x", Math.round(e.x * 10), Math.round(e.z * 10), 22]); for (const o of [...G.enemies.values()]) if (dist(o.x, o.z, e.x, e.z) < 2.2) hitEnemy(o.id, 30, src, 0, 0); }
   if (M.split) for (let i = 0; i < 2; i++) { const a = Math.random() * PI2; const s2 = spawnEnemy(M.split, { x: e.x + Math.cos(a) * 0.6, z: e.z + Math.sin(a) * 0.6, h: e.h }, 0); if (s2) s2.spawnT = 0.2; }
@@ -1108,6 +1151,7 @@ function giveXp(p, x) { p.xp += x; while (p.xp >= D.xpNeed(p.lvl)) { p.xp -= D.x
 function gameOver(win) {
   if (G.over) return; G.over = true;
   const d = { win, wave: G.wave, loc: G.loc, lost: G.lost, houses: G.houses.length, bossKills: G.bossKills, stats: G.players.map(pStat) };
+  if (G.sg) d.sg = { slv: G.sg.slv, km: Math.round(G.sg.keepMin * 100) / 100, killed: G.sg.killed, br: G.sg.breaches, waves: LOCD().waves };
   lastOverD = d; lastOverSent = performance.now();
   send("over", d); onOver(d);
   // повторяем итог несколько раз: гость мог переподключаться к серверу в этот момент
@@ -1210,6 +1254,7 @@ function doAct(pi, a) {
       if (playerViews[pi]) updGear(playerViews[pi]); ok = true; break;
     }
     case "rdy": p.ready = !!a.v; dirtyFull = true; return true;
+    case "sg": return SG.doAct(pi, a);
   }
   if (ok) { dirtyFull = true; if (h) updHouseView(h); }
   return ok;
@@ -1255,8 +1300,9 @@ function collide(o, r, isEnemy, big) {
       if (isEnemy && h.whp > 0) { const d = dist(o.x, o.z, h.x, h.z); if (d < D.WALL_R + r && d > 0.01) { o.x = h.x + (o.x - h.x) / d * (D.WALL_R + r); o.z = h.z + (o.z - h.z) / d * (D.WALL_R + r); } } }
   }
   if (!big) { for (const ob of obstacles) push(o, ob.x, ob.z, ob.r + r); for (const nd of G.nodes) if (nd.amt > 0) push(o, nd.x, nd.z, (nd.r || 0.5) + r); }
-  if (WD && WD.lakes.length && WD.L.water !== "ice") for (const l of WD.lakes) { const ld = WD.lakeD(o.x, o.z); if (ld < r * 0.5) { const d = dist(o.x, o.z, l.x, l.z) || 1; const k = (r * 0.5 - ld); o.x += (o.x - l.x) / d * k; o.z += (o.z - l.z) / d * k; } }
+  if (WD && WD.lakes.length && WD.L.water !== "ice" && !G.sg) for (const l of WD.lakes) { const ld = WD.lakeD(o.x, o.z); if (ld < r * 0.5) { const d = dist(o.x, o.z, l.x, l.z) || 1; const k = (r * 0.5 - ld); o.x += (o.x - l.x) / d * k; o.z += (o.z - l.z) / d * k; } }
   if (G.merchant) { const m = merchantSpot(G.houses.length); push(o, m.x - 1.6, m.z - 1.2, 1.2 + r); }
+  if (G.sg) { SG.clampHero(o, r); return; }
   const rr = Math.hypot(o.x, o.z), lim = D.MAP_R - 0.5; if (rr > lim) { o.x *= lim / rr; o.z *= lim / rr; }
 }
 function push(o, x, z, r) { const dx = o.x - x, dz = o.z - z, d = Math.hypot(dx, dz); if (d < r && d > 0.0001) { o.x = x + dx / d * r; o.z = z + dz / d * r; } }
@@ -1531,7 +1577,8 @@ function updateViews(dt) {
     const k = i === me ? 1 : 1 - Math.exp(-dt * 12);
     v.pos.x = lerp(v.pos.x, p.x, k); v.pos.z = lerp(v.pos.z, p.z, k);
     const moved = Math.hypot(v.pos.x - v.root.position.x, v.pos.z - v.root.position.z) / Math.max(dt, 0.001);
-    v.root.position.set(v.pos.x, 0, v.pos.z);
+    const gy = G.sg ? SG.heightAt(v.pos.x, v.pos.z) : 0; v.py = v.py == null ? gy : lerp(v.py, gy, 1 - Math.exp(-dt * 14));
+    v.root.position.set(v.pos.x, v.py, v.pos.z);
     let dr = p.ry - v.c.obj.rotation.y; while (dr > Math.PI) dr -= PI2; while (dr < -Math.PI) dr += PI2; v.c.obj.rotation.y += dr * Math.min(1, dt * 16);
     if (!p.alive) { if (!v.deadShown) onPlayerDown(p); v.c.mixer.update(dt); return; }
     if (v.deadShown) { v.deadShown = false; v.c.mixer.stopAllAction(); v.base = v.upper = null; fx.heal(p.x, p.z); }
@@ -1562,6 +1609,7 @@ function updateViews(dt) {
   });
   // монстры
   const camX = camPos.x, camZ = camPos.z;
+  if (G.sg) { SG.updateHorde(dt, camX, camZ, G.t, isHost()); SG.updateViews(dt, G.t); }
   for (const [id, v] of enemyViews) {
     const e = v.e, M = D.MON[e.type];
     if (v.dead) {
@@ -1674,23 +1722,24 @@ function updateCamera(dt) {
   const vfov = camera.fov * Math.PI / 180, hfovT = Math.tan(vfov / 2) * camera.aspect;
   // ближе и чуть «киношнее»: герой и аванпост — главное на экране телефона
   let d = clamp((portrait ? 4.9 : 8) / hfovT, 14, 24);
+  if (G.sg && phase === "play") d *= 1.28;   // осада: видно и стену, и орду на насыпи
   const pitch = 0.9;
   if (phase === "play" && p) {
     const vv = playerViews[me]; let tx = vv ? vv.root.position.x : p.x, tz = vv ? vv.root.position.z : p.z;
     const hh = G.houses[p.house]; if (hh && hh.alive) { const dh = dist(tx, tz, hh.x, hh.z), k = 0.4 * clamp(1 - (dh - 3) / 7, 0, 1); tx = lerp(tx, hh.x, k); tz = lerp(tz, hh.z, k); }   // свой аванпост рядом — держим его в кадре
     if (bossCam > 0) { bossCam -= dt; const k = Math.min(1, bossCam / 0.4, (1.8 - bossCam) / 0.4); tx = lerp(tx, bossCamPos.x, k); tz = lerp(tz, bossCamPos.z, k); }
-    camPos.x = lerp(camPos.x, tx, 1 - Math.exp(-dt * 6)); camPos.z = lerp(camPos.z, tz - 1.4, 1 - Math.exp(-dt * 6));   // смотрим чуть вперёд — герой в нижней половине
+    camPos.x = lerp(camPos.x, tx, 1 - Math.exp(-dt * 6)); camPos.z = lerp(camPos.z, tz - (G.sg ? 4.5 : 1.4), 1 - Math.exp(-dt * 6));   // смотрим чуть вперёд — герой в нижней половине
   } else { menuAng += dt * 0.05; d = 40; camPos.set(Math.cos(menuAng) * 7, 0, Math.sin(menuAng) * 7); }
   const sh = fx.shake * fx.shake * 0.5;
   camera.position.set(camPos.x + (Math.random() - 0.5) * sh, Math.sin(pitch) * d, camPos.z + Math.cos(pitch) * d + (Math.random() - 0.5) * sh);
   camLook.set(camPos.x, 0, camPos.z); camera.lookAt(camLook);
   const ov = window.__camOv; if (ov) { const p0 = P() || { x: 0, z: 0 }; camera.position.set(p0.x + ov[0], ov[1], p0.z + ov[2]); camera.lookAt(p0.x, ov[3], p0.z); }   // только для отладки
   AU.setListener(camPos.x, camPos.z);
-  const want = phase === "play" && G.ph === "wave" ? 1 : 0;
+  const want = (phase === "play" && G.ph === "wave") || (G.sg && phase === "play") ? 1 : 0;
   dayK = lerp(dayK, want, 1 - Math.exp(-dt * 0.8));
   scene.background.copy(DAY.sky).lerp(NIGHT.sky, dayK); scene.fog.color.copy(DAY.fog).lerp(NIGHT.sky, dayK); { const vis = phase === "play" ? (MODS().vis || 1) : 1; if (vis < 1) { scene.fog.near = d * (0.3 + 0.6 * vis); scene.fog.far = d + 45 * vis; } else { scene.fog.near = d + 8; scene.fog.far = d + 60; } }
   hemi.intensity = lerp(DAY.hemi, NIGHT.hemi, dayK); sun.intensity = lerp(DAY.sun, NIGHT.sun, dayK); sun.color.copy(DAY.sunC).lerp(NIGHT.sunC, dayK);
-  renderer.toneMappingExposure = lerp(1.0, 0.9, dayK);
+  renderer.toneMappingExposure = G.sg && phase === "play" ? 0.78 : lerp(1.0, 0.9, dayK);
   updateWorld(WD, dt, camPos.x, camPos.z, H * DPR);
 }
 
@@ -1702,8 +1751,10 @@ function drawOverlay() {
   octx.clearRect(0, 0, W, H);
   if (phase !== "play") return;
   octx.textAlign = "center"; octx.textBaseline = "middle"; octx.lineJoin = "round";
+  if (G.sg) SG.overlay(octx, scr, bar, me);
   for (const e of G.enemies.values()) {
     const M = D.MON[e.type]; if (M.boss) continue;
+    if (e.hz) { if (e.type !== "hz_brute" || !(e.hpPct < 99 || (isHost() && e.hp < e.max))) continue; const s = scr(e.x, SG.unitY(e) + 1.7, e.z); if (s.on) bar(s.x, s.y, 30, 4, isHost() ? e.hp / e.max : e.hpPct / 100, "#ff4d4d"); continue; }
     const k = isHost() ? e.hp / e.max : (e.predHp != null ? Math.min(e.predHp, e.hpPct) : e.hpPct) / 100;
     const s = scr(e.x, (M.q ? M.qs * (e.el ? 1.25 : 1) + 0.3 : 1.75 * monScale(M, e) / 0.7) + (M.fly || 0), e.z); if (!s.on) continue;
     if (e.el) { octx.font = "14px sans-serif"; octx.fillText("👑", s.x, s.y - 10); }
@@ -1731,7 +1782,7 @@ function drawOverlay() {
       if (!g.ok || g.hp < g.max) bar(sc.x, sc.y + 14, 34, 3, g.hp / g.max, "#ffb84d"); } }
   if (merchView) { const mp = merchView.root.position, s = scr(mp.x, 1.9 + Math.sin(G.t * 3) * 0.12, mp.z); if (s.on) { octx.font = "26px sans-serif"; octx.fillText("🛒", s.x, s.y); } else edgeArrow(mp.x, mp.z, "🛒"); }
   const p = P(); const myH = p && G.houses[p.house];
-  if (myH && myH.alive && G.ph === "wave" && dist(p.x, p.z, myH.x, myH.z) > 14) edgeArrow(myH.x, myH.z, "🏠");
+  if (myH && myH.alive && G.ph === "wave" && dist(p.x, p.z, myH.x, myH.z) > 14) { const s2 = scr(myH.x, 0, myH.z); if (!G.sg || !s2.on) edgeArrow(myH.x, myH.z, myH.shared ? "🏰" : "🏠"); }
   const boss = G.bossId && G.enemies.get(G.bossId); if (boss) { const s = scr(boss.x, 0, boss.z); if (!s.on) edgeArrow(boss.x, boss.z, "💀"); }
   for (const t of fx.texts) {
     const k = t.t / t.life, s = scr(t.x, t.y + k * 1.2, t.z); if (!s.on) continue;
@@ -1759,18 +1810,20 @@ function setW(el, k) { const s = (clamp(k, 0, 1) * 100).toFixed(1) + "%"; if (el
 function hud() {
   const p = P(); if (!p) return;
   const L = LOCD(), tm = Math.max(0, Math.ceil(G.timer));
-  setTxt("wave", G.ph === "build" ? `${G.wave ? "Волна " + G.wave + " / " + L.waves + " ✔" : L.icon + " Подготовка"}<small>${Number.isFinite(tm) && tm < 600 ? `⏳ до волны ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}` : "⏳ Готовься к бою"}</small>` : `Волна ${G.wave} / ${L.waves}<small>💀 врагов: ${G.enemies.size + (isHost() ? G.queue.length : qLeft)}</small>`);
+  if (G.sg) setTxt("wave", G.ph === "build" ? `${G.wave ? "Ночь " + G.wave + " / " + L.waves + " ✔" : "🏰 Подготовка"}<small>${Number.isFinite(tm) && tm < 600 ? `🌙 до ночи ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}` : "⏳ Готовься к бою"}</small>` : `Ночь ${G.wave} / ${L.waves}<small>${SG.hudText()}</small>`);
+  else setTxt("wave", G.ph === "build" ? `${G.wave ? "Волна " + G.wave + " / " + L.waves + " ✔" : L.icon + " Подготовка"}<small>${Number.isFinite(tm) && tm < 600 ? `⏳ до волны ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}` : "⏳ Готовься к бою"}</small>` : `Волна ${G.wave} / ${L.waves}<small>💀 врагов: ${G.enemies.size + (isHost() ? G.queue.length : qLeft)}</small>`);
   setTxt("r-c", "🪙 " + p.wallet.c); setTxt("r-w", "🪵 " + p.wallet.w); setTxt("r-s", "🪨 " + p.wallet.s);
   setTxt("lvl", `<b>${p.lvl}</b>`); $("lvl").style.setProperty("--xp", (p.xp / D.xpNeed(p.lvl) * 100).toFixed(0) + "%");
   const mh = p.st ? p.st.maxhp : 100;
   setW($("hpbar").firstElementChild, p.hp / mh); $("hpbar").lastElementChild.textContent = `${Math.ceil(p.hp)} / ${mh}`;
-  const hs = G.houses.map((h) => { const o = G.players[h.owner]; return `<div class="hs ${h.alive ? "" : "dead"} ${h.owner === me ? "me" : ""}"><span style="color:${o ? o.color : "#fff"}">🏠</span>${G.houses.length > 1 ? esc((o || {}).name || "").slice(0, 7) : "Дом"}<div class="bar"><i style="width:${(h.hp / h.max * 100).toFixed(0)}%"></i>${h.wmax ? `<u style="width:${(h.whp / h.wmax * 100).toFixed(0)}%"></u>` : ""}</div></div>`; }).join("");
+  const hs = G.houses.map((h) => { const o = G.players[h.owner]; return `<div class="hs ${h.alive ? "" : "dead"} ${h.owner === me ? "me" : ""}"><span style="color:${o && !h.shared ? o.color : "#fff"}">${h.shared ? "🏰" : "🏠"}</span>${h.shared ? "Цитадель" : G.houses.length > 1 ? esc((o || {}).name || "").slice(0, 7) : "Дом"}<div class="bar"><i style="width:${(h.hp / h.max * 100).toFixed(0)}%"></i>${h.wmax ? `<u style="width:${(h.whp / h.wmax * 100).toFixed(0)}%"></u>` : ""}</div></div>`; }).join("");
   setTxt("houses", hs);
   const boss = G.bossId && G.enemies.get(G.bossId);
   $("boss").style.display = boss ? "block" : "none";
   if (boss) { setTxt("boss", `<div>💀 ${D.MON[boss.type].name}${boss.enr ? " · ЯРОСТЬ" : ""}</div><div class="bar"><i style="width:${((isHost() ? boss.hp / boss.max : (boss.hpPct || 100) / 100) * 100).toFixed(0)}%"></i></div>`); }
-  const nh = nearHouse(), nm = nearMerchant();
-  $("b-build").classList.toggle("hidden", !nh || !p.alive);
+  const nh = nearHouse(), nm = nearMerchant(), ns = G.sg && !nh ? SG.nearStruct(p) : null;
+  $("b-build").classList.toggle("hidden", !(nh || ns) || !p.alive);
+  { const po = G.sg && p.alive && G.sg.gate.oil && SG.canPour(p); $("b-oil").classList.toggle("hidden", !po); if (po) { const cd = Math.ceil(G.sg.gate.oilCd); $("b-oil").classList.toggle("cd", cd > 0); setTxt("b-oil-cd", cd > 0 ? String(cd) : "!"); } }
   $("b-shop").classList.toggle("hidden", !nm || !p.alive); $("b-shop").classList.toggle("hot", !!nm);
   $("b-ready").classList.toggle("hidden", G.ph !== "build"); $("b-ready").classList.toggle("on", p.ready);
   const rd = G.players.filter((q) => q.present && q.ready).length, tot = G.players.filter((q) => q.present).length;
@@ -1779,7 +1832,8 @@ function hud() {
   const ik = Object.entries(p.items).map(([k, v]) => k + v).join(",");
   if (ik !== itemsKey) { itemsKey = ik; $("items").innerHTML = Object.entries(p.items).filter(([k, v]) => v > 0).map(([k, v]) => `<button class="ab" data-it="${k}">${D.ITEMS[k].icon}<small>${v}</small></button>`).join(""); $("items").querySelectorAll("[data-it]").forEach((b) => (b.onclick = () => useItem(b.dataset.it))); }
   let hint = "";
-  if (p.alive) { if (p.gn >= 0) hint = G.nodes[p.gn].kind === "tree" ? "🪓 Рублю дерево…" : "⛏️ Добываю камень…"; else if (G.wave === 0 && G.t < 25) hint = "Подойди к дереву или камню — добыча сама. Стреляю сам!"; }
+  if (p.alive && G.sg) { const L = SG.ladderNear(p); if (L) hint = "🪜 Сталкиваю лестницу…"; else if (G.wave === 0 && G.t < 30) hint = "Строй: подойди к стене или воротам и нажми 🔨. Камень и дерево — во дворе"; }
+  if (p.alive && !hint) { if (p.gn >= 0) hint = G.nodes[p.gn].kind === "tree" ? "🪓 Рублю дерево…" : "⛏️ Добываю камень…"; else if (G.wave === 0 && G.t < 25) hint = "Подойди к дереву или камню — добыча сама. Стреляю сам!"; }
   setTxt("near", hint);
   const dead = $("dead");
   if (!p.alive) { dead.classList.remove("hidden"); setTxt("dead", `💀 Ты пал<br><small>Возрождение через ${Math.max(0, Math.ceil(p.downT))} с</small>`); } else dead.classList.add("hidden");
@@ -1836,7 +1890,7 @@ function refreshPanel() {
     const h = G.houses[panelOpen.h];
     if (!h || !h.alive || dist(p.x, p.z, h.x, h.z) > 10.5) { closePanel(); return; }
     const own = G.players[h.owner], mine = h.owner === me;
-    html += UI.head(`🏠 ${mine ? "Твой аванпост" : "Аванпост · " + esc(own ? own.name : "")}`) + wal;
+    html += UI.head(h.shared ? "🏰 Цитадель — общая" : `🏠 ${mine ? "Твой аванпост" : "Аванпост · " + esc(own ? own.name : "")}`) + wal;
     if (room) html += `<p class="hint">Строить можно вместе: каждый вкладывает часть, когда сумма набрана — постройка готова.</p>`;
     const NL = D.HOUSE_LV[h.lv + 1];
     html += NL ? poolItem(h, "h" + (h.lv + 1), ["", "🏠", "🏡", "🏯", "🏰"][h.lv + 1] || "🏰", `Замок → уровень ${h.lv + 1}`, `прочность ${Math.round(NL.hp * (h.mh || 1))}, полный ремонт${deepHint(h.lv + 1)}`) : `<div class="it"><div class="ic">🏰</div><div class="tx2"><b>Дом · максимум</b><span>Прочность ${Math.ceil(h.hp)} / ${Math.round(h.max)}</span></div></div>`;
@@ -1844,7 +1898,7 @@ function refreshPanel() {
     const WL = D.WALL_LV[h.wall + 1];
     if (WL) html += poolItem(h, "w" + (h.wall + 1), "🧱", WL.name, h.wall ? `сейчас: ${D.WALL_LV[h.wall].name}` : "принимает удары первой, чинится после волны");
     // добытчики: работают всё время, добыча копится у здания
-    if (h.g) {
+    if (h.g && !h.shared) {
       html += `<div class="sec">Добыча — работает всё время</div>`;
       for (const k of D.GATHER_KEYS) {
         const GD = D.GATHER[k], g = h.g[k], next = g.lv + 1, locked = h.owner === me && SE.LOCKED_BUILD[k] && !S.unl[k] && !g.lv;
@@ -1863,8 +1917,10 @@ function refreshPanel() {
       if (!t) for (const [k, TD] of Object.entries(D.TURRETS)) { if (SE.LOCKED_TOWERS[k] && !S.unl[k]) { html += `<div class="it"><div class="ic">🔒</div><div class="tx2"><b>${TD.name}</b><span>Откроется наградой: ${SE.LOCKED_TOWERS[k]}</span></div></div>`; continue; } html += poolItem(h, "t" + selSlot + ":" + k, TD.icon, TD.name, `${TD.desc} · урон ${TD.dmg}`); }
       else { const TD = D.TURRETS[t.type]; html += t.lv < D.TURRET_MAX ? poolItem(h, "u" + selSlot + ":" + (t.lv + 1), TD.icon, `${TD.name} → ур. ${t.lv + 1}`, `урон ${Math.round(TD.dmg * D.turretMul(t.lv))} → ${Math.round(TD.dmg * D.turretMul(t.lv + 1))}, новый вид`) : `<div class="it"><div class="ic">${TD.icon}</div><div class="tx2"><b>${TD.name} · максимум</b><span>урон ${Math.round(TD.dmg * D.turretMul(t.lv))}</span></div></div>`; }
     } else html += `<p class="hint">Нажми на место, чтобы поставить или улучшить башню.</p>`;
-    if (!mine && own && own.present) html += `<div class="sec">Помочь союзнику</div><button class="gbtn" data-gift="${h.owner}" style="text-align:center">🎁 Передать ресурсы · ${esc(own.name)}</button>`;
+    if (!mine && own && own.present && !h.shared) html += `<div class="sec">Помочь союзнику</div><button class="gbtn" data-gift="${h.owner}" style="text-align:center">🎁 Передать ресурсы · ${esc(own.name)}</button>`;
     html += `<p class="hint">Монеты получает тот, кто добил монстра (башня — её хозяину). За помощь в убийстве — часть опыта и монетка.</p>`;
+  } else if (panelOpen.kind === "siege") {
+    const ph = G.sg ? SG.panelHtml(p, esc, UI.head) : null; if (!ph) { closePanel(); return; } html += ph;
   } else if (panelOpen.kind === "shop") {
     if (!G.merchant || !nearMerchant()) { closePanel(); return; }
     html += UI.head("🛒 Торговец") + wal;
@@ -1903,7 +1959,8 @@ function refreshPanel() {
   }));
 }
 function openGift(i) { if (!G.players[i] || i === me) return; panelOpen = { kind: "gift", to: i }; panelKey = ""; UI.sheet("<div></div>", { onClose: () => { panelOpen = null; } }); refreshPanel(); }
-$("b-build").onclick = () => { const h = nearHouse(); if (h) openPanel("build", h); };
+$("b-build").onclick = () => { const h = nearHouse(); if (h) openPanel("build", h); else if (G.sg && SG.nearStruct(P())) openPanel("siege"); };
+$("b-oil").onclick = () => { const p = P(); if (!p || !G.sg || !SG.canPour(p)) return; if (G.sg.gate.oilCd > 0) { toast("Смола ещё греется"); AU.play("error"); return; } act({ k: "sg", op: "pour" }); vib("impact", "heavy"); };
 $("b-shop").onclick = () => { if (nearMerchant()) openPanel("shop"); };
 $("b-ready").onclick = () => { const p = P(); const v = !p.ready; act({ k: "rdy", v }); p.ready = v; AU.play("confirm"); hudDirty = true; };
 $("btn-set").onclick = () => UI.showSettings(readQ, () => { if (room) { room.close(); room = null; } toMenu(); });
@@ -1940,6 +1997,7 @@ function onOver(d) {
   clearRoom(); persistMine();
   phase = "over"; G.over = true;
   const L = D.LOC[d.loc] || LOCD();
+  if (d.sg) return onSiegeOver(d, L);
   const stars = d.win ? (d.lost === 0 ? 3 : d.lost <= Math.floor((d.houses || 1) / 2) ? 2 : 1) : 0;
   const res = finishRun(d.loc || G.loc, d.wave, !!d.win, stars, d.bossKills || G.bossKills);
   St.gameEnd({ wave: d.wave, win: !!d.win, players: G.players.length, solo: !room, loc: d.loc });
@@ -1965,9 +2023,33 @@ function onOver(d) {
   setTimeout(() => { if (d.win) UI.showChest(res, L, () => $("screen-end").classList.remove("hidden")); else $("screen-end").classList.remove("hidden"); }, 1300);
   if (room && isHost()) room.on("start", () => {});
 }
-async function restart(loc) {
+// конец осады: у каждого свой сундук, открывается следующий уровень
+function onSiegeOver(d, L) {
+  const g = d.sg, stars = d.win ? (g.km >= 0.6 ? 3 : g.km >= 0.3 ? 2 : 1) : 0, year = currentStep().year;
+  const res = finishSiege(g.slv, d.wave, g.waves, !!d.win, stars, SG.siegeReward(g.slv, year));
+  St.gameEnd({ wave: d.wave, win: !!d.win, players: G.players.length, solo: !room, loc: "siege" });
+  St.event("game_over", { game: GAME, wave: d.wave, win: !!d.win, players: G.players.length, solo: !room, loc: "siege", slv: g.slv });
+  closePanel(); UI.closeSheet(); $("perks").classList.add("hidden");
+  AU.music(d.win ? "win" : "lose");
+  $("end-stars").innerHTML = d.win ? [0, 1, 2].map((i) => `<i class="${i < stars ? "on" : ""}">★</i>`).join("") : "";
+  $("end-title").textContent = d.hostLeft ? "Игра окончена — хозяин вышел" : d.win ? "Цитадель выстояла!" : "Цитадель пала";
+  $("end-wave").textContent = d.win ? `${d.wave} / ${g.waves} ночей · уровень ${g.slv}` : `Ночь ${d.wave} из ${g.waves} · уровень ${g.slv}`;
+  $("end-gems").innerHTML = `+${res.gems} 💎 кристаллов${res.res.c ? ` · ${res.res.c}🪙 ${res.res.w}🪵 ${res.res.s}🪨 в запас` : ""}${res.firstClear ? ` · открыт уровень ${g.slv + 1}!` : ""}`;
+  if (room && !hosting) send("myprog", { op: S.op, prog: S.prog });
+  $("end-sub").innerHTML = `<div><span>Врагов повержено</span><span>💀 ${g.killed}</span></div><div><span>Проломов в стене</span><span>${g.br}</span></div><div><span>Рекорд уровня ${g.slv}</span><span>ночь ${S.sg.best[g.slv] || d.wave}</span></div>` + (d.stats || []).map((s) => `<div><span>${esc(s[0])} · ур.${s[3]}</span><span>💀 ${s[1]} · 🔨 ${s[4]}</span></div>`).join("");
+  const b = [];
+  if (isHost()) {
+    if (d.win) b.push([`➡️ Осада · уровень ${g.slv + 1}`, "primary", () => restart("siege", g.slv + 1)]);
+    b.push([d.win ? "🔁 Ещё раз" : "🔁 Попробовать снова", d.win ? "" : "primary", () => restart("siege", g.slv)]);
+  } else if (!d.hostLeft) b.push(["Ждём, пока хозяин начнёт…", "", () => {}]);
+  b.push(["🗺️ В меню", "ghost", () => { if (room) room.close(); room = null; toMenu(); }]);
+  const box = $("end-buttons"); box.innerHTML = "";
+  b.forEach(([l, c, f]) => { const el = document.createElement("button"); el.className = "gbtn " + c; el.style.textAlign = "center"; el.textContent = l; el.onclick = () => { AU.play("click"); f(); }; box.appendChild(el); });
+  setTimeout(() => { if (d.win) UI.showChest(res, { icon: "🏰", name: `Осада · уровень ${g.slv}` }, () => $("screen-end").classList.remove("hidden")); else $("screen-end").classList.remove("hidden"); }, 1300);
+}
+async function restart(loc, slv) {
   await prep(loc);
-  const c2 = Object.assign({}, cfg, { loc }); delete c2.me;
+  const c2 = Object.assign({}, cfg, { loc }); delete c2.me; if (slv) c2.slv = slv;
   c2.players = c2.players.map((pc, i) => Object.assign({}, pc, i === me ? { op: S.op, prog: S.prog } : (G.players[i] && G.players[i].saved) ? G.players[i].saved : Object.assign(G.houses[i] ? { op: opOf(G.houses[i]) } : {}, G.players[i] ? { prog: progOf(G.players[i]) } : {}))).filter((pc, i) => !room || (G.players[i] && G.players[i].present));   // аванпосты и герои — как сейчас
   if (room) send("start2", Object.assign({ hi: Math.max(0, c2.players.findIndex((pc) => pc.id === room.me.id)), ep: ep + 1 }, c2));
   const mi = Math.max(0, c2.players.findIndex((pc) => pc.id === (room ? room.me.id : "me")));
@@ -1979,7 +2061,7 @@ function clearRoom() { try { localStorage.removeItem("ob_room"); } catch (_) {} 
 function savedRoom() { try { const r = JSON.parse(localStorage.getItem("ob_room") || "null"); return r && Date.now() - r.t < 10 * 60000 ? r.id : null; } catch (_) { return null; } }
 setInterval(() => { if (room && (phase === "play" || phase === "lobby")) saveRoom(room.id); }, 10000);
 function toMenu() {
-  clearRoom();
+  clearRoom(); G.sg = null; SG.dispose();
   phase = "menu"; ["hud", "acts", "btn-set", "net", "team", "screen-end", "dead", "lobby"].forEach((id) => $(id).classList.add("hidden")); $("near").textContent = "";
   closePanel(); UI.closeSheet();
   buildMenuScene();
@@ -1989,7 +2071,7 @@ function toMenu() {
 // ================= ЛОББИ (своё) =================
 let lobbyInfo = {};
 function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: { ts: S.cos.ts, out: S.cos.out, ban: S.cos.ban } }; }
-async function hostParty(loc) {
+async function hostParty(loc, slv) {
   phase = "lobby"; showLobby({ status: "Создаём комнату…" });
   try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true }); }
   catch (e) { showLobby({ error: "Нет связи с сервером 😕 Проверь интернет" }); return; }
@@ -2008,18 +2090,18 @@ async function hostParty(loc) {
     const ps = room.players;
     send("lobloc", loc); ensure(modelsFor(loc)).catch(() => {});
     $("lobby-card").innerHTML = `<div style="font-size:40px">🏰</div><h2>Комната друзей</h2><p class="mut">Позови друзей одной ссылкой — до 6 игроков. Вход можно и после старта.</p>
-      <button class="lobloc" id="lb-loc"><span class="ic">${Lc.icon}</span><div><b>${Lc.name}</b><small>${Lc.waves} волн · сменить локацию ›</small></div></button>
+      ${loc === "siege" ? `<button class="lobloc" id="lb-loc"><span class="ic">🏰</span><div><b>Осада цитадели · уровень ${slv || 1}</b><small>${SG.wavesFor(slv || 1)} ночей · сменить уровень ›</small></div></button>` : `<button class="lobloc" id="lb-loc"><span class="ic">${Lc.icon}</span><div><b>${Lc.name}</b><small>${Lc.waves} волн · сменить локацию ›</small></div></button>`}
       ${ps.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return `<div class="lobp"><i style="background:${COLORS[i % 6]}"></i>${esc(p.name)}${p.id === room.me.id ? " (ты)" : ""}<small>${D.SKINS[inf.style || "medieval"].icon}</small></div>`; }).join("")}
       <button class="gbtn" id="lb-inv" style="text-align:center">📨 Пригласить друзей</button>
       <button class="gbtn primary big" id="lb-go">▶ Начать (${ps.length})</button>
       <button class="gbtn ghost" id="lb-x">Выйти</button>`;
     $("lb-inv").onclick = share;
-    $("lb-loc").onclick = () => { $("lobby").classList.add("hidden"); UI.showMap({ title: "Выбери локацию", btn: "✔ Выбрать", sel: loc, onPick: (id) => { $("lobby").classList.remove("hidden"); drawLobby(id); }, onBack: () => $("lobby").classList.remove("hidden") }); };
+    $("lb-loc").onclick = () => { if (loc === "siege") { slv = (slv || 1) % Math.max(1, S.sg.lv) + 1; AU.play("select"); drawLobby(loc); return; } $("lobby").classList.add("hidden"); UI.showMap({ title: "Выбери локацию", btn: "✔ Выбрать", sel: loc, onPick: (id) => { $("lobby").classList.remove("hidden"); drawLobby(id); }, onBack: () => $("lobby").classList.remove("hidden") }); };
     $("lb-x").onclick = () => { room.close(); room = null; toMenu(); };
     $("lb-go").onclick = async () => {
       const players = room.players.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return { id: p.id, name: p.name, color: COLORS[i % 6], uid: inf.uid || p.id, style: inf.style || "medieval", meta: inf.meta || {}, wpn: inf.wpn || "crossbow", hero: inf.hero, op: inf.op, prog: inf.prog, cos: inf.cos }; });
       const used = {}; players.forEach((pp) => { const k = pp.name; used[k] = (used[k] || 0) + 1; if (used[k] > 1) pp.name = `${k} ${used[k]}`; });
-      const c = { loc, seed: S.seed, players };   // родной край хозяина
+      const c = { loc, seed: S.seed, players, slv: loc === "siege" ? slv || 1 : undefined };   // родной край хозяина
       await prep(loc);
       room.lock(); send("start2", c);
       begin({ room, cfg: Object.assign({}, c, { me: 0 }), host: true, hostIdx: 0, ep: 0 });
@@ -2066,7 +2148,7 @@ function showLobby(o) {
 // ?fps=1 — счётчик кадров для проверки на телефоне
 const fpsEl = /[?&]fps=1/.test(location.search) ? Object.assign(document.body.appendChild(document.createElement("div")), { style: "position:fixed;left:6px;bottom:6px;z-index:99;font:700 11px monospace;color:#9f9;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:6px;pointer-events:none" }) : null;
 let fpsN2 = 0, fpsT2 = 0;
-let last = 0, lastWall = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0;
+let last = 0, lastWall = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0, hzT = 0;
 function frame(ts) {
   requestAnimationFrame(frame);
   // вкладка спала: меряем по настоящим часам (метка кадра после долгой паузы бывает «старой»)
@@ -2083,6 +2165,8 @@ function frame(ts) {
     resyncTick(performance.now());
     if (isHost() && !probeUntil) { acc += dt; let n = 0; while (acc >= 1 / 30 && n < 8) { hostStep(1 / 30); acc -= 1 / 30; n++; } }   // пока «прислушиваемся» после фона — мир не двигаем
     localStep(dt); remoteFire(dt); updateShots(dt);
+    if (G.sg && !isHost()) SG.clientStep(dt);
+    if (G.sg && isHost() && room) { hzT -= realDt; if (hzT <= 0) { hzT = 1 / 3; sendFast("hz", SG.packHorde()); } }
     coneT -= dt;
     if (isHost() && room) { snapT -= realDt; if (snapT <= 0) { snapT = 1 / 10; sendFast("s", makeSnap()); } }
     hudT -= realDt; if (hudT <= 0 || hudDirty) { hudT = 0.15; hudDirty = false; hud(); }
@@ -2121,10 +2205,12 @@ function buildMenuScene() {
 const menuHandlers = {
   onCampaign: () => { UI.hideMenu(); UI.showMap({ onPick: (loc) => startSolo(loc), onBack: () => UI.showMenu(menuHandlers) }); },
   onParty: () => { UI.hideMenu(); UI.showMap({ title: "Локация для друзей", btn: "👥 Создать комнату", onPick: (loc) => hostParty(loc), onBack: () => UI.showMenu(menuHandlers) }); },
-  onQuality: readQ
+  onQuality: readQ,
+  onSiege: (slv, party) => { if (party) hostParty("siege", slv); else startSolo("siege", slv); }
 };
 // модели, нужные локации: монстры её семейств, боссы и их свита, торговец
 function modelsFor(locId) {
+  if (locId === "siege") return SG.MODELS.slice();
   const L = D.LOC[locId] || D.LOCS[0], types = new Set();
   for (const f of L.fam) for (const k of D.FAM[f]) types.add(k);
   for (const k of [...Object.values(L.bosses), ...Object.values(L.mid)]) types.add(k);
@@ -2135,18 +2221,33 @@ function modelsFor(locId) {
 // перед боем: догружаем монстров локации (с полосой, если их ещё нет)
 async function prep(locId) {
   const need = modelsFor(locId).filter((n) => !has(n));
-  if (!need.length) return;
+  if (!need.length) { if (locId === "siege") await bakeHorde(); return; }
   const el = $("busy"); el.classList.remove("hidden"); el.querySelector("i").style.width = "4%";
   try { await ensure(need, (k) => { el.querySelector("i").style.width = Math.max(4, k * 100).toFixed(0) + "%"; }); }
   finally { el.classList.add("hidden"); }
+  if (locId === "siege") await bakeHorde();
 }
-async function startSolo(loc) {
+// орда: «запекаем» кадры и уровни детализации один раз (пара секунд на телефоне) — под полосой загрузки
+async function bakeHorde() {
+  if (SG.hordeReady()) return;
+  const el = $("busy"); el.classList.remove("hidden"); el.querySelector("i").style.width = "92%";
+  await new Promise((r) => setTimeout(r, 30));
+  try { SG.prepareHorde(); } finally { el.classList.add("hidden"); }
+}
+async function startSolo(loc, slv) {
   room = null;
   await prep(loc);
   const h = myHello();
-  begin({ room: null, cfg: { loc, seed: S.seed, players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: h.cos }], me: 0 }, host: true });
+  begin({ room: null, cfg: { loc, slv: slv || undefined, seed: S.seed, players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: h.cos }], me: 0 }, host: true });
 }
 
+// осада: модуль крепости и орды получает доступ к нужным частям игры
+SG.bind({
+  get G() { return G; }, get me() { return me; }, get shots() { return shots; }, fx, AU, COL, P, emit, msg, toast, vib, hitEnemy, killEnemy, damagePlayer, damageHouse,
+  isHost: () => isHost(), dirty: () => { dirtyFull = true; }, shadowsDirty: () => { renderer.shadowMap.needsUpdate = true; },
+  setSrc: (t) => { curSrc = t; curHm = 1; }, heroY: (p) => SG.heightAt(p.x, p.z),
+  enemyArrow: (e, p) => { emit(["a", e.id, Math.round(p.x * 10), Math.round(p.z * 10), "arrow"]); markEnemyShot(e, p, G.houses[0], D.MON[e.type]); }
+});
 T.init({ header: "#1a2230", bg: "#1a2230", back: "../" });
 applyQuality();
 requestAnimationFrame(frame);
@@ -2181,5 +2282,5 @@ window.__game = {
   sim(sec, cb) { const dt = 1 / 30; for (let i = 0; i < sec * 30 && phase === "play"; i++) { if (cb) cb(i); if (isHost()) hostStep(dt); localStep(dt); remoteFire(dt); updateShots(dt); if (i % 6 === 0) { updateViews(dt * 6); fx.update(dt * 6); } } hud(); return { w: G.wave, ph: G.ph, en: G.enemies.size, q: G.queue.length, over: G.over, phase }; },
   upd(h) { updHouseView(h); },
   startSoloWith(hero, wpn, loc) { S.hero = hero; S.wpn = wpn; return startSolo(loc); },
-  D, poolTarget, get renderer() { return renderer; }, get shots() { return shots; }, get room() { return room; }, scene, camera, get flows() { return flows; }, get WD() { return WD; }
+  SG, D, poolTarget, get renderer() { return renderer; }, get shots() { return shots; }, get room() { return room; }, scene, camera, get flows() { return flows; }, get WD() { return WD; }
 };

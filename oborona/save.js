@@ -13,13 +13,15 @@ export const S = {
   op: DEF_OP(), prog: DEF_PROG(),
   camp: { st: {}, max: 0 },                      // st[шаг] = { s: звёзды, b: рекорд, c: пройден }; max — сколько шагов открыто сверх первого
   cos: { ts: "none", tsk: { none: 1 }, out: "team", outs: { team: 1 }, ban: "team", bans: { team: 1 } },
-  unl: {}, amus: {}, seed: 0
+  unl: {}, amus: {}, seed: 0,
+  sg: { lv: 1, best: {}, st: {}, runs: 0 }       // «Осада цитадели»: открытый уровень, рекорды ночей, звёзды
 };
 function score(s) {
   let k = (s.gems || 0) + (s.runs || 0);
   for (const id in s.loc || {}) k += 100 * ((s.loc[id].stars || 0) + (s.loc[id].best || 0) / 100);
   for (const id in (s.camp && s.camp.st) || {}) k += 100 * ((s.camp.st[id].s || 0) + (s.camp.st[id].b || 0) / 100 + (s.camp.st[id].c ? 3 : 0));
   for (const u in s.up || {}) k += 50 * s.up[u];
+  if (s.sg) for (const l in s.sg.st || {}) k += 100 * (s.sg.st[l] + 2);
   const op = s.op; if (op) { k += 40 * (op.lv || 1) + 30 * (op.wall || 0); (op.tw || []).forEach((t) => { if (t) k += 15 * (+t.split(":")[1] || 1); }); for (const g in op.g || {}) k += 15 * op.g[g]; }
   return k;
 }
@@ -32,6 +34,7 @@ function apply(o) {
   S.camp = Object.assign({ st: {}, max: 0 }, S.camp || {});
   S.cos = Object.assign({ ts: "none", tsk: { none: 1 }, out: "team", outs: { team: 1 }, ban: "team", bans: { team: 1 } }, S.cos || {});
   S.unl = S.unl || {}; S.amus = S.amus || {};
+  S.sg = Object.assign({ lv: 1, best: {}, st: {}, runs: 0 }, S.sg || {});
 }
 // старые сохранения (отдельные карты) → «Времена года»: пройденные карты = пройденные сезоны, аванпост — по прогрессу
 const OLD = ["forest", "autumn", "swamp", "desert", "snow", "volcano"];
@@ -111,6 +114,20 @@ export function finishRun(stepId, wave, cleared, stars, bossKills) {
   if (cleared) { o.c = 1; const idx = STEPS.findIndex((s) => s.id === stepId); if (idx >= S.camp.max) S.camp.max = Math.min(STEPS.length - 1, idx + 1); }
   chest.gems = gems;
   S.gems = (S.gems || 0) + gems; S.runs = (S.runs || 0) + 1;
+  S.prog.c += chest.res.c; S.prog.w += chest.res.w; S.prog.s += chest.res.s;
+  save(true);
+  return chest;
+}
+// «Осада цитадели»: награда каждому своя; особая — за первую победу на уровне; растёт с годом кампании
+export function finishSiege(slv, wave, waves, win, stars, R) {
+  const o = S.sg, firstWin = win && !o.st[slv], oldStars = o.st[slv] || 0;
+  o.best[slv] = Math.max(o.best[slv] || 0, wave); o.runs = (o.runs || 0) + 1;
+  const part = win ? 1 : Math.min(0.5, 0.06 * wave);
+  const chest = { gems: Math.round(R.gems * (win ? (firstWin ? 1 : 0.45) : part)) + (win ? stars * 4 : 0), res: { c: 0, w: 0, s: 0 }, special: null, firstClear: firstWin, stars, newStars: Math.max(0, stars - oldStars), siege: true };
+  for (const r of ["c", "w", "s"]) chest.res[r] = Math.round(R.res[r] * (win ? (firstWin ? 1 : 0.5) * (1 + 0.2 * stars) : part));
+  if (firstWin && R.special) { chest.special = R.special; grantSpecial(R.special); }
+  if (win) { o.st[slv] = Math.max(oldStars, stars); if (slv >= o.lv) o.lv = slv + 1; }
+  S.gems = (S.gems || 0) + chest.gems; S.runs = (S.runs || 0) + 1;
   S.prog.c += chest.res.c; S.prog.w += chest.res.w; S.prog.s += chest.res.s;
   save(true);
   return chest;

@@ -126,6 +126,11 @@
   #acts { position: fixed; right: 10px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 4; display: flex; flex-direction: column; gap: 9px; align-items: flex-end; }
   .ab { pointer-events: auto; min-width: 56px; height: 56px; border-radius: 18px; border: 1px solid rgba(255,255,255,.22); background: rgba(20,24,36,.62); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font-size: 25px; color: #fff; font-weight: 800; position: relative; padding: 0 10px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
   .ab:active { transform: scale(.93); }
+  .ab.oil { background: linear-gradient(135deg, #ff8a3a, #c2410c); } .ab.oil.cd { filter: grayscale(.8) brightness(.7); }
+  .gbtn.siege { background: linear-gradient(135deg, rgba(40,52,92,.9), rgba(22,26,44,.9)); border-color: rgba(255,211,77,.45); }
+  .sgart { height: 120px; border-radius: 16px; margin: 6px 0 10px; background: radial-gradient(ellipse at 50% 120%, #ff9a4a55, transparent 60%), linear-gradient(180deg, #0e1424, #1f2a44); position: relative; overflow: hidden; display:flex; align-items:flex-end; justify-content:center; font-size: 54px; letter-spacing: -6px; }
+  .sgart::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(105deg, transparent 0 9px, rgba(160,190,255,.12) 9px 10px); }
+  .lvls { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; } .lvls button { flex: 1; min-width: 56px; padding: 10px 6px; border-radius: 12px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: #fff; font: 700 15px inherit; } .lvls button.sel { background: linear-gradient(135deg, #ffd36a, #f59e0b); color: #241a05; } .lvls button:disabled { opacity: .35; }
   .ab small { position: absolute; right: -5px; top: -6px; min-width: 20px; background: var(--acc); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 5px; }
   .ab.go { background: linear-gradient(135deg, #34d399, #10b981); font-size: 16px; height: 50px; } .ab.go.on { background: linear-gradient(135deg, #ffd36a, #f59e0b); }
   .ab.hot { animation: pulse 1s ease-in-out infinite; } @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(255,211,106,.35), 0 6px 18px rgba(0,0,0,.3); } }
@@ -241,6 +246,7 @@
   <div id="items"></div>
   <button class="ab hidden" id="b-shop">🛒</button>
   <button class="ab hidden" id="b-build">🔨</button>
+  <button class="ab oil hidden" id="b-oil">🔥<small id="b-oil-cd"></small></button>
   <button class="ab go hidden" id="b-ready">✅ В бой</button>
 </div>
 <div id="near" class="tx"></div>
@@ -259,6 +265,7 @@
   <div class="mcard glass">
     <button class="gbtn primary" id="m-camp">🗺️ Кампания<small id="m-camp-sub">Лесная долина</small></button>
     <button class="gbtn" id="m-party">👥 Играть с друзьями<small>Ссылка в чат — до 6 игроков</small></button>
+    <button class="gbtn siege" id="m-siege">🏰 Осада цитадели<small id="m-siege-sub">Ночь, дождь и сотни врагов у ворот</small></button>
     <div style="display:flex;gap:8px"><button class="gbtn" id="m-meta" style="text-align:center">💎 Мастерская</button><button class="gbtn" id="m-set" style="text-align:center">⚙️ Настройки</button></div>
     <div id="load"><i></i></div>
     <button class="gbtn ghost" id="m-back">Другие игры</button>

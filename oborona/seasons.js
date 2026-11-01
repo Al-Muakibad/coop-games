@@ -38,10 +38,10 @@ const BOSS = [
 // косметика и открытия за сезоны
 export const TSKIN = {   // облик башен: сдвиг оттенка «синих» частей + цвет отделки
   none: { name: "Обычные", hue: null }, sand: { name: "Пустынные пагоды", hue: 0.45, trim: 0xe8b04a }, sakura: { name: "Сакура", hue: 0.33, trim: 0xffb7d5 },
-  frost: { name: "Ледяные", hue: -0.08, trim: 0xbff3ff }, ember: { name: "Огненные", hue: 0.48, trim: 0xff7a2a }, royal: { name: "Королевские", hue: 0.12, trim: 0xffd34d }
+  frost: { name: "Ледяные", hue: -0.08, trim: 0xbff3ff }, ember: { name: "Огненные", hue: 0.48, trim: 0xff7a2a }, royal: { name: "Королевские", hue: 0.12, trim: 0xffd34d }, citadel: { name: "Цитадель", hue: 0.62, trim: 0xc8d2e8 }
 };
-export const OUTFIT = { team: { name: "Цвет команды" }, winter: { name: "Зимний наряд", color: "#e8f2ff" }, gold: { name: "Золотые доспехи", color: "#ffcc4d" }, sakura: { name: "Наряд сакуры", color: "#ff9cc8" }, shadow: { name: "Теневой наряд", color: "#5a4a7a" } };
-export const BANNER = { team: { name: "Цвет команды" }, bloom: { name: "Весенний стяг", color: "#ff9cc8", trim: "#ffffff" }, autumn: { name: "Осенний стяг", color: "#e07a2e", trim: "#ffd34d" }, royal: { name: "Королевский стяг", color: "#6b2fbf", trim: "#ffd34d" } };
+export const OUTFIT = { team: { name: "Цвет команды" }, winter: { name: "Зимний наряд", color: "#e8f2ff" }, gold: { name: "Золотые доспехи", color: "#ffcc4d" }, sakura: { name: "Наряд сакуры", color: "#ff9cc8" }, shadow: { name: "Теневой наряд", color: "#5a4a7a" }, defender: { name: "Доспех защитника", color: "#9aa7bd" } };
+export const BANNER = { team: { name: "Цвет команды" }, bloom: { name: "Весенний стяг", color: "#ff9cc8", trim: "#ffffff" }, autumn: { name: "Осенний стяг", color: "#e07a2e", trim: "#ffd34d" }, royal: { name: "Королевский стяг", color: "#6b2fbf", trim: "#ffd34d" }, citadel: { name: "Стяг цитадели", color: "#1f2a44", trim: "#ffd34d" } };
 // башни, которые открываются наградами (остальные доступны сразу)
 export const LOCKED_TOWERS = { pagoda: "Лето · год 1", poison: "Осень · год 1", ballista: "Лето · год 2" };
 export const LOCKED_BUILD = { mine: "Весна · год 1" };

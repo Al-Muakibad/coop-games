@@ -3,6 +3,7 @@ import * as D from "./data.js";
 import { S, save, locState, stepState, currentStep } from "./save.js";
 import * as SE from "./seasons.js";
 import * as AU from "./audio.js";
+import { siegeReward, wavesFor } from "./siege.js";
 
 const $ = (id) => document.getElementById(id);
 export const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
@@ -43,6 +44,8 @@ export function showMenu(h) {
   $("m-camp-sub").textContent = `Год ${cur.year} · ${cur.icon} ${cur.name}`;
   $("m-camp").onclick = () => { AU.play("click"); h.onCampaign(); };
   $("m-party").onclick = () => { AU.play("click"); h.onParty(); };
+  $("m-siege").onclick = () => { AU.play("click"); showSiege(h); };
+  $("m-siege-sub").textContent = S.sg && Object.keys(S.sg.st || {}).length ? `Открыт уровень ${S.sg.lv} · ночь, дождь и орда у ворот` : "Ночь, дождь и сотни врагов у ворот";
   $("m-meta").onclick = () => { AU.play("click"); showMeta(() => { $("m-gems").textContent = S.gems || 0; }); };
   $("m-set").onclick = () => { AU.play("click"); showSettings(h.onQuality); };
   $("m-back").onclick = () => { location.href = "../"; };
@@ -233,4 +236,24 @@ export function showSettings(onQuality, inGame) {
   b.querySelectorAll("[data-q]").forEach((x) => x.onclick = () => { S.set.q = x.dataset.q; save(); b.querySelectorAll("[data-q]").forEach((y) => y.classList.toggle("on", y === x)); onQuality && onQuality(); });
   $("s-vib").onclick = (e) => { S.set.vib = S.set.vib ? 0 : 1; save(); e.target.classList.toggle("on", !!S.set.vib); e.target.textContent = S.set.vib ? "Вкл" : "Выкл"; };
   if (inGame) $("s-quit").onclick = () => { closeSheet(); inGame(); };
+}
+
+// ---------- «Осада цитадели»: выбор уровня, награды, одному или с друзьями ----------
+export function showSiege(h) {
+  let sel = Math.min(S.sg.lv, 12);
+  const draw = () => {
+    const year = currentStep().year, R = siegeReward(sel, year), st = S.sg.st[sel] || 0, best = S.sg.best[sel] || 0, sp = R.special;
+    const lv = Array.from({ length: Math.min(12, Math.max(4, S.sg.lv + 1)) }, (_, i) => i + 1).map((l) => `<button class="${l === sel ? "sel" : ""}" data-l="${l}" ${l > S.sg.lv ? "disabled" : ""}>${l > S.sg.lv ? "🔒" : l}<br><small>${"★".repeat(S.sg.st[l] || 0) || "&nbsp;"}</small></button>`).join("");
+    const body = sheet(head("🏰 Осада цитадели") + `<div class="sgart">🏔️🏰🏔️</div>
+      <p class="hint">Крепость в горном ущелье — одна на всех. Днём строй стены, ворота, башни на стенах, камнемёты и котёл смолы. Ночью по насыпи идёт орда: сотни врагов, таран у ворот и лестницы на стены. Сталкивай лестницы, заделывай проломы, а если стена падёт — держись у цитадели.</p>
+      <div class="sec">Уровень осады</div><div class="lvls">${lv}</div>
+      <p class="mut" style="margin:4px 0 8px">Ночей: ${wavesFor(sel)} · рекорд: ${best ? "ночь " + best : "—"}${st ? " · " + stars(st) : ""}</p>
+      <div class="reward">🎁 Награда: 💎 ${R.gems}+ · ${R.res.c}🪙 ${R.res.w}🪵 ${R.res.s}🪨${sp && !st ? ` · <b>${esc(sp.txt)}</b>` : ""}<br><small>Каждому игроку — своя. Год кампании ${year}: награды ×${R.yearK.toFixed(2)}</small></div>
+      <button class="gbtn primary big" id="sg-solo" style="text-align:center">⚔️ Оборонять одному</button>
+      <button class="gbtn" id="sg-party" style="text-align:center">👥 С друзьями — до 6 игроков</button>`, { tall: true });
+    body.querySelectorAll("[data-l]").forEach((b) => (b.onclick = () => { sel = +b.dataset.l; AU.play("select"); draw(); }));
+    $("sg-solo").onclick = () => { closeSheet(); hideMenu(); h.onSiege(sel, false); };
+    $("sg-party").onclick = () => { closeSheet(); hideMenu(); h.onSiege(sel, true); };
+  };
+  draw();
 }
