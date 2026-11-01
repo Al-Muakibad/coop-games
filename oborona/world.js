@@ -17,7 +17,7 @@ export function noise2(x, z) {
 const fbm = (x, z) => noise2(x, z) * 0.6 + noise2(x * 2.1 + 7, z * 2.1) * 0.3 + noise2(x * 4.3, z * 4.3 + 3) * 0.1;
 
 // ---------- рельеф: 4 слоя текстур смешиваются по весам в вершинах ----------
-function terrainMaterial(G) {
+export function terrainMaterial(G) {
   const rep = 0.16;
   const m = new THREE.MeshStandardMaterial({ map: tex(G.base, "d"), normalMap: tex(G.base, "n"), roughness: 0.92, metalness: 0, envMapIntensity: 0.35 });
   m.normalScale.set(1.1, 1.1);
@@ -362,7 +362,7 @@ function buildGrass(world, L, spots, lakeD, splatAt, gres) {
 }
 
 // ---------- погода: снег, угли, листья, светлячки, пыль, пыльца ----------
-function makeWeather(world, kind, heavy) {
+export function makeWeather(world, kind, heavy) {
   const N = Math.round(({ snow: 700, embers: 260, leaves: 140, fireflies: 90, dust: 160, pollen: 120, rain: 900, petals: 160 }[kind] || 0) * (heavy || 1));
   if (!N) return null;
   const geo = new THREE.BufferGeometry(), p = new Float32Array(N * 3), ph = new Float32Array(N);
