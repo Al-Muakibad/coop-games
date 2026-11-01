@@ -1,14 +1,56 @@
-3D-модели в этой папке — бесплатные паки KayKit от Kay Lousberg (www.kaylousberg.com).
-Лицензия всех паков: Creative Commons Zero (CC0) — http://creativecommons.org/publicdomain/zero/1.0/
+Все ассеты игры «Аванпост» — бесплатные, лицензия Creative Commons Zero (CC0 1.0, общественное достояние):
+http://creativecommons.org/publicdomain/zero/1.0/
 Можно использовать в личных, учебных и коммерческих проектах; указание автора не обязательно (но мы указываем).
+Изменения: файлы объединены, упрощены и сжаты (gltf-transform, meshopt, webp, mp3); сами модели, текстуры и звуки по смыслу не менялись.
 
-Источники (GitHub, ветка main):
+=== 3D-модели ===
+KayKit от Kay Lousberg (www.kaylousberg.com), CC0 — GitHub, ветка main:
 - KayKit Character Pack: Adventurers 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
-    knight.glb, barbarian.glb, mage.glb, rogue.glb, merchant.glb (Rogue_Hooded), оружие crossbow_1handed / crossbow_2handed / staff / wand / arrow (weapons.glb)
+    knight.glb, barbarian.glb, mage.glb, rogue.glb, merchant.glb (Rogue_Hooded), оружие в weapons.glb
 - KayKit Character Pack: Skeletons 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0
-    sk_minion.glb, sk_warrior.glb, sk_rogue.glb, sk_mage.glb, anims.glb (анимации из Skeleton_Minion),
-    оружие Skeleton_Blade / Skeleton_Axe / Skeleton_Staff / Skeleton_Shield_* (weapons.glb)
+    sk_minion.glb, sk_warrior.glb, sk_rogue.glb, sk_mage.glb, anims.glb, оружие скелетов в weapons.glb
 - KayKit Medieval Hexagon Pack 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
-    world.glb: дома, башни, заборы, стены, деревья, камни, горы, облака, реквизит
+    world.glb: дома, башни, заборы, стены, реквизит
 
-Изменения: убраны лишние анимации, файлы объединены и сжаты (gltf-transform, meshopt). Сами модели не менялись.
+Quaternius (https://quaternius.com), CC0 — скачано с https://quaternius.itch.io:
+- Stylized Nature MegaKit — https://quaternius.itch.io/stylized-nature-megakit
+    nature.glb: деревья, сосны, пальмы, кусты, цветы, трава, камни, грибы (подборка)
+- Fantasy Props MegaKit — https://quaternius.itch.io/fantasy-props-megakit
+    props.glb: бочки, сундуки, повозка, зелья, факелы, мечи и прочий реквизит (подборка)
+- LowPoly Animated Monsters — https://quaternius.itch.io/lowpoly-animated-monsters
+- Animated Easy Enemies — https://quaternius.itch.io/animated-easy-enemies
+    из этих двух паков: m_bat.glb, m_dragon.glb, m_slime.glb, m_spider.glb, m_frog.glb, m_rat.glb, m_wasp.glb
+    (перегнаны из FBX в glTF, анимации сохранены)
+
+=== Текстуры и небо ===
+Poly Haven (https://polyhaven.com), CC0. Карты цвета и нормалей, уменьшены и перекодированы в webp (папка tex/):
+aerial_grass_rock, aerial_rocks_02, aerial_sand, brown_mud_02, brown_mud_leaves_01, burned_ground_01, clay_roof_tiles,
+dark_rock, dry_decay_leaves, forest_floor, grey_roof_tiles, japanese_cedar_planks, large_sandstone_blocks, leafy_grass,
+marble_mosaic_tiles, mossy_cobblestone, red_sand, red_sandstone_pavement, rocky_trail, sandy_gravel, snow_02,
+snow_field_aerial, snow_floor, volcanic_rock_tiles, white_plaster_rough_01, worn_planks
+sky.hdr — HDRI «Kloofendal 48d Partly Cloudy (Pure Sky)», https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky (уменьшено до 512×256)
+
+=== Звуки (папка ../audio) ===
+Все с OpenGameArt.org, лицензия CC0. Звуки смикшированы, обрезаны, выровнены по громкости и сжаты в mp3:
+- Kenney — «Interface Sounds», «RPG Sound Pack (50 RPG sound effects)» — https://kenney.nl, https://opengameart.org/content/interface-sounds, https://opengameart.org/content/50-rpg-sound-effects
+- «80 CC0 RPG SFX» — https://opengameart.org/content/80-cc0-rpg-sfx
+- «100 CC0 SFX» и «100 CC0 SFX #2» — https://opengameart.org/content/100-cc0-sfx, https://opengameart.org/content/100-cc0-sfx-2
+- «75 CC0 breaking / falling / hit sfx» — https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+- «150 Combat Sound Effects» (CC0, сборник: Kenney, CoMiGo, Kronbits, lentikula и др.) — https://opengameart.org/content/150-combat-sound-effects
+- «16 Monster Growls» — https://opengameart.org/content/16-monster-growls
+- «12 Coin Sound Effects» — https://opengameart.org/content/12-coin-sound-effects
+- «Swishes Sound Pack» — https://opengameart.org/content/swishes-sound-pack
+- «Undead Moans» — https://opengameart.org/content/undead-moans
+- «Fire Crackling» — https://opengameart.org/content/fire-crackling
+- «Fantasy Sound Effects (Tinysized SFX)» — https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx
+- «25 CC0 bang / firework SFX» — https://opengameart.org/content/25-cc0-bang-firework-sfx
+
+=== Музыка (папка ../audio) ===
+OpenGameArt.org, лицензия CC0:
+- m_menu — «Fantasy Orchestral Theme», joth — https://opengameart.org/content/fantasy-orchestral-theme
+- m_build — «Medieval Exploration», RandomMind — https://opengameart.org/content/medieval-exploration
+- m_battle — «Determined Pursuit (Epic Orchestra Loop)», Emma_MA — https://opengameart.org/content/determined-pursuit-epic-orchestra-loop
+- m_battle2 — «Medieval: Battle», RandomMind — https://opengameart.org/content/medieval-battle
+- m_boss — «Epic Boss Battle», Juhani Junkala (SubspaceAudio) — https://opengameart.org/content/boss-battle-music
+- m_win — «Medieval: Victory Theme», RandomMind — https://opengameart.org/content/medieval-victory-theme
+- m_lose — «Medieval: Defeat Theme», RandomMind — https://opengameart.org/content/medieval-defeat-theme

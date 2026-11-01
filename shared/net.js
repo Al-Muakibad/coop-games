@@ -201,9 +201,10 @@
       if (isHost) {
         if (m.t === "hi" || m.t === "ping") {
           if (!players.some((p) => p.id === m.f)) {
-            if (locked || players.length >= max) { relay(pack("full", { to: m.f, started: locked })); return; }
+            if ((locked && !opts.late) || players.length >= max) { relay(pack("full", { to: m.f, started: locked })); return; }
             players.push({ id: m.f, name: m.n || "Игрок", host: false }); roster();
             startLink(m.f, true);
+            if (locked) emit("join-late", m.f);   // opts.late: вход в уже идущую игру (Аванпост)
           } else if (m.t === "hi") send("roster", players);
           return;
         }
@@ -215,7 +216,7 @@
         if (m.t === "roster" && m.h) { players = m.d || []; emit("roster", players); return; }
         if (m.t === "full") { if (m.d && m.d.to === me.id) emit("full", m.d); return; }
         if (m.t === "hi" || m.t === "ping") return;
-        if (m.t === "bye" && m.h) { emit("host-left"); return; }
+        if (m.t === "bye" && m.h) { if (links[m.f]) { links[m.f].close(); delete links[m.f]; } emit("host-left"); return; }
       }
       emit(m.t, m.d, m.f);
     }
@@ -233,7 +234,7 @@
         const l = hostId && links[hostId];
         if (l && l.open) l.send(pack("ping", { ts: Date.now() }, { to: hostId })); else relay(pack("ping", hostId ? { ts: Date.now() } : null, hostId ? { to: hostId } : {}));
         const now = Date.now();
-        if (now - hostSeen > 12000 && players.length) { hostSeen = now + 1e9; emit("host-left"); }
+        if (now - hostSeen > 12000 && players.length) { hostSeen = now + 1e9; if (hostId && links[hostId]) { links[hostId].close(); delete links[hostId]; } emit("host-left"); }
       }
     }, 2000);
     const room = {

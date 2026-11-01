@@ -62,6 +62,7 @@
   };
   const last = {};
   function play(name) {
+    if (window.SFX_OFF) return;   // игра со своим звуком (Аванпост)
     if (!on || !SOUNDS[name] || !ctx()) return;
     const now = ac.currentTime;
     if (last[name] && now - last[name] < 0.06) return;   // не строчить одинаковым звуком
@@ -105,7 +106,7 @@
   let btn = null;
   function updBtn() {
     if (!btn) return;
-    const tx = on ? "🔊" : "🔇", d = menuVisible() ? "block" : "none";
+    const tx = on ? "🔊" : "🔇", d = menuVisible() && !window.SFX_OFF ? "block" : "none";
     if (btn.textContent !== tx) btn.textContent = tx;
     if (btn.style.display !== d) btn.style.display = d;
   }

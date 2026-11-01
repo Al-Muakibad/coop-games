@@ -64,7 +64,7 @@ class Particles {
 }
 
 const C = (h) => new THREE.Color(h);
-const COL = { spark: C(0xffe9a8), fire: C(0xff8a2a), fire2: C(0xffd25a), smoke: C(0x6b6b6b), dust: C(0xb8a07a), bone: C(0xece3cf), wood: C(0x9b6a3c), stone: C(0x9aa0a6), gold: C(0xffd34d), green: C(0x7dff8a), blue: C(0x7cc9ff), ice: C(0xbff3ff), acid: C(0x9cff3a), red: C(0xff4a4a), white: C(0xffffff), purple: C(0xc77dff) };
+const COL = { venom: C(0x8cff4a), gold2: C(0xffe9a0), spark: C(0xffe9a8), fire: C(0xff8a2a), fire2: C(0xffd25a), smoke: C(0x6b6b6b), dust: C(0xb8a07a), bone: C(0xece3cf), wood: C(0x9b6a3c), stone: C(0x9aa0a6), gold: C(0xffd34d), green: C(0x7dff8a), blue: C(0x7cc9ff), ice: C(0xbff3ff), acid: C(0x9cff3a), red: C(0xff4a4a), white: C(0xffffff), purple: C(0xc77dff) };
 export { COL };
 
 export class FX {
@@ -129,6 +129,25 @@ export class FX {
     for (let i = 0; i < this.n(30); i++) { const a = Math.random() * 6.28, r = 0.4 + Math.random() * 0.5; this.add.add(x + Math.cos(a) * r, Math.random() * 0.4, z + Math.sin(a) * r, Math.cos(a) * 0.4, 2.5 + Math.random() * 3, Math.sin(a) * 0.4, 0.9 + Math.random() * 0.4, 0.3, 0.04, Math.random() < 0.5 ? COL.gold : COL.white, 0, 0.6); }
     this.ring(x, z, 0.2, 2.6, 0.6, 0xffd34d);
   }
+  // молния: зигзаг из ярких искр между точками
+  lightning(pts, col) {
+    col = col || COL.blue;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], d = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z), n = Math.max(4, Math.round(d * 4 * this.quality));
+      let jx = 0, jy = 0, jz = 0;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n; jx = (Math.random() - 0.5) * 0.35 * Math.sin(t * Math.PI); jy = (Math.random() - 0.5) * 0.35 * Math.sin(t * Math.PI); jz = (Math.random() - 0.5) * 0.35 * Math.sin(t * Math.PI);
+        this.add.add(a.x + (b.x - a.x) * t + jx, a.y + (b.y - a.y) * t + jy, a.z + (b.z - a.z) * t + jz, 0, 0, 0, 0.12 + Math.random() * 0.08, 0.28, 0.1, k % 3 ? col : COL.white);
+      }
+      this.add.add(b.x, b.y, b.z, 0, 0, 0, 0.15, 0.9, 0.2, col);
+    }
+  }
+  flame(x, y, z, dx, dz, len, spread) {
+    for (let i = 0; i < this.n(4); i++) { const a = (Math.random() - 0.5) * spread * 2, s = len * (2.2 + Math.random() * 1.5); const cx = dx * Math.cos(a) - dz * Math.sin(a), cz = dx * Math.sin(a) + dz * Math.cos(a);
+      this.add.add(x, y, z, cx * s, 0.4 + Math.random() * 1.2, cz * s, 0.32 + Math.random() * 0.15, 0.25, 0.9, Math.random() < 0.5 ? COL.fire : COL.fire2, -1, 1.5); }
+  }
+  cloud(x, z, r, col) { for (let i = 0; i < this.n(6); i++) { const a = Math.random() * 6.28, rr = Math.random() * r; this.norm.add(x + Math.cos(a) * rr, 0.25, z + Math.sin(a) * rr, (Math.random() - 0.5) * 0.4, 0.3 + Math.random() * 0.4, (Math.random() - 0.5) * 0.4, 0.9 + Math.random() * 0.6, 0.7, 1.8, col || COL.acid, 0, 0.5); } }
+  embers(x, y, z, k, col) { for (let i = 0; i < this.n(k || 2); i++) this.add.add(x + (Math.random() - 0.5) * 0.4, y, z + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.6, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.5, 0.22, 0.02, col || COL.fire, -0.5, 0.5); }
   text(x, y, z, str, color, size, life) { if (this.texts.length > 60) this.texts.shift(); this.texts.push({ x, y, z, str, color: color || "#fff", size: size || 18, t: 0, life: life || 0.9, dx: (Math.random() - 0.5) * 18 }); }
   update(dt) {
     this.add.update(dt); this.norm.update(dt);
