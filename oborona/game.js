@@ -7,11 +7,12 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { A, loadAll, ensure, has, makeChar, makeQ, cloneWorld, cloneWeapon, cloneProp, loadEnv, teamMaterial } from "./assets.js";
-import { buildTower, buildHouse } from "./builders.js";
-import { buildWorld, buildNodeViews, updNode, updateWorld, grassT, rng } from "./world.js";
+import { buildTowerDeep, buildHouseDeep, buildGatherer } from "./builders.js";
+import { buildWorld, buildNodeViews, updNode, updateWorld, grassT, rng, makeBanner } from "./world.js";
 import { FX, COL } from "./fx.js";
 import * as D from "./data.js";
-import { S, load as loadSave, save, finishRun, locState } from "./save.js";
+import { S, load as loadSave, save, finishRun, locState, saveOutpost, currentStep } from "./save.js";
+import * as SE from "./seasons.js";
 import * as AU from "./audio.js";
 import * as UI from "./ui.js";
 
@@ -125,7 +126,7 @@ function buildLocation(locId, seed, n) {
   world.clear(); obstacles = []; gateViews = [];
   const L = D.LOC[locId] || D.LOCS[0];
   const spots = houseSpots(n), msp = merchantSpot(n);
-  WD = buildWorld(world, renderer, locId, seed, spots, msp, spots.map((_, i) => (cfg && cfg.players && cfg.players[i] && cfg.players[i].color) || COLORS[i % 6]));
+  WD = buildWorld(world, renderer, locId, seed, spots, msp, spots.map((_, i) => { const pc = cfg && cfg.players && cfg.players[i], bn = pc && pc.cos && SE.BANNER[pc.cos.ban]; return (bn && bn.color) || (pc && pc.color) || COLORS[i % 6]; }));
   buildNodeViews(world, WD);
   G.nodes = WD.nodes;
   G.nodes.forEach((nd) => updNode(WD, nd));
@@ -166,6 +167,7 @@ function rebuildNav() {
   for (const o of obstacles) markCircle(blocked, o.x, o.z, o.r * 0.85);
   for (const nd of G.nodes) if (nd.amt > 0) markCircle(blocked, nd.x, nd.z, (nd.r || 0.5) * 0.8);
   for (const h of G.houses) if (h.alive) h.turrets.forEach((t, s) => { if (t) { const p = slotPos(h, s); markCircle(blocked, p.x, p.z, 0.8); } });
+  for (const h of G.houses) if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) markCircle(blocked, g.x, g.z, 1.0); }
   flows = G.houses.map((h) => (h.alive ? flowTo(h) : null));
 }
 function flowTo(h) {
@@ -199,7 +201,8 @@ function flowTo(h) {
 // ================= ДОМА =================
 function makeHouseView(h) {
   const g = new THREE.Group(); g.position.set(h.x, 0, h.z); world.add(g);
-  h.view = { g, model: null, key: "", wall: -1, segs: [], turrets: [], alive: true, slots: [], shake: 0, fx: [] };
+  h.view = { g, model: null, key: "", wall: -1, segs: [], turrets: [], alive: true, slots: [], shake: 0, fx: [], gath: {}, gslot: {} };
+  for (const k of D.GATHER_KEYS) { h.view.gath[k] = { key: "", obj: null }; const gp = h.g ? h.g[k] : null; const m = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.18, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe7a8, transparent: true, opacity: 0.18, depthWrite: false })); if (gp) m.position.set(gp.x, 0.05, gp.z); m.visible = false; world.add(m); h.view.gslot[k] = m; }
   const ringG = new THREE.RingGeometry(0.7, 0.88, 28).rotateX(-Math.PI / 2);
   for (let s = 0; s < D.SLOTS; s++) {
     const p = slotPos(h, s), m = new THREE.Mesh(ringG, new THREE.MeshBasicMaterial({ color: 0xfff1c9, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -213,7 +216,7 @@ function updHouseView(h) {
   const key = h.alive ? style + h.lv : "dead";
   if (v.key !== key) {
     if (v.model) { v.g.remove(v.model); fx.puff(h.x, h.z, 24, COL.dust, 0.9); }
-    if (h.alive) { const b = buildHouse(style, h.lv, hue); v.model = b.g; v.fx = b.fx; v.flag = b.flag; v.hh = b.h; }
+    if (h.alive) { const b = buildHouseDeep(style, h.lv, hue); v.model = b.g; v.fx = b.fx; v.flag = b.flag; v.hh = b.h; v.crown = b.crown; }
     else { v.model = cloneWorld("building_destroyed"); v.model.scale.setScalar(2.6); v.fx = []; v.hh = 2; }
     v.model.rotation.y = Math.atan2(-h.x, -h.z) || 0;
     v.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -225,12 +228,18 @@ function updHouseView(h) {
   if (v.wall !== wl) {
     v.segs.forEach((s) => v.g.remove(s)); v.segs = [];
     if (wl > 0) {
-      const name = ["", "fence_wood_straight", "fence_stone_straight", "wall_straight"][wl], N = 11;
+      // 8 ступеней: частокол → камень → крепость → укреплённая (темнее, выше) → бойницы-башенки → бастион → королевская (золото) → цитадель
+      const name = ["", "fence_wood_straight", "fence_stone_straight"][wl] || "wall_straight", N = 11;
+      const tint = wl >= 7 ? 0xd8c9a0 : wl >= 4 ? 0x9aa3b4 : null, hy = 1.1 + Math.max(0, wl - 3) * 0.12;
       for (let i = 0; i < N; i++) {
         const a = i / N * PI2, seg = new THREE.Group(), m = cloneWorld(name);
-        if (name === "wall_straight") { m.scale.set(0.85, 1.1, 1); m.rotation.y = Math.PI / 2; } else { m.position.x = 1; seg.scale.setScalar(1.45); }
-        m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-        seg.add(m); seg.position.set(Math.cos(a) * D.WALL_R, 0, Math.sin(a) * D.WALL_R); seg.rotation.y = -a; v.g.add(seg); v.segs.push(seg);
+        if (name === "wall_straight") { m.scale.set(0.85, hy, 1); m.rotation.y = Math.PI / 2; } else { m.position.x = 1; seg.scale.setScalar(1.45); }
+        m.traverse((o) => { if (o.isMesh) { o.castShadow = true; if (tint) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color(tint)); } } });
+        seg.add(m);
+        if (wl >= 5 && i % 2 === 0) { const post = cloneWorld("building_tower_base_blue"); post.traverse((o) => { if (o.isMesh) o.castShadow = true; }); post.scale.setScalar(0.55 + 0.05 * (wl - 5)); seg.add(post); }
+        if (wl >= 7 && i % 2 === 0) { const cap = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 6), new THREE.MeshStandardMaterial({ color: 0xffc35a, metalness: 1, roughness: 0.3 })); cap.position.y = 1.15 + 0.06 * (wl - 5); seg.add(cap); }
+        if (wl >= 8 && i % 4 === 0) { const bn = makeBanner(G.players[h.owner] ? G.players[h.owner].color : "#3b82f6"); bn.scale.setScalar(0.6); bn.position.y = 0.4; seg.add(bn); }
+        seg.position.set(Math.cos(a) * D.WALL_R, 0, Math.sin(a) * D.WALL_R); seg.rotation.y = -a; v.g.add(seg); v.segs.push(seg);
       }
     }
     if (v.wall > 0 && wl === 0) { for (let i = 0; i < 6; i++) fx.chips(h.x + Math.cos(i) * D.WALL_R, 0.5, h.z + Math.sin(i) * D.WALL_R, COL.wood); fx.puff(h.x, h.z, 16, COL.dust, 0.8); AU.play("collapse", { x: h.x, z: h.z, vol: 0.6 }); }
@@ -243,12 +252,23 @@ function updHouseView(h) {
     v.turrets[s] = { key: k2, obj: null };
     v.slots[s].visible = !t && h.alive;
     if (t) {
-      const p = slotPos(h, s), b = buildTower(t.type, t.lv, hue);
+      const sk = SE.TSKIN[(h.cos && h.cos.ts) || "none"] || SE.TSKIN.none, p = slotPos(h, s), b = buildTowerDeep(t.type, t.lv, sk.hue != null ? sk.hue : hue, sk.trim);
       b.g.position.set(p.x - h.x, 0, p.z - h.z); b.g.rotation.y = Math.atan2(p.x - h.x, p.z - h.z);
       b.g.traverse((c) => { if (c.isMesh) c.castShadow = true; });
       v.g.add(b.g); Object.assign(v.turrets[s], { obj: b.g, b, pop: 1 });
       fx.puff(p.x, p.z, 14, COL.dust, 0.7); fx.sparkle(p.x, 2, p.z, COL.gold, 12);
     }
+    renderer.shadowMap.needsUpdate = true; navDirty = true;
+  }
+  // добытчики: модель по уровню, «руины» если разрушен
+  if (h.g) for (const k of D.GATHER_KEYS) {
+    const g = h.g[k], key2 = g.lv ? g.lv + (g.ok ? "" : "x") : "", cur = v.gath[k];
+    if (cur.key === key2) continue;
+    if (cur.obj) world.remove(cur.obj);
+    if (cur.key && g.lv && g.ok && cur.key !== "") { fx.levelup(g.x, g.z); AU.play("upgrade", { x: g.x, z: g.z, vol: 0.7 }); }
+    cur.key = key2; cur.obj = null; cur.b = null;
+    if (g.lv) { const b = buildGatherer(k, g.lv, hue, !g.ok); b.g.position.set(g.x, 0, g.z); b.g.rotation.y = Math.atan2(h.x - g.x, h.z - g.z); world.add(b.g); cur.obj = b.g; cur.b = b; cur.pop = 1; fx.puff(g.x, g.z, 14, COL.dust, 0.7); }
+    v.gslot[k].visible = !g.lv && h.alive;
     renderer.shadowMap.needsUpdate = true; navDirty = true;
   }
 }
@@ -288,7 +308,8 @@ function makePlayerView(p) {
   disc.position.y = 0.045; disc.renderOrder = 2; root.add(disc);
   const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })); orb.visible = false; root.add(orb);
   const v = { p, c, root, orb, ring, hero, wpn: null, wkey: "", arm: "", base: null, upper: null, recoil: 0, hurt: 0, deadShown: false, pos: new THREE.Vector3(p.x, 0, p.z), blades: [], rage: 0 };
-  c.meshes.forEach((m) => { m.material = /Head/i.test(m.name) ? m.material.clone() : teamMaterial(m.material, p.color, 0.45); m.castShadow = true; });
+  const outfit = SE.OUTFIT[(p.cos && p.cos.out) || "team"], kit = outfit && outfit.color ? outfit.color : p.color;   // наряд из наград или цвет команды
+  c.meshes.forEach((m) => { m.material = /Head/i.test(m.name) ? m.material.clone() : teamMaterial(m.material, kit, 0.45); m.castShadow = true; });
   v.allMats = c.meshes.map((m) => m.material);
   playerViews[p.idx] = v;
   updGear(v);
@@ -307,7 +328,7 @@ function updGear(v) {
   v.arm = p.arm;
   const am = D.AMULETS[p.amu]; v.orb.visible = !!(am && am.color); if (v.orb.visible) v.orb.material.color.set(am.color).multiplyScalar(2.2);
   // кружащие клинки (оружие «клинки» и перк «призрачные клинки»)
-  const st = p.st || D.stats(p), nb = (st.kind === "orbit" ? st.n : 0) + st.ghost;
+  const st = p.st || pstats(p), nb = (st.kind === "orbit" ? st.n : 0) + st.ghost;
   while (v.blades.length < nb) { const b = cloneProp("Sword_Bronze"); b.scale.setScalar(0.85); if (v.blades.length >= (st.kind === "orbit" ? st.n : 0)) b.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.emissive = new THREE.Color(0x6a8cff); o.material.emissiveIntensity = 1.2; o.material.transparent = true; o.material.opacity = 0.75; } }); world.add(b); v.blades.push(b); }
   while (v.blades.length > nb) world.remove(v.blades.pop());
 }
@@ -430,10 +451,20 @@ let shots = [];
 // ================= СТАРТ МАТЧА =================
 function newPlayer(c, i, spots) {
   const h = spots[i % spots.length], a = Math.atan2(-h.z, -h.x) || Math.PI / 2;
-  const meta = c.meta || {}, items = { potion: 1, rage: 0, bomb: 0, scroll: 0 };
+  // прогресс героя переносится из прошлых сезонов: уровень, перки, снаряжение, ресурсы
+  const meta = c.meta || {}, pg = c.prog || {}, items = Object.assign({ potion: 1, rage: 0, bomb: 0, scroll: 0 }, pg.items || {});
   return { idx: i, id: c.id, uid: c.uid || "", name: c.name, color: c.color, x: h.x + Math.cos(a) * 3.5, z: h.z + Math.sin(a) * 3.5, ry: 0, hp: 100, alive: true, downT: 0,
-    wallet: { c: 20 + 12 * (meta.coins || 0), w: 10, s: 5 }, xp: 0, lvl: 1, perks: {}, wpn: c.wpn && D.WEAPONS[c.wpn] ? c.wpn : "crossbow", arm: "none", amu: "none", items, kills: 0, dmg: 0, built: 0,
+    wallet: { c: (pg.c != null ? pg.c : 40) + 12 * (meta.coins || 0), w: pg.w != null ? pg.w : 30, s: pg.s != null ? pg.s : 15 }, xp: pg.xp || 0, lvl: pg.lvl || 1, perks: Object.assign({}, pg.perks || {}),
+    wpn: pg.wpn && D.WEAPONS[pg.wpn] ? pg.wpn : c.wpn && D.WEAPONS[c.wpn] ? c.wpn : "crossbow", arm: pg.arm && D.ARMOR[pg.arm] ? pg.arm : "none", amu: pg.amu && D.AMULETS[pg.amu] ? pg.amu : "none", items, kills: 0, dmg: 0, built: 0, cos: c.cos || {},
     ready: false, house: Math.min(i, spots.length - 1), tgt: 0, mv: 0, seq: 0, present: true, gn: -1, meta, style: c.style || "medieval", hero: c.hero, rageT: 0, angelUsed: false, seen: 0, killN: 0 };
+}
+function houseFromOp(s, i, pc, msp0) {
+  const op = pc.op || {}, mh = 1 + 0.1 * ((pc.meta && pc.meta.wall) || 0);
+    const lv = clamp(op.lv || 1, 1, D.HOUSE_MAX), wall = clamp(op.wall || 0, 0, D.WALL_LV.length - 1);
+    const turrets = Array.from({ length: D.SLOTS }, (_, k) => { const t = (op.tw || [])[k]; if (!t) return null; const [type, l] = t.split(":"); return D.TURRETS[type] ? { type, lv: clamp(+l || 1, 1, D.TURRET_MAX), cd: 0.5 } : null; });
+    const g = {}; for (const k of D.GATHER_KEYS) { const gl = clamp((op.g || {})[k] || 0, 0, D.GATHER_MAX), pos = D.gatherPos(s.x, s.z, msp0.x, msp0.z, k); g[k] = { lv: gl, hp: D.gatherHp(gl), max: D.gatherHp(gl), pile: 0, ok: true, x: pos.x, z: pos.z, autoT: 0 }; }
+    return { idx: i, owner: i, x: s.x, z: s.z, lv, hp: D.HOUSE_LV[lv].hp * mh, max: D.HOUSE_LV[lv].hp * mh, mh, wall, whp: D.WALL_LV[wall].hp * mh, wmax: D.WALL_LV[wall].hp * mh, alive: true, turrets, g,
+      style: pc.style && pc.style !== "medieval" ? pc.style : ((D.LOC[G.loc] || {}).house || "medieval"), cos: pc.cos || {}, pools: {} };
 }
 function begin(c, snap) {
   cfg = c.cfg; room = c.room; me = cfg.me || 0;
@@ -444,16 +475,19 @@ function begin(c, snap) {
   playerViews.forEach((v) => { if (v) { world.remove(v.root); v.blades.forEach((b) => world.remove(b)); } }); playerViews.length = 0;
   if (merchView) { world.remove(merchView.root); merchView = null; }
   shots = []; G.enemies.clear(); G.drops.clear(); G.F = []; G.over = false; G.t = 0; G.wave = 0; G.ph = "build"; G.timer = D.BUILD_FIRST; G.queue = []; G.merchant = null; G.bossId = 0; G.eid = 1; G.did = 1; G.clouds = []; G.lost = 0; G.bossKills = 0;
-  G.loc = cfg.loc || "forest";
+  G.loc = cfg.loc || SE.STEPS[0].id;
   const n = cfg.houses || cfg.players.length, spots = houseSpots(n);
   buildLocation(G.loc, cfg.seed, n);
   const wallMul = 1;
-  G.houses = spots.map((s, i) => { const pc = cfg.players[i] || {}; const mh = 1 + 0.1 * ((pc.meta && pc.meta.wall) || 0); return { idx: i, owner: i, x: s.x, z: s.z, lv: 1, hp: D.HOUSE_LV[1].hp * mh, max: D.HOUSE_LV[1].hp * mh, mh, wall: 0, whp: 0, wmax: 0, alive: true, turrets: Array(D.SLOTS).fill(null), style: pc.style && pc.style !== "medieval" ? pc.style : ((D.LOC[G.loc] || {}).house || "medieval"), pools: {} }; });
+  // аванпост каждого игрока приходит из его сохранения: дом, стены, башни, добытчики — ничего не сбрасывается
+  const msp0 = merchantSpot(n);
+  G.houses = spots.map((s, i) => houseFromOp(s, i, cfg.players[i] || {}, msp0));
   G.houses.forEach(makeHouseView);
   buildGates();
   G.players = cfg.players.map((pc, i) => newPlayer(pc, i, spots));
-  G.players.forEach((p) => { p.st = D.stats(p); p.hp = p.st.maxhp; makePlayerView(p); });
-  lastLvl = 1; perkQueue = 0; myTarget = null; fireCd = 0.5; gatherCd = 0; lastSnapT = snapRx = performance.now(); hostGoneT = 0; camPos.set(P().x, 0, P().z); resyncing = 0; probeUntil = 0; lastOverD = null;
+
+  G.players.forEach((p) => { p.st = pstats(p); p.hp = p.st.maxhp; makePlayerView(p); });
+  { const p0 = P(), spent = Object.values(p0.perks).reduce((a, b) => a + b, 0); lastLvl = p0.lvl; perkQueue = Math.max(0, p0.lvl - 1 - spent); } myTarget = null; fireCd = 0.5; gatherCd = 0; lastSnapT = snapRx = performance.now(); hostGoneT = 0; camPos.set(P().x, 0, P().z); resyncing = 0; probeUntil = 0; lastOverD = null;
   if (snap) applySnap(snap, true);
   phase = "play";
   ["hud", "acts", "btn-set"].forEach((id) => $(id).classList.remove("hidden"));
@@ -473,7 +507,7 @@ function begin(c, snap) {
 // ================= СЕТЬ =================
 let lastSnapT = 0, snapRx = 0, otherRx = 0, hostGoneT = 0, seenAt = {};
 function wireRoom() {
-  ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2"].forEach((t) => room.off(t));
+  ["s", "i", "h", "a", "over", "start", "left", "host-left", "roster", "full", "hello", "welcome", "join-late", "bye2", "sync", "revive", "myprog"].forEach((t) => room.off(t));
   room.on("s", (s, from) => {
     // два хозяина (после смены): побеждает более поздняя эпоха, при равенстве — меньший номер игрока
     let yielded = false;
@@ -493,6 +527,7 @@ function wireRoom() {
   room.on("over", (d) => { if (!isHost()) onOver(d); });
   room.on("left", (id) => { const p = G.players.find((q) => q.id === id); if (p && p.present) { p.present = false; dirtyFull = true; msg(`${p.name} вышел`, "Он может вернуться по той же ссылке", 2200); teamDirty = true; } });
   room.on("revive", (why) => onResume("net:" + why));
+  room.on("myprog", (d, from) => { const p = G.players.find((q) => q.id === from); if (p && d) p.saved = { op: d.op, prog: d.prog }; });
   room.on("sync", (d, from) => { if (isHost() && phase === "over" && lastOverD) { send("over", lastOverD); return; } if (!isHost() || phase !== "play") return; const p = G.players.find((q) => q.id === from); if (p) { p.present = true; p.seen = performance.now(); teamDirty = true; } dirtyFull = true; });   // гость вернулся — шлём полный снимок
   room.on("host-left", () => {   // ушёл хозяин комнаты (сетевой). Если мир уже ведёт другой игрок — просто отмечаем ушедшего
     if (phase !== "play") return;
@@ -511,7 +546,7 @@ function lateJoin(from, d) {
   let p = G.players.find((q) => q.uid && q.uid === d.uid);
   if (!p && G.players.length < 6) {   // новый игрок посреди боя: без своего дома, живёт у ближайшего
     const i = G.players.length, nm0 = (d.name || "Игрок").slice(0, 18), pc = { id: from, name: G.players.some((q) => q.name === nm0) ? `${nm0} ${i + 1}` : nm0, color: COLORS[i % 6], uid: d.uid, style: d.style, meta: d.meta, wpn: d.wpn, hero: d.hero };
-    cfg.players.push(pc); p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); p.house = G.houses.findIndex((h) => h.alive); p.st = D.stats(p); p.hp = p.st.maxhp;
+    cfg.players.push(pc); p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); p.house = G.houses.findIndex((h) => h.alive); p.st = pstats(p); p.hp = p.st.maxhp;
     G.players.push(p); makePlayerView(p);
   }
   if (!p) return;
@@ -590,7 +625,7 @@ function makeSnap(full) {
   if (full || G.t - lastFull > 1.2 || dirtyFull) {
     lastFull = G.t; dirtyFull = false;
     s.G = G.players.map((p) => [p.wpn, p.arm, p.amu, Object.entries(p.perks).map(([k, v]) => k + v).join(","), Object.entries(p.items).map(([k, v]) => k + v).join(","), p.uid, p.style, p.name, p.color, p.house, JSON.stringify(p.meta || {}), p.hero || ""]);
-    s.H = G.houses.map((h) => [h.lv, Math.ceil(h.hp), h.wall, Math.ceil(h.whp), h.alive ? 1 : 0, h.turrets.map((t) => (t ? t.type + ":" + t.lv : "")).join(","), Math.round(h.max), Math.round(h.wmax), h.style, poolStr(h)]);
+    s.H = G.houses.map((h) => [h.lv, Math.ceil(h.hp), h.wall, Math.ceil(h.whp), h.alive ? 1 : 0, h.turrets.map((t) => (t ? t.type + ":" + t.lv : "")).join(","), Math.round(h.max), Math.round(h.wmax), h.style, poolStr(h), D.GATHER_KEYS.map((k) => { const g = h.g[k]; return `${g.lv}.${Math.round(g.hp / Math.max(1, g.max) * 100)}.${Math.floor(g.pile)}.${g.ok ? 1 : 0}`; }).join(",")]);
     s.D = [...G.drops.values()].map((d) => [d.id, Math.round(d.x * 10), Math.round(d.z * 10), d.v, d.o]);
     s.N = G.nodes.map((n) => n.amt).join("");
     s.M = G.merchant ? G.merchant.stock : 0;
@@ -621,12 +656,12 @@ function applySnap(s, initial) {
   for (const id of [...G.enemies.keys()]) if (!seen.has(id)) { G.enemies.delete(id); killEnemyView(id); }
   if (s.G) s.G.forEach((g, i) => {
     let p = G.players[i];
-    if (!p) { const pc = { id: "", name: g[7], color: g[8], uid: g[5], style: g[6], hero: g[11] }; if (!cfg.players[i]) cfg.players[i] = pc; p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); G.players[i] = p; p.st = D.stats(p); makePlayerView(p); teamDirty = true; }
+    if (!p) { const pc = { id: "", name: g[7], color: g[8], uid: g[5], style: g[6], hero: g[11] }; if (!cfg.players[i]) cfg.players[i] = pc; p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); G.players[i] = p; p.st = pstats(p); makePlayerView(p); teamDirty = true; }
     const perks = {}; (g[3] || "").split(",").filter(Boolean).forEach((x) => { const m = /^([a-z]+)(\d+)$/.exec(x); if (m) perks[m[1]] = +m[2]; });
     const items = {}; (g[4] || "").split(",").filter(Boolean).forEach((x) => { const m = /^([a-z]+)(\d+)$/.exec(x); if (m) items[m[1]] = +m[2]; });
     const ch = p.wpn !== g[0] || p.arm !== g[1] || p.amu !== g[2] || JSON.stringify(perks) !== JSON.stringify(p.perks);
     p.wpn = g[0]; p.arm = g[1]; p.amu = g[2]; p.perks = perks; p.items = Object.assign({ potion: 0, rage: 0, bomb: 0, scroll: 0 }, items); p.uid = g[5]; p.style = g[6]; p.name = g[7]; p.color = g[8]; p.house = g[9]; try { p.meta = JSON.parse(g[10] || "{}"); } catch (_) {}
-    p.st = D.stats(p); if (ch && playerViews[i]) updGear(playerViews[i]);
+    p.st = pstats(p); if (ch && playerViews[i]) updGear(playerViews[i]);
   });
   s.P.forEach((a, i) => {
     const p = G.players[i]; if (!p) return;
@@ -644,6 +679,7 @@ function applySnap(s, initial) {
     const h = G.houses[i]; if (!h) return;
     const wasAlive = h.alive;
     h.lv = a[0]; h.hp = a[1]; h.wall = a[2]; h.whp = a[3]; h.alive = !!a[4]; h.max = a[6]; h.wmax = a[7]; h.style = a[8]; h.pools = parsePools(a[9]);
+    if (a[10] && h.g) a[10].split(",").forEach((x, k) => { const g = h.g[D.GATHER_KEYS[k]]; if (!g) return; const [lv, hpp, pile, ok] = x.split(".").map(Number); g.lv = lv; g.max = D.gatherHp(lv); g.hp = g.max * hpp / 100; g.pile = pile; g.ok = !!ok; });
     const oldT = JSON.stringify(h.turrets.map((t) => t && t.type + t.lv));
     h.turrets = a[5].split(",").map((x) => (x ? { type: x.split(":")[0], lv: +x.split(":")[1], cd: 0 } : null));
     if (oldT !== JSON.stringify(h.turrets.map((t) => t && t.type + t.lv))) navDirty = true;
@@ -687,15 +723,43 @@ function onEvent(f) {
   else if (k === "item") { const p = G.players[f[1]]; if (p) { if (f[2] === "potion") { fx.heal(p.x, p.z); AU.play("potion", { x: p.x, z: p.z }); } else if (f[2] === "rage") { fx.ring(p.x, p.z, 0.3, 2, 0.5, 0xff3a3a); AU.play("roar", { x: p.x, z: p.z, vol: 0.5 }); } else if (f[2] === "scroll") { fx.levelup(p.x, p.z); AU.play("magic"); } } }
   else if (k === "web") { const e = G.enemies.get(f[1]); if (e) enemyShot(e, f[2] / 10, f[3] / 10, "web", false); }
   else if (k === "k") { /* убийство: для статистики */ }
+  else if (k === "gc" || k === "gd") {   // добыча забрана (сам или тележкой)
+    const h = G.houses[f[1]], key = D.GATHER_KEYS[f[2]], g = h && h.g && h.g[key]; if (!g) return;
+    const GD = D.GATHER[key], ic = { w: "🪵", s: "🪨", c: "🪙" }[GD.res], mine = h.owner === me;
+    if (h.view && h.view.gath[key]) h.view.gath[key].pop = 0.6;
+    fx.sparkle(g.x, 1.2, g.z, GD.res === "c" ? COL.gold : GD.res === "w" ? COL.wood : COL.stone, k === "gc" ? 16 : 8);
+    if (mine) { fx.text(g.x, 2.6, g.z, `${k === "gd" ? "🛒 " : ""}+${f[3]} ${ic}`, GD.res === "c" ? "#ffd36a" : "#ffffff", k === "gc" ? 22 : 17, 1.2); AU.play(GD.res === "c" ? "coin2" : GD.res === "w" ? "chop" : "mine", { vol: k === "gc" ? 0.8 : 0.45 }); popRes("r-" + GD.res); if (k === "gc") vib("impact", "light"); }
+    if (!isHost()) g.pile = Math.max(0, g.pile - f[3]);
+  }
+  else if (k === "gh") { const h = G.houses[f[1]], key = D.GATHER_KEYS[f[2]], g = h && h.g && h.g[key]; if (g) { fx.chips(g.x, 1, g.z, COL.wood); if (h.view && h.view.gath[key]) h.view.gath[key].shake = 0.3; AU.play("househit", { x: g.x, z: g.z, vol: 0.4, gap: 0.3 }); } }
+  else if (k === "gb") { const h = G.houses[f[1]], key = D.GATHER_KEYS[f[2]], g = h && h.g && h.g[key]; if (g) { g.ok = false; fx.explosion(g.x, g.z, 1.6); AU.play("collapse", { x: g.x, z: g.z, vol: 0.7 }); if (h.owner === me) msg(`${D.GATHER[key].name} разрушена!`, "Починится после волны — защищай добытчиков", 2400); updHouseView(h); } }
 }
 function emit(f) { if (isHost()) { if (room) G.F.push(f); onEvent(f); } }
 
 // ================= ЛОГИКА ХОЗЯИНА =================
 const activePlayers = () => Math.max(1, G.players.filter((p) => p.present).length);
 const LOCD = () => D.LOC[G.loc] || D.LOCS[0];
+// правила сезона/погоды (буран, песчаная буря, ливень…)
+const MODS = () => (LOCD().mods || {});
+function pstats(p) {
+  const st = D.stats(p), M = MODS();
+  st.move *= M.move || 1; st.regen *= M.regen != null ? M.regen : 1; st.gather = Math.max(1, Math.round(st.gather * (M.gather || 1)));
+  if (st.kind === "chain") st.dmg *= M.zapMul || 1;
+  if (st.burn || st.proj === "fire" || st.kind === "cone") st.dmg *= M.fireMul || 1;
+  if (st.frost) st.dmg *= M.frostMul || 1;
+  return st;
+}
+// сила аванпостов (для баланса волн): дом, стены, башни, добытчики
+function outpostPower() {
+  const hs = G.houses.filter((h) => { const o = G.players[h.owner]; return o && o.present; }); if (!hs.length) return 0;
+  let sum = 0; for (const h of hs) { sum += h.lv + h.wall; h.turrets.forEach((t) => { if (t) sum += t.lv * 0.5; }); if (h.g) for (const k of D.GATHER_KEYS) sum += (h.g[k].lv || 0) * 0.25; }
+  let lv = 0; for (const h of hs) lv += (G.players[h.owner].lvl || 1) - 1;   // и герои: уровень и перки тоже копятся навсегда
+  return (sum + 0.25 * lv) / hs.length;
+}
+const powerMul = () => 1 + 0.035 * Math.max(0, outpostPower() - 3);
 function startWave() {
   G.wave++; G.ph = "wave"; G.timer = 0;
-  G.queue = D.makeWave(G.loc, G.wave, activePlayers(), Math.random);
+  G.queue = D.makeWave(G.loc, G.wave, activePlayers() * (1 + 0.012 * Math.max(0, outpostPower() - 3)), Math.random);
   // босс выходит в середине волны, а не первым
   const bi = G.queue.findIndex((k) => D.MON[k].boss); if (bi >= 0) { const b = G.queue.splice(bi, 1)[0]; G.queue.splice(Math.floor(G.queue.length * 0.35), 0, b); }
   G.spawnT = 1.5; G.merchant = null; dirtyFull = true; updMerchantView();
@@ -710,7 +774,16 @@ function onWaveStart(w) {
   St.state({ wave: w, loc: G.loc });
   if (UI.sheetOpen() && !room) {} // в соло лист можно оставить — время замедляется
 }
+// ---------- аванпост навсегда: сохраняем свой дом и героя после каждой волны и в конце боя ----------
+const opOf = (h) => ({ lv: h.lv, wall: h.wall, tw: h.turrets.map((t) => (t ? t.type + ":" + t.lv : "")), g: Object.fromEntries(D.GATHER_KEYS.map((k) => [k, (h.g && h.g[k].lv) || 0])) });
+const progOf = (p) => ({ lvl: p.lvl, xp: Math.floor(p.xp), perks: Object.assign({}, p.perks), arm: p.arm, amu: p.amu, wpn: p.wpn, items: Object.assign({}, p.items), c: p.wallet.c, w: p.wallet.w, s: p.wallet.s });
+function persistMine() {
+  const p = P(); if (!p) return;
+  const h = G.houses[me];
+  saveOutpost(h && h.owner === me ? opOf(h) : null, progOf(p));
+}
 function onWaveCleared(w, bonus) {
+  setTimeout(persistMine, 300);
   const L = LOCD();
   if (w < L.waves) { msg(`Волна ${w} отбита!`, `+${bonus}🪙 каждому · стены починены`, 2600); AU.sting("win"); AU.music("build"); }
   vib("notify", "success");
@@ -721,14 +794,15 @@ function spawnEnemy(type, at, el) {
   const gts = gates(); let g;
   if (at) g = at; else { const h = alive[Math.floor(Math.random() * alive.length)]; const cand = gts.filter((q) => G.houses.length === 1 || q.h === h.idx); g = cand[Math.floor(Math.random() * cand.length)] || gts[0]; g = { x: g.x + (Math.random() - 0.5) * 1.5, z: g.z + (Math.random() - 0.5) * 1.5, h: h.idx }; }
   const M = D.MON[type], L = LOCD(), n = activePlayers();
-  let hp = M.hp * D.hpMul(G.wave || 1, n, L.diff);
-  if (M.boss) hp = M.hp * (1 + (L.diff - 1) * 0.7) * (1 + 0.45 * (n - 1)) * (1 + 0.04 * G.wave);
+  let hp = M.hp * D.hpMul(G.wave || 1, n, L.diff) * powerMul();   // сильный аванпост — крепче монстры
+  if (M.boss) hp = M.hp * (1 + (L.diff - 1) * 0.7) * (1 + 0.45 * (n - 1)) * (1 + 0.04 * G.wave) * (L.bossHp || 1) * powerMul();
   if (el == null && !M.boss && G.wave >= 4 && Math.random() < Math.min(0.2, 0.04 + 0.012 * G.wave)) el = 1 + Math.floor(Math.random() * 3);
   if (el) hp *= 2.5;
   const mid = M.boss && L.mid[G.wave] === type && L.bosses[G.wave] !== type;
   if (mid) hp *= 0.6;
   const target = g.h != null ? g.h : nearestHouse(g.x, g.z).idx;
   const e = { id: G.eid++, type, x: g.x, z: g.z, ry: Math.atan2(-g.x, -g.z), hp, max: hp, r: M.r * (el ? 1.25 : 1), h: target, cd: 1, spawnT: M.boss ? 1.2 : 1.1, spawning: true, slowT: 0, burnT: 0, poisonT: 0, atk: false, el: el || 0, dmgBy: {}, ab: {}, lx: g.x, lz: g.z, stuckT: 0, ghost: 0, aggroT: 0, ignoreP: 0, hopT: 0, hm: mid ? 0.5 : M.boss ? 0.75 : 1 };
+  if (!M.boss && !M.fly && G.houses[target] && G.houses[target].g && Math.random() < 0.22) { const hg = G.houses[target].g, ks = D.GATHER_KEYS.filter((k) => hg[k].lv && hg[k].ok); if (ks.length) e.gk = ks[Math.floor(Math.random() * ks.length)]; }
   if (M.boss) { G.bossId = e.id; e.ab = { slam: 4, charge: 6, summon: 9, web: 4, breath: 6, volley: 4, shards: 5 }; }
   G.enemies.set(e.id, e); makeEnemyView(e);
   return e;
@@ -767,12 +841,12 @@ function hostStep(dt) {
     h.turrets.forEach((t, s) => {
       if (!t) return;
       t.cd -= dt; if (t.cd > 0) return;
-      const TD = D.TURRETS[t.type], p = slotPos(h, s);
-      const inR = []; for (const e of G.enemies.values()) { if (e.spawnT > 0) continue; const d = dist(p.x, p.z, e.x, e.z); if (d < TD.range) inR.push([d, e]); }
+      const TD = D.TURRETS[t.type], p = slotPos(h, s), MM = MODS(), rng = TD.range * (MM.towerRange || 1) * (1 + 0.025 * (t.lv - 1));
+      const inR = []; for (const e of G.enemies.values()) { if (e.spawnT > 0) continue; const d = dist(p.x, p.z, e.x, e.z); if (d < rng) inR.push([d, e]); }
       if (!inR.length) { t.cd = 0.2; return; }
       inR.sort((a, b) => a[0] - b[0]);
-      t.cd = 1 / TD.rate;
-      const dmg = TD.dmg * D.turretMul(t.lv) * tm, src = -1 - h.idx;
+      t.cd = 1 / (TD.rate * (MM.towerRate || 1));
+      const dmg = TD.dmg * D.turretMul(t.lv) * tm * (TD.beh === "chain" ? MM.zapMul || 1 : 1) * (TD.burn ? MM.fireMul || 1 : 1) * (TD.slow ? MM.frostMul || 1 : 1), src = -1 - h.idx;
       if (TD.beh === "chain") {
         const ids = [], hitS = new Set(); let cur = inR[0][1];
         for (let j = 0; j <= TD.jumps && cur; j++) { ids.push(cur.id); hitS.add(cur.id); let nb = null, bd = 4.5; for (const e of G.enemies.values()) { if (hitS.has(e.id)) continue; const d = dist(e.x, e.z, cur.x, cur.z); if (d < bd) { bd = d; nb = e; } } cur = nb; }
@@ -786,6 +860,23 @@ function hostStep(dt) {
       }
     });
   }
+  // добытчики: копят добычу у здания; хозяин забирает, проходя мимо; с 4 уровня — тележка привозит сама
+  const MM = MODS();
+  for (const h of G.houses) {
+    if (!h.alive || !h.g) continue;
+    const o = G.players[h.owner];
+    for (const k of D.GATHER_KEYS) {
+      const g = h.g[k]; if (!g.lv || !g.ok) continue;
+      const rate = D.gatherRate(k, g.lv) * (MM.gather || 1) * (k === "mine" ? 1 : 1), cap = Math.max(30, rate * 2.5);
+      g.pile = Math.min(cap, g.pile + rate / 60 * dt);
+      if (!o || !o.present) continue;
+      const res = D.GATHER[k].res;
+      if (o.alive && dist(o.x, o.z, g.x, g.z) < 2.9 && g.pile >= 1) { const n = Math.floor(g.pile); g.pile -= n; o.wallet[res] += n; emit(["gc", h.idx, D.GATHER_KEYS.indexOf(k), n]); }
+      else if (g.lv >= D.AUTO_LV && (g.autoT += dt) > 15 && g.pile >= 1) { g.autoT = 0; const n = Math.floor(g.pile); g.pile -= n; o.wallet[res] += n; emit(["gd", h.idx, D.GATHER_KEYS.indexOf(k), n]); }
+    }
+  }
+  // гроза: молнии с неба бьют по монстрам
+  if (MM.strikes && G.ph === "wave" && G.enemies.size) { G.strikeT = (G.strikeT || 4) - dt; if (G.strikeT <= 0) { G.strikeT = 3 + Math.random() * 4; const arr = [...G.enemies.values()].filter((e) => e.spawnT <= 0); const e = arr[Math.floor(Math.random() * arr.length)]; if (e) { emit(["strike", Math.round(e.x * 10), Math.round(e.z * 10)]); for (const o of [...G.enemies.values()]) if (dist(o.x, o.z, e.x, e.z) < 1.6) hitEnemy(o.id, 30 + 6 * G.wave, -1, 0, 0); } } }
   // монеты: личная добыча — притягивается и подбирается только хозяином
   for (const d of G.drops.values()) {
     const p = G.players[d.o]; if (!p || !p.alive || !p.present) continue;
@@ -814,7 +905,7 @@ function waveCleared() {
   G.ph = "build"; G.timer = D.BUILD_TIME + Math.min(10, G.wave);
   const bonus = 8 + G.wave * 3;
   G.players.forEach((p) => { if (p.present) { p.wallet.c += bonus; if (!p.alive) respawn(p); p.hp = Math.min(p.st.maxhp, p.hp + p.st.maxhp * 0.3); } });
-  G.houses.forEach((h) => { if (h.alive && h.wall) h.whp = h.wmax; });
+  G.houses.forEach((h) => { if (h.alive && h.wall) h.whp = h.wmax; if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) { g.ok = true; g.hp = g.max = D.gatherHp(g.lv); } } });   // за ночь всё чинится
   // вся добыча ночи летит к своим хозяевам — ничего не пропадает
   const tot = {};
   for (const d of [...G.drops.values()]) { const p = G.players[d.o]; if (p && p.present) { const v = Math.max(1, Math.round(d.v * p.st.coinMul)); p.wallet.c += v; tot[d.o] = (tot[d.o] || 0) + v; } }
@@ -883,6 +974,7 @@ function enemyAI(e, dt) {
   let spdMul = e.slowT > 0 ? 0.5 : 1;
   for (const o of G.enemies.values()) if (o.el === 1 && o !== e && dist(o.x, o.z, e.x, e.z) < 4) { spdMul *= 1.25; break; }
   if (e.enr) spdMul *= 1.35;
+  spdMul *= MODS().enemySpd || 1;
   let h = G.houses[e.h]; if (!h || !h.alive) { h = nearestHouse(e.x, e.z); if (!h || !h.alive) return; e.h = h.idx; }
   // цель: дом или игрок рядом. Боссы не дают себя увести: через 4 с «драки» идут к дому и 7 с игнорируют игроков
   let tp = null, td = M.ranged ? 7 : M.boss ? 3.4 : 4.2;
@@ -892,6 +984,8 @@ function enemyAI(e, dt) {
   let tx, tz, stop;
   if (tp && !(hd < houseStop + 0.5)) { tx = tp.x; tz = tp.z; stop = M.ranged ? M.range * 0.85 : M.range + 0.35; }
   else { tx = h.x; tz = h.z; stop = M.ranged ? Math.max(houseStop, Math.min(M.range, M.boss ? M.range : 6.5)) : houseStop; tp = null; }
+  // часть монстров идёт громить добытчиков — их стоит защищать
+  let gt = null; if (!tp && e.gk && h.g) { gt = h.g[e.gk]; if (gt && gt.lv && gt.ok) { tx = gt.x; tz = gt.z; stop = (M.ranged ? Math.min(M.range, 5) : 1.4) + e.r; } else { e.gk = null; gt = null; } }
   let dx = tx - e.x, dz = tz - e.z; const d = Math.hypot(dx, dz) || 1;
   e.cd -= dt;
   // способности боссов
@@ -909,7 +1003,7 @@ function enemyAI(e, dt) {
     const sp = M.spd * spdMul * dt;
     let mx = dx / d, mz = dz / d;
     // обход препятствий по полю потока (летающие и боссы-громилы идут напрямик)
-    if (!M.fly && !tp && hd > 6) { const f = flows[h.idx], k = gi(e.x, e.z); if (f && k >= 0 && f.distF[k] < 1e9 && (f.dirX[k] || f.dirZ[k])) { mx = f.dirX[k]; mz = f.dirZ[k]; } }
+    if (!M.fly && !tp && !gt && hd > 6) { const f = flows[h.idx], k = gi(e.x, e.z); if (f && k >= 0 && f.distF[k] < 1e9 && (f.dirX[k] || f.dirZ[k])) { mx = f.dirX[k]; mz = f.dirZ[k]; } }
     if (M.hop) { e.hopT = (e.hopT || 0) + dt; const k2 = (e.hopT % 0.8) < 0.45 ? 1.9 : 0.15; e.x += mx * sp * k2; e.z += mz * sp * k2; }
     else { e.x += mx * sp; e.z += mz * sp; }
     dx = mx; dz = mz;
@@ -921,6 +1015,7 @@ function enemyAI(e, dt) {
       if (M.ranged && !M.boss) { emit(["a", e.id, Math.round(tx * 10), Math.round(tz * 10), M.ranged]); markEnemyShot(e, tp, h, M); }
       else if (M.boss) { if (tp) damagePlayer(tp, M.dmg); else damageHouse(h, M.hdmg); }
       else if (tp) damagePlayer(tp, M.dmg);
+      else if (gt) { gt.hp -= M.hdmg * (e.hm || 1); emit(["gh", h.idx, D.GATHER_KEYS.indexOf(e.gk)]); if (gt.hp <= 0) { gt.hp = 0; gt.ok = false; emit(["gb", h.idx, D.GATHER_KEYS.indexOf(e.gk)]); e.gk = null; dirtyFull = true; navDirty = true; } }
       else damageHouse(h, M.hdmg * (M.fly && h.whp > 0 ? 1 : 1));
     }
   }
@@ -1029,6 +1124,7 @@ function poolTarget(h, key) {
   if (key[0] === "w") { const lv = +key.slice(1); return lv === h.wall + 1 && D.WALL_LV[lv] ? { cost: D.WALL_LV[lv].cost, name: D.WALL_LV[lv].name } : null; }
   if (key[0] === "t") { const [s, type] = key.slice(1).split(":"); const TD = D.TURRETS[type]; return TD && h.turrets[+s] === null ? { cost: TD.cost, name: TD.name } : null; }
   if (key[0] === "u") { const [s, lv] = key.slice(1).split(":").map(Number); const t = h.turrets[s]; return t && t.lv + 1 === lv && lv <= D.TURRET_MAX ? { cost: D.upCost(D.TURRETS[t.type].cost, t.lv), name: D.TURRETS[t.type].name + " ур. " + lv } : null; }
+  if (key[0] === "g") { const [k, l] = key.slice(1).split(":"), lv = +l, g = h.g && h.g[k]; return g && D.GATHER[k] && g.lv + 1 === lv && lv <= D.GATHER_MAX ? { cost: D.gatherCost(k, lv), name: D.GATHER[k].name + " ур. " + lv } : null; }
   return null;
 }
 function completePool(h, key, pi) {
@@ -1036,8 +1132,9 @@ function completePool(h, key, pi) {
   else if (key[0] === "w") { const lv = +key.slice(1); h.wall = lv; h.wmax = D.WALL_LV[lv].hp * (h.mh || 1); h.whp = h.wmax; }
   else if (key[0] === "t") { const [s, type] = key.slice(1).split(":"); h.turrets[+s] = { type, lv: 1, cd: 0.5 }; navDirty = true; }
   else if (key[0] === "u") { const [s, lv] = key.slice(1).split(":").map(Number); h.turrets[s].lv = lv; }
+  else if (key[0] === "g") { const [k, l] = key.slice(1).split(":"), g = h.g[k]; g.lv = +l; g.max = D.gatherHp(g.lv); g.hp = g.max; g.ok = true; navDirty = true; }
   delete h.pools[key];
-  const t = { h: "улучшил дом", w: "построил стену", t: "поставил башню", u: "улучшил башню" }[key[0]];
+  const t = { h: "улучшил дом", w: "построил стену", t: "поставил башню", u: "улучшил башню", g: key.endsWith(":1") ? "построил " + (D.GATHER[key.slice(1).split(":")[0]] || {}).name : "улучшил " + (D.GATHER[key.slice(1).split(":")[0]] || {}).name }[key[0]];
   emit(["bu", h.idx, t, pi]);
   refundPools(h, true);
   updHouseView(h);
@@ -1088,7 +1185,7 @@ function doAct(pi, a) {
       else if (cat === "m") { if (p.amu === key) return false; p.amu = key; }
       else { if ((p.items[key] || 0) >= item.max) return false; p.items[key] = (p.items[key] || 0) + 1; }
       p.wallet.c -= item.price;
-      const oldMax = p.st.maxhp; p.st = D.stats(p); if (p.st.maxhp > oldMax) p.hp += p.st.maxhp - oldMax;
+      const oldMax = p.st.maxhp; p.st = pstats(p); if (p.st.maxhp > oldMax) p.hp += p.st.maxhp - oldMax;
       if (playerViews[pi]) updGear(playerViews[pi]);
       ok = true; break;
     }
@@ -1109,7 +1206,7 @@ function doAct(pi, a) {
     case "perk": {
       const pk = D.PERKS[a.id]; if (!pk || (p.perks[a.id] || 0) >= pk.max) return false;
       const spent = Object.values(p.perks).reduce((s, x) => s + x, 0); if (spent >= p.lvl - 1) return false;
-      p.perks[a.id] = (p.perks[a.id] || 0) + 1; const oldMax = p.st.maxhp; p.st = D.stats(p); if (p.st.maxhp > oldMax) p.hp += p.st.maxhp - oldMax;
+      p.perks[a.id] = (p.perks[a.id] || 0) + 1; const oldMax = p.st.maxhp; p.st = pstats(p); if (p.st.maxhp > oldMax) p.hp += p.st.maxhp - oldMax;
       if (playerViews[pi]) updGear(playerViews[pi]); ok = true; break;
     }
     case "rdy": p.ready = !!a.v; dirtyFull = true; return true;
@@ -1153,6 +1250,7 @@ let myTarget = null, fireCd = 0, gatherCd = 0, lastLvl = 1, perkQueue = 0, hurtT
 function collide(o, r, isEnemy, big) {
   for (const h of G.houses) {
     const hr = (h.alive ? (h.lv >= 4 ? 2.3 : h.lv >= 3 ? 1.9 : D.HOUSE_R) : 1.4) + r; push(o, h.x, h.z, hr);
+    if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) push(o, g.x, g.z, 1.15 + r); }
     if (h.alive) { h.turrets.forEach((t, s) => { if (t) { const p = slotPos(h, s); push(o, p.x, p.z, 0.85 + r); } });
       if (isEnemy && h.whp > 0) { const d = dist(o.x, o.z, h.x, h.z); if (d < D.WALL_R + r && d > 0.01) { o.x = h.x + (o.x - h.x) / d * (D.WALL_R + r); o.z = h.z + (o.z - h.z) / d * (D.WALL_R + r); } } }
   }
@@ -1164,7 +1262,7 @@ function collide(o, r, isEnemy, big) {
 function push(o, x, z, r) { const dx = o.x - x, dz = o.z - z, d = Math.hypot(dx, dz); if (d < r && d > 0.0001) { o.x = x + dx / d * r; o.z = z + dz / d * r; } }
 function localStep(dt) {
   const p = P(); if (!p) return;
-  if (!p.st) p.st = D.stats(p);
+  if (!p.st) p.st = pstats(p);
   let mx = joyV.x, mz = joyV.y;
   if (keys.KeyW || keys.ArrowUp) mz -= 1; if (keys.KeyS || keys.ArrowDown) mz += 1; if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
   const ml = Math.hypot(mx, mz); if (ml > 1) { mx /= ml; mz /= ml; }
@@ -1410,7 +1508,7 @@ const remoteCd = [];
 function remoteFire(dt) {
   G.players.forEach((p, i) => {
     if (i === me || !p.alive || !p.present) return;
-    if (!p.st) p.st = D.stats(p);
+    if (!p.st) p.st = pstats(p);
     orbitBlades(p, dt, false);
     if (!p.tgt) return;
     remoteCd[i] = (remoteCd[i] || 0) - dt; if (remoteCd[i] > 0) return;
@@ -1510,6 +1608,15 @@ function updateViews(dt) {
   for (const h of G.houses) {
     const v = h.view; if (!v) continue;
     v.shake = Math.max(0, v.shake - dt);
+    if (h.g) for (const k of D.GATHER_KEYS) {
+      const gv = v.gath[k], g = h.g[k], b = gv && gv.b; if (!b) continue;
+      if (b.spin) b.spin.rotation[b.spinAxis || "x"] += dt * 7;
+      if (b.cart) b.cart.position.z = 0.9 + Math.sin(t * 1.3 + h.idx) * 0.7;
+      if (gv.pop > 0) { gv.pop = Math.max(0, gv.pop - dt * 2.2); gv.obj.scale.setScalar(1 + Math.sin(gv.pop * Math.PI) * 0.15); }
+      gv.shake = Math.max(0, (gv.shake || 0) - dt); gv.obj.position.x = g.x + Math.sin(t * 70) * gv.shake * 0.1;
+      if (b.pile) { const cap = Math.max(30, D.gatherRate(k, g.lv) * 2.5), f = Math.min(1, g.pile / cap); b.pile.visible = g.pile >= 1 && g.ok; b.pile.scale.setScalar(0.5 + 0.9 * f); }
+      for (const f of b.fx) { if (Math.random() > (quality === 0 ? 0.2 : 0.45)) continue; const wp = f.p.clone().applyMatrix4(gv.obj.matrixWorld); if (f.k === "smoke") fx.norm.add(wp.x, wp.y, wp.z, 0.15, 0.9, 0, 1.8, 0.25, 0.9, COL.smoke, -0.1, 0.2); else if (f.k === "torch") fx.add.add(wp.x, wp.y, wp.z, 0, 0.8, 0, 0.3, 0.3, 0.05, COL.fire, 0, 1); }
+    }
     if (v.model) v.model.position.x = Math.sin(t * 70) * v.shake * 0.12;
     if (v.pop > 0) { v.pop = Math.max(0, v.pop - dt * 2.2); const s = 1 + Math.sin(v.pop * Math.PI) * 0.1; v.model.scale.y = s * (v.model.userData.sy || (v.model.userData.sy = v.model.scale.y)); }
     v.turrets.forEach((tv) => {
@@ -1581,7 +1688,7 @@ function updateCamera(dt) {
   AU.setListener(camPos.x, camPos.z);
   const want = phase === "play" && G.ph === "wave" ? 1 : 0;
   dayK = lerp(dayK, want, 1 - Math.exp(-dt * 0.8));
-  scene.background.copy(DAY.sky).lerp(NIGHT.sky, dayK); scene.fog.color.copy(DAY.fog).lerp(NIGHT.sky, dayK); scene.fog.near = d + 8; scene.fog.far = d + 60;
+  scene.background.copy(DAY.sky).lerp(NIGHT.sky, dayK); scene.fog.color.copy(DAY.fog).lerp(NIGHT.sky, dayK); { const vis = phase === "play" ? (MODS().vis || 1) : 1; if (vis < 1) { scene.fog.near = d * (0.3 + 0.6 * vis); scene.fog.far = d + 45 * vis; } else { scene.fog.near = d + 8; scene.fog.far = d + 60; } }
   hemi.intensity = lerp(DAY.hemi, NIGHT.hemi, dayK); sun.intensity = lerp(DAY.sun, NIGHT.sun, dayK); sun.color.copy(DAY.sunC).lerp(NIGHT.sunC, dayK);
   renderer.toneMappingExposure = lerp(1.0, 0.9, dayK);
   updateWorld(WD, dt, camPos.x, camPos.z, H * DPR);
@@ -1617,6 +1724,11 @@ function drawOverlay() {
     if (h.wmax > 0) bar(s.x, s.y + 9, 64, 3, h.whp / h.wmax, "#ffd36a");
     const np = Object.keys(h.pools).length; if (np) { octx.font = "12px sans-serif"; octx.fillText("🔨" + np, s.x + 44, s.y + 3); }
   }
+  // свои добытчики: сколько накопилось
+  { const myH = G.houses[me]; if (myH && myH.g && myH.alive) for (const k of D.GATHER_KEYS) { const g = myH.g[k]; if (!g.lv) continue; const sc = scr(g.x, 3.0, g.z); if (!sc.on) continue;
+      const ic = { w: "🪵", s: "🪨", c: "🪙" }[D.GATHER[k].res], txt = g.ok ? `${ic} ${Math.floor(g.pile)}` : "🔧"; octx.font = "800 13px Manrope, sans-serif"; const w2 = octx.measureText(txt).width + 14;
+      octx.fillStyle = g.pile >= 1 || !g.ok ? "rgba(20,14,6,.72)" : "rgba(20,14,6,.4)"; octx.beginPath(); octx.roundRect ? octx.roundRect(sc.x - w2 / 2, sc.y - 11, w2, 22, 11) : octx.rect(sc.x - w2 / 2, sc.y - 11, w2, 22); octx.fill(); octx.fillStyle = g.ok ? "#fff3cf" : "#ff9a8a"; octx.fillText(txt, sc.x, sc.y + 1);
+      if (!g.ok || g.hp < g.max) bar(sc.x, sc.y + 14, 34, 3, g.hp / g.max, "#ffb84d"); } }
   if (merchView) { const mp = merchView.root.position, s = scr(mp.x, 1.9 + Math.sin(G.t * 3) * 0.12, mp.z); if (s.on) { octx.font = "26px sans-serif"; octx.fillText("🛒", s.x, s.y); } else edgeArrow(mp.x, mp.z, "🛒"); }
   const p = P(); const myH = p && G.houses[p.house];
   if (myH && myH.alive && G.ph === "wave" && dist(p.x, p.z, myH.x, myH.z) > 14) edgeArrow(myH.x, myH.z, "🏠");
@@ -1715,6 +1827,7 @@ function poolItem(h, key, icon, title, sub) {
   return `<div class="it"><div class="ic">${icon}</div><div class="tx2"><b>${title}</b><span>${sub} · ${pool ? "осталось " + costTxt(need) : costTxt(tg.cost)}</span>${pool ? `<div class="pbar"><i style="width:${(got / tot * 100).toFixed(0)}%"></i></div><div class="who">${who}</div>` : ""}</div>
     <button ${canAll || canSome ? "" : "disabled"} data-a='${JSON.stringify({ k: "con", h: h.idx, key })}'>${canAll ? (pool ? "✔ Достроить" : "🔨 Построить") : "➕ Вложить"}</button></div>`;
 }
+const deepHint = (lv) => ({ 2: ", больше дом", 3: ", казармы", 4: ", замок", 5: ", угловая башня", 6: ", вторая башня", 7: ", третья башня и золотая отделка", 8: ", четвёртая башня", 9: ", знамёна", 10: ", ярусы башен", 11: ", второе золотое кольцо", 12: ", сияние", 13: ", золотая корона" }[lv] || (lv > 13 ? ", корона больше" : ""));
 function refreshPanel() {
   const p = P(); if (!panelOpen || !p) return;
   let html = "";
@@ -1726,16 +1839,28 @@ function refreshPanel() {
     html += UI.head(`🏠 ${mine ? "Твой аванпост" : "Аванпост · " + esc(own ? own.name : "")}`) + wal;
     if (room) html += `<p class="hint">Строить можно вместе: каждый вкладывает часть, когда сумма набрана — постройка готова.</p>`;
     const NL = D.HOUSE_LV[h.lv + 1];
-    html += NL ? poolItem(h, "h" + (h.lv + 1), ["", "🏠", "🏡", "🏯", "🏰"][h.lv + 1], `Дом → уровень ${h.lv + 1}`, `прочность ${Math.round(NL.hp * (h.mh || 1))}, полный ремонт`) : `<div class="it"><div class="ic">🏰</div><div class="tx2"><b>Дом · максимум</b><span>Прочность ${Math.ceil(h.hp)} / ${Math.round(h.max)}</span></div></div>`;
+    html += NL ? poolItem(h, "h" + (h.lv + 1), ["", "🏠", "🏡", "🏯", "🏰"][h.lv + 1] || "🏰", `Замок → уровень ${h.lv + 1}`, `прочность ${Math.round(NL.hp * (h.mh || 1))}, полный ремонт${deepHint(h.lv + 1)}`) : `<div class="it"><div class="ic">🏰</div><div class="tx2"><b>Дом · максимум</b><span>Прочность ${Math.ceil(h.hp)} / ${Math.round(h.max)}</span></div></div>`;
     if (h.hp < h.max) html += `<div class="it"><div class="ic">🔧</div><div class="tx2"><b>Починить дом</b><span>${Math.ceil(h.hp)} / ${Math.round(h.max)} · +${Math.round(D.REPAIR.part * 100)}%</span></div><button ${p.wallet.w >= D.REPAIR.w ? "" : "disabled"} data-a='${JSON.stringify({ k: "rep", h: h.idx })}'>${D.REPAIR.w}🪵</button></div>`;
     const WL = D.WALL_LV[h.wall + 1];
     if (WL) html += poolItem(h, "w" + (h.wall + 1), "🧱", WL.name, h.wall ? `сейчас: ${D.WALL_LV[h.wall].name}` : "принимает удары первой, чинится после волны");
+    // добытчики: работают всё время, добыча копится у здания
+    if (h.g) {
+      html += `<div class="sec">Добыча — работает всё время</div>`;
+      for (const k of D.GATHER_KEYS) {
+        const GD = D.GATHER[k], g = h.g[k], next = g.lv + 1, locked = h.owner === me && SE.LOCKED_BUILD[k] && !S.unl[k] && !g.lv;
+        const rate = D.gatherRate(k, g.lv), nrate = D.gatherRate(k, next), cap = Math.round(Math.max(30, rate * 2.5));
+        if (locked) { html += `<div class="it"><div class="ic">🔒</div><div class="tx2"><b>${GD.name}</b><span>Откроется наградой: ${SE.LOCKED_BUILD[k]}</span></div></div>`; continue; }
+        const now = g.lv ? `сейчас +${rate} ${GD.resName}/мин · склад ${cap}${g.lv >= D.AUTO_LV ? " · 🛒 возит сама" : ""}${g.ok ? "" : " · 🔧 разрушена"}` : `+${nrate} ${GD.resName}/мин — забирай, проходя мимо`;
+        html += next <= D.GATHER_MAX ? poolItem(h, "g" + k + ":" + next, GD.icon, g.lv ? `${GD.name} → ур. ${next}` : `${GD.name}`, g.lv ? `${now} → +${nrate}/мин${next === D.AUTO_LV ? ", тележка повезёт сама" : ""}` : now)
+          : `<div class="it"><div class="ic">${GD.icon}</div><div class="tx2"><b>${GD.name} · максимум</b><span>${now}</span></div></div>`;
+      }
+    }
     html += `<div class="sec">Башни — выбери место</div><div class="slots">`;
     for (let s = 0; s < D.SLOTS; s++) { const t = h.turrets[s], pend = Object.keys(h.pools).some((k) => k.startsWith("t" + s + ":") || k.startsWith("u" + s + ":")); html += `<button class="slot ${s === selSlot ? "sel" : ""}" data-slot="${s}"><span class="ic">${t ? D.TURRETS[t.type].icon : "➕"}</span>${t ? "ур. " + t.lv : "Пусто"}<small>${pend ? "🔨 строится" : "место " + (s + 1)}</small></button>`; }
     html += `</div>`;
     if (selSlot >= 0) {
       const t = h.turrets[selSlot];
-      if (!t) for (const [k, TD] of Object.entries(D.TURRETS)) html += poolItem(h, "t" + selSlot + ":" + k, TD.icon, TD.name, `${TD.desc} · урон ${TD.dmg}`);
+      if (!t) for (const [k, TD] of Object.entries(D.TURRETS)) { if (SE.LOCKED_TOWERS[k] && !S.unl[k]) { html += `<div class="it"><div class="ic">🔒</div><div class="tx2"><b>${TD.name}</b><span>Откроется наградой: ${SE.LOCKED_TOWERS[k]}</span></div></div>`; continue; } html += poolItem(h, "t" + selSlot + ":" + k, TD.icon, TD.name, `${TD.desc} · урон ${TD.dmg}`); }
       else { const TD = D.TURRETS[t.type]; html += t.lv < D.TURRET_MAX ? poolItem(h, "u" + selSlot + ":" + (t.lv + 1), TD.icon, `${TD.name} → ур. ${t.lv + 1}`, `урон ${Math.round(TD.dmg * D.turretMul(t.lv))} → ${Math.round(TD.dmg * D.turretMul(t.lv + 1))}, новый вид`) : `<div class="it"><div class="ic">${TD.icon}</div><div class="tx2"><b>${TD.name} · максимум</b><span>урон ${Math.round(TD.dmg * D.turretMul(t.lv))}</span></div></div>`; }
     } else html += `<p class="hint">Нажми на место, чтобы поставить или улучшить башню.</p>`;
     if (!mine && own && own.present) html += `<div class="sec">Помочь союзнику</div><button class="gbtn" data-gift="${h.owner}" style="text-align:center">🎁 Передать ресурсы · ${esc(own.name)}</button>`;
@@ -1800,7 +1925,7 @@ function showPerks() {
   fx.levelup(p.x, p.z); AU.play("levelup");
   el.querySelectorAll(".pk").forEach((b) => (b.onclick = () => {
     const k = b.dataset.k;
-    if (!isHost()) { p.perks[k] = (p.perks[k] || 0) + 1; p.st = D.stats(p); updGear(playerViews[me]); }
+    if (!isHost()) { p.perks[k] = (p.perks[k] || 0) + 1; p.st = pstats(p); updGear(playerViews[me]); }
     act({ k: "perk", id: k });
     perkQueue--; el.classList.add("hidden"); AU.play("perk"); vib("impact", "medium");
     St.event("perk", { game: GAME, id: k, lvl: p.lvl });
@@ -1812,7 +1937,7 @@ const slowMo = () => !room && UI.sheetOpen() && G.ph === "wave";
 // ---------- конец матча: звёзды, кристаллы ----------
 function onOver(d) {
   if (phase === "over") return;
-  clearRoom();
+  clearRoom(); persistMine();
   phase = "over"; G.over = true;
   const L = D.LOC[d.loc] || LOCD();
   const stars = d.win ? (d.lost === 0 ? 3 : d.lost <= Math.floor((d.houses || 1) / 2) ? 2 : 1) : 0;
@@ -1824,10 +1949,11 @@ function onOver(d) {
   $("end-stars").innerHTML = d.win ? [0, 1, 2].map((i) => `<i class="${i < stars ? "on" : ""}">★</i>`).join("") : "";
   $("end-title").textContent = d.hostLeft ? "Игра окончена — хозяин вышел" : d.win ? `${L.name}: победа!` : "Игра окончена — аванпосты пали";
   $("end-wave").textContent = d.win ? `${d.wave} / ${L.waves} волн` : `Волна ${d.wave}`;
-  $("end-gems").innerHTML = `+${res.gems} 💎 кристаллов${res.firstClear ? " · открыта новая локация!" : ""}`;
-  $("end-sub").innerHTML = `<div><span>Рекорд локации</span><span>волна ${locState(d.loc || G.loc).best}</span></div>` + (d.stats || []).map((s) => `<div><span>${esc(s[0])} · ур.${s[3]}</span><span>💀 ${s[1]} · ⚔️ ${s[2]}</span></div>`).join("");
+  $("end-gems").innerHTML = `+${res.gems} 💎 кристаллов${res.firstClear ? " · открыт следующий сезон!" : ""}`;
+  if (room && !hosting) send("myprog", { op: S.op, prog: S.prog });   // хозяину — мой аванпост и герой с наградами, для следующего сезона
+  $("end-sub").innerHTML = `<div><span>Рекорд сезона</span><span>волна ${locState(d.loc || G.loc).best}</span></div>` + (d.stats || []).map((s) => `<div><span>${esc(s[0])} · ур.${s[3]}</span><span>💀 ${s[1]} · ⚔️ ${s[2]}</span></div>`).join("");
   const b = [];
-  const next = D.LOCS[D.LOCS.findIndex((l) => l.id === (d.loc || G.loc)) + 1];
+  const si = SE.stepIndex(d.loc || G.loc), next = si >= 0 && SE.STEPS[si + 1] && si + 1 <= S.camp.max ? SE.STEPS[si + 1] : null;
   if (isHost()) {
     if (d.win && next) b.push([`➡️ Дальше: ${next.icon} ${next.name}`, "primary", () => restart(next.id)]);
     b.push([d.win ? "🔁 Ещё раз" : "🔁 Попробовать снова", d.win && next ? "" : "primary", () => restart(d.loc || G.loc)]);
@@ -1835,13 +1961,14 @@ function onOver(d) {
   b.push(["🗺️ В меню", "ghost", () => { if (room) room.close(); room = null; toMenu(); }]);
   const box = $("end-buttons"); box.innerHTML = "";
   b.forEach(([l, c, f]) => { const el = document.createElement("button"); el.className = "gbtn " + c; el.style.textAlign = "center"; el.textContent = l; el.onclick = () => { AU.play("click"); f(); }; box.appendChild(el); });
-  setTimeout(() => $("screen-end").classList.remove("hidden"), 1300);
+  // сундук наград за сезон (у каждого игрока — свой), потом итоги
+  setTimeout(() => { if (d.win) UI.showChest(res, L, () => $("screen-end").classList.remove("hidden")); else $("screen-end").classList.remove("hidden"); }, 1300);
   if (room && isHost()) room.on("start", () => {});
 }
 async function restart(loc) {
   await prep(loc);
-  const c2 = Object.assign({}, cfg, { seed: Math.floor(Math.random() * 1e9), loc }); delete c2.me;
-  c2.players = c2.players.filter((pc, i) => !room || (G.players[i] && G.players[i].present));
+  const c2 = Object.assign({}, cfg, { loc }); delete c2.me;
+  c2.players = c2.players.map((pc, i) => Object.assign({}, pc, i === me ? { op: S.op, prog: S.prog } : (G.players[i] && G.players[i].saved) ? G.players[i].saved : Object.assign(G.houses[i] ? { op: opOf(G.houses[i]) } : {}, G.players[i] ? { prog: progOf(G.players[i]) } : {}))).filter((pc, i) => !room || (G.players[i] && G.players[i].present));   // аванпосты и герои — как сейчас
   if (room) send("start2", Object.assign({ hi: Math.max(0, c2.players.findIndex((pc) => pc.id === room.me.id)), ep: ep + 1 }, c2));
   const mi = Math.max(0, c2.players.findIndex((pc) => pc.id === (room ? room.me.id : "me")));
   begin({ room, cfg: Object.assign({}, c2, { me: mi }), host: true, hostIdx: mi, ep: ep + 1 });
@@ -1861,7 +1988,7 @@ function toMenu() {
 
 // ================= ЛОББИ (своё) =================
 let lobbyInfo = {};
-function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero }; }
+function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: { ts: S.cos.ts, out: S.cos.out, ban: S.cos.ban } }; }
 async function hostParty(loc) {
   phase = "lobby"; showLobby({ status: "Создаём комнату…" });
   try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true }); }
@@ -1890,9 +2017,9 @@ async function hostParty(loc) {
     $("lb-loc").onclick = () => { $("lobby").classList.add("hidden"); UI.showMap({ title: "Выбери локацию", btn: "✔ Выбрать", sel: loc, onPick: (id) => { $("lobby").classList.remove("hidden"); drawLobby(id); }, onBack: () => $("lobby").classList.remove("hidden") }); };
     $("lb-x").onclick = () => { room.close(); room = null; toMenu(); };
     $("lb-go").onclick = async () => {
-      const players = room.players.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return { id: p.id, name: p.name, color: COLORS[i % 6], uid: inf.uid || p.id, style: inf.style || "medieval", meta: inf.meta || {}, wpn: inf.wpn || "crossbow", hero: inf.hero }; });
+      const players = room.players.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return { id: p.id, name: p.name, color: COLORS[i % 6], uid: inf.uid || p.id, style: inf.style || "medieval", meta: inf.meta || {}, wpn: inf.wpn || "crossbow", hero: inf.hero, op: inf.op, prog: inf.prog, cos: inf.cos }; });
       const used = {}; players.forEach((pp) => { const k = pp.name; used[k] = (used[k] || 0) + 1; if (used[k] > 1) pp.name = `${k} ${used[k]}`; });
-      const c = { loc, seed: Math.floor(Math.random() * 1e9), players };
+      const c = { loc, seed: S.seed, players };   // родной край хозяина
       await prep(loc);
       room.lock(); send("start2", c);
       begin({ room, cfg: Object.assign({}, c, { me: 0 }), host: true, hostIdx: 0, ep: 0 });
@@ -1982,10 +2109,11 @@ function buildMenuScene() {
   playerViews.forEach((v) => { if (v) { world.remove(v.root); v.blades.forEach((b) => world.remove(b)); } }); playerViews.length = 0;
   if (merchView) { world.remove(merchView.root); merchView = null; }
   G.enemies.clear(); G.drops.clear(); G.players = []; shots = [];
-  const cur = D.LOCS.find((l) => !locState(l.id).cleared) || D.LOCS[0];
-  cfg = { players: [0, 1, 2].map((i) => ({ color: COLORS[i] })) };
-  G.loc = cur.id; buildLocation(cur.id, 777, 3);
-  G.houses = houseSpots(3).map((s, i) => ({ idx: i, owner: i, x: s.x, z: s.z, lv: 1 + i, hp: 1, max: 1, wall: i ? i : 0, whp: 1, wmax: 1, alive: true, style: ["medieval", "eastern", "nordic"][i], pools: {}, turrets: [i ? { type: ["pagoda", "minaret", "arrow"][i], lv: 2 + i % 2 } : null, null, { type: ["cannon", "frost", "fire"][i], lv: 2 }, null, i === 2 ? { type: "ballista", lv: 3 } : null, null] }));
+  // фон меню — твой родной край и твой аванпост таким, каким ты его отстроил
+  const cur = currentStep(), pc = { color: COLORS[0], op: S.op, style: S.skin, cos: S.cos };
+  cfg = { players: [pc] };
+  G.loc = cur.id; buildLocation(cur.id, S.seed || 777, 1);
+  G.houses = [houseFromOp(houseSpots(1)[0], 0, pc, merchantSpot(1))];
   G.houses.forEach(makeHouseView);
   cfg = null;
   renderer.shadowMap.needsUpdate = true;
@@ -2016,7 +2144,7 @@ async function startSolo(loc) {
   room = null;
   await prep(loc);
   const h = myHello();
-  begin({ room: null, cfg: { loc, seed: Math.floor(Math.random() * 1e9), players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero }], me: 0 }, host: true });
+  begin({ room: null, cfg: { loc, seed: S.seed, players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero, op: S.op, prog: S.prog, cos: h.cos }], me: 0 }, host: true });
 }
 
 T.init({ header: "#1a2230", bg: "#1a2230", back: "../" });
@@ -2041,7 +2169,7 @@ requestAnimationFrame(frame);
   UI.showMenu(menuHandlers); AU.music("menu"); B.done(); bt.done = performance.now();
   requestAnimationFrame(() => setTimeout(() => { if (phase === "menu") buildMenuScene(); bt.scene = performance.now(); }, 0));
   // пока игрок в меню — тихо качаем монстров текущей локации кампании
-  setTimeout(() => { const cur = D.LOCS.find((l) => !locState(l.id).cleared) || D.LOCS[0]; ensure(modelsFor(cur.id)).catch(() => {}); }, 1500);
+  setTimeout(() => { ensure(modelsFor(currentStep().id)).catch(() => {}); }, 1500);
 })().catch((e) => { console.error(e); window.Boot && Boot.fail(); const l = $("m-camp-sub"); if (l) l.textContent = "Не удалось загрузить игру 😕 Проверь интернет"; });
 
 // отладка и автотесты
@@ -2051,6 +2179,7 @@ window.__game = {
   killAll() { for (const e of [...G.enemies.values()]) killEnemy(e, me); G.queue = []; },
   setQuality(q) { S.set.q = String(q); readQ(); }, openPanel: (k) => openPanel(k, nearHouse()), tp(x, z) { const p = P(); p.x = x; p.z = z; if (hosting) p.seq++; },
   sim(sec, cb) { const dt = 1 / 30; for (let i = 0; i < sec * 30 && phase === "play"; i++) { if (cb) cb(i); if (isHost()) hostStep(dt); localStep(dt); remoteFire(dt); updateShots(dt); if (i % 6 === 0) { updateViews(dt * 6); fx.update(dt * 6); } } hud(); return { w: G.wave, ph: G.ph, en: G.enemies.size, q: G.queue.length, over: G.over, phase }; },
+  upd(h) { updHouseView(h); },
   startSoloWith(hero, wpn, loc) { S.hero = hero; S.wpn = wpn; return startSolo(loc); },
   D, poolTarget, get renderer() { return renderer; }, get shots() { return shots; }, get room() { return room; }, scene, camera, get flows() { return flows; }, get WD() { return WD; }
 };

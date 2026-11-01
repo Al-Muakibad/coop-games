@@ -147,7 +147,8 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   // ---------- растительность и декор (инстансами) ----------
   const inst = {};   // name -> [{x,z,s,ry,tint}]
   const put = (name, x, z, s, ry) => (inst[name] = inst[name] || []).push({ x, z, s: s * NS(name.split("|")[0]), ry: ry == null ? r() * PI2 : ry });
-  const freeAt = (x, z, pad) => spots.every((s) => dist(x, z, s.x, s.z) > 7.6 + pad) && dist(x, z, msp.x, msp.z) > 4.5 + pad && (!lakes.length || lakeD(x, z) > 0.8 + pad);
+  const gres = []; spots.forEach((s) => D.GATHER_KEYS.forEach((k) => gres.push(D.gatherPos(s.x, s.z, msp.x, msp.z, k)))); W.gres = gres;   // места добытчиков держим свободными
+  const freeAt = (x, z, pad) => spots.every((s) => dist(x, z, s.x, s.z) > 7.6 + pad) && gres.every((g) => dist(x, z, g.x, g.z) > 2.6 + pad) && dist(x, z, msp.x, msp.z) > 4.5 + pad && (!lakes.length || lakeD(x, z) > 0.8 + pad);
   const treeList = L.trees, totW = treeList.reduce((s, t) => s + t[1], 0);
   const pickTree = () => { let x = r() * totW; for (const [n, w] of treeList) { x -= w; if (x <= 0) return n; } return treeList[0][0]; };
   // лес по краю (не мешает игре) — плотное кольцо
@@ -173,7 +174,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     const s = (kind === "tree" ? 0.9 + r() * 0.3 : 0.95 + r() * 0.3) * NS(model); return { kind, model, x, z, s, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * s, ry: r() * PI2, amt: D.RES[kind].amount, regrow: 0 };
   }
   // мелкий декор внутри поля
-  const clusters = L.id === "snow" ? 14 : L.id === "desert" ? 12 : L.id === "volcano" ? 12 : 26;
+  const clusters = (L.base || L.id) === "snow" ? 14 : (L.base || L.id) === "desert" ? 12 : (L.base || L.id) === "volcano" ? 12 : 26;
   const okDeco = (x, z) => freeAt(x, z, -2.2) && splatAt(x, z)[1] < 0.3 && splatAt(x, z)[2] < 0.1 && Math.hypot(x, z) < D.MAP_R + 3;
   for (let c = 0, t = 0; c < clusters && t < 600; t++) {
     // центр кучки — чаще у деревьев и камней (там «живописнее»)
@@ -215,10 +216,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
       const tp = at(toC + Math.PI + sgn * 0.36, 6.2), t = cloneProp("Torch_Metal"); place(t, tp, 1.3, 0, 0.25);
       W.fxPoints.push({ k: "torch", x: tp.x, z: tp.z, y: 1.55 });
     }
-    const cl = at(toC + 1.75, 6.9);   // бочки и ящики
+    const cl = at(toC + 2.55, 6.2);   // бочки и ящики
     [["Barrel", 0, 0, 1.0], ["Crate_Wooden", 0.75, 0.35, 0.95], ["Barrel_Apples", -0.55, 0.6, 0.9], ["Bucket_Wooden_1", 0.3, -0.7, 0.9]].forEach(([n, dx, dz, sc]) => { const o = cloneProp(n); place(o, { x: cl.x + dx, z: cl.z + dz }, sc, r() * PI2, 0); });
     W.obstacles.push({ x: cl.x, z: cl.z, r: 1.0 });
-    const wp = at(toC - 1.75, 6.8), lumber = cloneWorld("resource_lumber"); place(lumber, wp, 1.25, toC, 0.8);
   });
   // инстансинг всего, что накопилось
   W.inst = [];
@@ -231,8 +231,10 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
       let mat = o.material;
       if (L.snowy && /Leaves|Leaf/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.85, 0.92, 1.0); }
       if (L.charred && /Bark/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.35, 0.3, 0.3); }
-      if (L.id === "autumn" && /Leaves_Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.2, 0.7, 0.35); }
-      if ((L.id === "desert" || L.id === "volcano") && /Grass|Leaves$|^Leaves/.test(mat.name) && !/Pine|Twisted|Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.05, 0.88, 0.55); }   // сухая трава пустыни
+      if ((L.base || L.id) === "autumn" && /Leaves_Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.2, 0.7, 0.35); }
+      if (L.blossom && /Leaves_NormalTree|Leaves_TwistedTree/.test(mat.name) && /CommonTree_2|CommonTree_3|TwistedTree/.test(name)) { const base = mat; mat = mat.clone(); mat.onBeforeCompile = (sh, r) => { if (base.onBeforeCompile) base.onBeforeCompile(sh, r); sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n float bl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(0.8, 0.36, 0.5), vec3(0.97, 0.72, 0.82), clamp(bl * 1.8, 0.0, 1.0));"); }; mat.customProgramCacheKey = () => "blossom"; }   // весна: цветущие деревья — листва в розовую гамму
+      if (L.season === "summer" && /Leaves_NormalTree/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.0, 1.05, 0.7); }   // лето: выгоревшая листва
+      if (((L.base || L.id) === "desert" || (L.base || L.id) === "volcano" || L.base === "desert" || L.base === "volcano") && /Grass|Leaves$|^Leaves/.test(mat.name) && !/Pine|Twisted|Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.05, 0.88, 0.55); }   // сухая трава пустыни
       const im = new THREE.InstancedMesh(o.geometry, mat, list.length); im.castShadow = big; im.receiveShadow = true;
       const local = o.matrixWorld.clone(), mm = new THREE.Matrix4();
       list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, 0, it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(it.s, it.s, it.s)); im.setMatrixAt(i, mm.multiply(local)); });
@@ -256,9 +258,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     if (crownSrc && crowns.length) crownSrc.traverse((o) => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, o.material, crowns.length); im.castShadow = true; const mm = new THREE.Matrix4(); crowns.forEach((c, i) => { mm.compose(new THREE.Vector3(c.x, c.y - 0.3, c.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() * PI2, 0)), new THREE.Vector3(2.6 * c.s, 1.6 * c.s, 2.6 * c.s)); im.setMatrixAt(i, mm); }); world.add(im); });
   }
   // трава-травинки (дёшево, много)
-  buildGrass(world, L, spots, lakeD, splatAt);
+  buildGrass(world, L, spots, lakeD, splatAt, W.gres);
   // погода
-  W.weather = makeWeather(world, L.weather);
+  W.weather = makeWeather(world, L.weather, L.heavy);
   return W;
 }
 
@@ -288,7 +290,7 @@ export function buildNodeViews(world, W) {
     const parts = [], stumps = [];
     const mk = (src, n, arr, tintF) => { src.updateMatrixWorld(true); src.traverse((o) => { if (!o.isMesh) return; let mat = o.material; if (tintF) mat = tintF(mat); const im = new THREE.InstancedMesh(o.geometry, mat, n); im.castShadow = true; im.receiveShadow = true; im.userData.local = o.matrixWorld.clone(); world.add(im); arr.push(im); }); };
     if (model === "palm") { /* пальмы-ресурсы рисуем как агаву на стволе — упрощённо куст */ mk(A.nature.Plant_7_Big, list.length, parts); }
-    else mk(A.nature[model], list.length, parts, (m) => { if (W.L.snowy && /Leaves|Leaf/.test(m.name)) { m = m.clone(); m.color.setRGB(0.85, 0.92, 1); } if (W.L.charred && /Bark/.test(m.name)) { m = m.clone(); m.color.setRGB(0.35, 0.3, 0.3); } if (W.L.id === "autumn" && /Leaves_Normal/.test(m.name)) { m = m.clone(); m.color.setRGB(1.2, 0.7, 0.35); } return m; });
+    else mk(A.nature[model], list.length, parts, (m) => { if (W.L.snowy && /Leaves|Leaf/.test(m.name)) { m = m.clone(); m.color.setRGB(0.85, 0.92, 1); } if (W.L.charred && /Bark/.test(m.name)) { m = m.clone(); m.color.setRGB(0.35, 0.3, 0.3); } if ((W.L.base || W.L.id) === "autumn" && /Leaves_Normal/.test(m.name)) { m = m.clone(); m.color.setRGB(1.2, 0.7, 0.35); } return m; });
     // пень: короткий цилиндр с текстурой коры
     if (list[0].kind === "tree") { const sg = new THREE.CylinderGeometry(0.28, 0.36, 0.45, 9); sg.translate(0, 0.22, 0); const im = new THREE.InstancedMesh(sg, pbr("cedar", 1, { color: 0x8a6a4a }), list.length); im.userData.local = new THREE.Matrix4(); im.castShadow = true; world.add(im); stumps.push(im); }
     list.forEach((nd, i) => { nd.slot = i; nd.gk = model; nd.shake = 0; nd.shown = -1; });
@@ -313,8 +315,8 @@ export function updNode(W, nd) {
 
 // ---------- травинки ----------
 export const grassT = { value: 0 };
-function buildGrass(world, L, spots, lakeD, splatAt) {
-  const count = L.id === "snow" ? 500 : L.id === "desert" ? 380 : L.id === "volcano" ? 300 : 1700;
+function buildGrass(world, L, spots, lakeD, splatAt, gres) {
+  const count = (L.base || L.id) === "snow" ? 500 : (L.base || L.id) === "desert" ? 380 : (L.base || L.id) === "volcano" ? 300 : 1700;
   const g = new THREE.BufferGeometry(), P3 = [], C3 = [];
   for (let b = 0; b < 5; b++) {
     const a = b / 5 * Math.PI + 0.3, w = 0.06, h = 0.32 + (b % 3) * 0.12, ox = Math.cos(a) * 0.09, oz = Math.sin(a) * 0.09, lean = 0.1;
@@ -340,11 +342,12 @@ function buildGrass(world, L, spots, lakeD, splatAt) {
     const a = Math.random() * PI2, rr = Math.pow(Math.random(), 0.65) * 1.5, x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
     left--;
     if (spots.some((p) => dist(x, z, p.x, p.z) < 5.0)) { left = 0; continue; }
+    if (gres && gres.some((g) => dist(x, z, g.x, g.z) < 1.9)) continue;
     if (lakeD(x, z) < 0.3) continue;
     const sm = splatAt(x, z); if (sm[1] > 0.3 || sm[2] > 0.05) continue;
     m.compose(v.set(x, 0, z), q.setFromEuler(e.set(0, Math.random() * PI2, 0)), s.setScalar((0.7 + Math.random() * 0.8) * (1.15 - rr * 0.3)));
     im.setMatrixAt(k, m);
-    if (L.id === "forest" && Math.random() < 0.04) col.set([0xffe066, 0xff9ecf, 0xffffff, 0xb08cff][Math.floor(Math.random() * 4)]);
+    if ((L.base || L.id) === "forest" && Math.random() < 0.04) col.set([0xffe066, 0xff9ecf, 0xffffff, 0xb08cff][Math.floor(Math.random() * 4)]);
     else col.setHSL(h0 + ch + (Math.random() - 0.5) * 0.03, s0, l0 + cl + Math.random() * 0.1);
     im.setColorAt(k, col); k++;
   }
@@ -352,30 +355,34 @@ function buildGrass(world, L, spots, lakeD, splatAt) {
 }
 
 // ---------- погода: снег, угли, листья, светлячки, пыль, пыльца ----------
-function makeWeather(world, kind) {
-  const N = { snow: 700, embers: 260, leaves: 140, fireflies: 90, dust: 160, pollen: 120 }[kind] || 0;
+function makeWeather(world, kind, heavy) {
+  const N = Math.round(({ snow: 700, embers: 260, leaves: 140, fireflies: 90, dust: 160, pollen: 120, rain: 900, petals: 160 }[kind] || 0) * (heavy || 1));
   if (!N) return null;
   const geo = new THREE.BufferGeometry(), p = new Float32Array(N * 3), ph = new Float32Array(N);
   for (let i = 0; i < N; i++) { p[i * 3] = (Math.random() - 0.5) * 50; p[i * 3 + 1] = Math.random() * 14; p[i * 3 + 2] = (Math.random() - 0.5) * 50; ph[i] = Math.random() * 100; }
   geo.setAttribute("position", new THREE.BufferAttribute(p, 3)); geo.setAttribute("ph", new THREE.BufferAttribute(ph, 1));
-  const C = { snow: [1, 1, 1], embers: [1.6, 0.6, 0.15], leaves: [0.95, 0.5, 0.15], fireflies: [1.0, 1.6, 0.4], dust: [1, 0.9, 0.7], pollen: [1, 1, 0.8] }[kind];
+  const C = { snow: [1, 1, 1], embers: [1.6, 0.6, 0.15], leaves: [0.95, 0.5, 0.15], fireflies: [1.0, 1.6, 0.4], dust: [1, 0.9, 0.7], pollen: [1, 1, 0.8], rain: [0.75, 0.85, 1.0], petals: [1.0, 0.72, 0.85] }[kind];
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: kind === "embers" || kind === "fireflies" ? THREE.AdditiveBlending : THREE.NormalBlending,
-    uniforms: { t: { value: 0 }, c: { value: new THREE.Vector3(...C) }, center: { value: new THREE.Vector3() }, scale: { value: 300 }, kind: { value: ["snow", "embers", "leaves", "fireflies", "dust", "pollen"].indexOf(kind) } },
-    vertexShader: `attribute float ph; uniform float t, scale, kind; uniform vec3 center; varying float vA; varying float vPh;
+    uniforms: { t: { value: 0 }, c: { value: new THREE.Vector3(...C) }, center: { value: new THREE.Vector3() }, scale: { value: 300 }, kind: { value: ["snow", "embers", "leaves", "fireflies", "dust", "pollen", "rain", "petals"].indexOf(kind) }, heavy: { value: heavy || 1 } },
+    vertexShader: `attribute float ph; uniform float t, scale, kind, heavy; uniform vec3 center; varying float vA; varying float vPh;
       void main(){ vec3 p = position; float T = t + ph;
         if (kind < 0.5) { p.y = mod(p.y - t*1.4, 14.0); p.x += sin(T*0.9)*0.6; p.z += cos(T*0.7)*0.6; }
         else if (kind < 1.5) { p.y = mod(p.y + t*1.1, 14.0); p.x += sin(T*1.7)*0.5; }
         else if (kind < 2.5) { p.y = mod(p.y - t*0.9, 14.0); p.x += sin(T*1.3)*1.2; p.z += sin(T*0.8)*0.8; }
         else if (kind < 3.5) { p.y = 0.4 + mod(p.y, 2.5) + sin(T*0.9)*0.4; p.x += sin(T*0.5)*1.5; p.z += cos(T*0.6)*1.5; }
-        else { p.y = mod(p.y + t*0.15, 6.0); p.x += sin(T*0.3)*2.0 + t*0.3; }
+        else if (kind < 5.5) { p.y = mod(p.y + t*0.15, 6.0); p.x += sin(T*0.3)*2.0 + t*0.3 * heavy * heavy; }
+        else if (kind < 6.5) { p.y = mod(p.y - t*16.0, 14.0); p.x += t*1.5; }
+        else { p.y = mod(p.y - t*0.7, 14.0); p.x += sin(T*1.1)*1.4 + t*0.4; p.z += cos(T*0.9)*0.9; }
         p.x = center.x + mod(p.x - center.x + 25.0, 50.0) - 25.0; p.z = center.z + mod(p.z - center.z + 25.0, 50.0) - 25.0;
         vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
-        float sz = kind < 0.5 ? 0.13 : kind < 1.5 ? 0.09 : kind < 2.5 ? 0.18 : kind < 3.5 ? 0.12 : 0.06;
+        float sz = kind < 0.5 ? 0.13 : kind < 1.5 ? 0.09 : kind < 2.5 ? 0.18 : kind < 3.5 ? 0.12 : kind < 5.5 ? 0.06 * (heavy > 1.5 ? 1.8 : 1.0) : kind < 6.5 ? 0.22 : 0.16;
         gl_PointSize = sz * scale / -mv.z; vA = kind > 2.5 && kind < 3.5 ? 0.5 + 0.5*sin(T*3.0) : 1.0; vPh = ph; }`,
     fragmentShader: `uniform vec3 c; uniform float kind; varying float vA; varying float vPh;
       void main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d); if (r > 0.5) discard; float a = smoothstep(0.5, 0.1, r) * vA;
         vec3 col = c; if (kind > 1.5 && kind < 2.5) { col = mix(vec3(0.95,0.45,0.1), vec3(0.85,0.2,0.1), fract(vPh)); a = step(r, 0.42); }
+        if (kind > 5.5 && kind < 6.5) { a = (1.0 - smoothstep(0.02, 0.07, abs(d.x + d.y * 0.12))) * 0.55; }   // капли — тонкие штрихи
+        if (kind > 6.5) { vec2 q = d * mat2(0.8, -0.6, 0.6, 0.8); a = step(length(q * vec2(1.0, 1.9)), 0.42); col = mix(vec3(1.0,0.75,0.86), vec3(1.0,0.93,0.97), fract(vPh * 3.0)); }   // лепестки
         gl_FragColor = vec4(col, a * (kind < 0.5 ? 0.9 : 0.85)); }`
   });
   const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 7; world.add(pts);

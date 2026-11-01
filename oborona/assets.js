@@ -6,7 +6,7 @@ import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
-const V = "?v=3";
+const V = "?v=4";
 // ядро (до меню): герои, анимации, постройки, оружие, природа, реквизит. Монстры и торговец — по требованию локации
 const CORE_KK = ["knight", "barbarian", "rogue", "mage"];
 const CORE = [...CORE_KK, "anims", "world", "weapons", "nature", "props"];
@@ -15,7 +15,7 @@ const QM = ["m_spider", "m_rat", "m_frog", "m_slime", "m_bat", "m_wasp", "m_drag
 const UPPER = /^(chest|upperarm|lowerarm|wrist|hand|handslot|head)/;
 export const A = { chars: {}, clips: {}, world: {}, weapons: {}, nature: {}, props: {}, q: {}, qclips: {}, qh: {}, ready: false, wind: { value: 0 } };
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
-const GLB_BYTES = 3332112; // размер ядра (для полосы загрузки); обновить при замене .glb
+const GLB_BYTES = 3490632; // размер ядра (для полосы загрузки); обновить при замене .glb
 const loadGLB = (n, onp) => new Promise((res, rej) => loader.load(`assets/${n}.glb${V}`, res, onp, rej));
 const loaded = new Set(), pending = {};
 

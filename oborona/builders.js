@@ -2,6 +2,7 @@
 // Средневековые — модели KayKit, восточные (пагоды, минареты, дворцы) и северные — собраны из геометрии с PBR-текстурами.
 import * as THREE from "three";
 import { cloneWorld, cloneProp, cloneWeapon, hueMaterial, pbr } from "./assets.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const M = {};
 function mats() {
@@ -185,3 +186,134 @@ export function buildHouse(style, lv, hue) {
   return out;
 }
 export { pagodaRoof, onionDome, mats as builderMats, M as BM };
+
+// ---------- Глубокие уровни: замок растёт до 15, башни до 10 — каждый уровень заметен ----------
+const goldRing = (r, y, t) => { mats(); const o = mesh(new THREE.TorusGeometry(r, t || 0.07, 6, 28), M.gold, 0, y, 0); o.rotation.x = Math.PI / 2; return o; };
+function crown(y, s) {
+  mats(); const g = new THREE.Group(); g.position.y = y;
+  g.add(goldRing(0.38 * s, 0, 0.08 * s));
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, sp = mesh(new THREE.ConeGeometry(0.08 * s, 0.32 * s, 5), M.gold, Math.cos(a) * 0.38 * s, 0.16 * s, Math.sin(a) * 0.38 * s); g.add(sp); }
+  const gem = mesh(new THREE.OctahedronGeometry(0.16 * s, 0), glowMat(0xff4a6a, 3), 0, 0.3 * s, 0); g.add(gem);
+  return g;
+}
+const auraRing = (r, col) => { const m = new THREE.Mesh(new THREE.RingGeometry(r * 0.82, r, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(1.6), transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })); m.position.y = 0.06; return m; };
+export function buildHouseDeep(style, lv, hue) {
+  const b = buildHouse(style, Math.min(4, lv), hue);
+  if (lv <= 4) return bake(b);
+  mats();
+  const k = lv - 4, g = b.g;
+  // угловые башенки (по одной на уровень, до четырёх), дальше — ярусы
+  const corners = [[1, 1], [-1, 1], [1, -1], [-1, -1]], R = style === "medieval" || !style ? 1.75 : 1.95;
+  for (let i = 0; i < Math.min(4, k); i++) {
+    const [sx, sz] = corners[i], t = new THREE.Group(); t.position.set(sx * R, 0, sz * R);
+    const tiers = 1 + Math.floor(Math.max(0, k - 4 - i) / 4);
+    if (style === "eastern") {
+      let y = 0; for (let j = 0; j < 1 + tiers; j++) { const w = 0.55 - j * 0.08; t.add(mesh(setUV(new THREE.BoxGeometry(w, 0.55, w), 1), M.plaster, 0, y + 0.27, 0)); y += 0.55; t.add(mesh(pagodaRoof(w * 0.95, 0.35, 0.25), M.roof, 0, y, 0)); y += 0.28; }
+      t.add(mesh(new THREE.ConeGeometry(0.05, 0.3, 6), M.gold, 0, y + 0.15, 0));
+    } else if (style === "nordic") {
+      const h = 1.6 + 0.4 * tiers; t.add(mesh(setUV(new THREE.BoxGeometry(0.6, h, 0.6), 1), M.wood, 0, h / 2, 0)); t.add(mesh(new THREE.ConeGeometry(0.55, 0.7, 4), M.roofG, 0, h + 0.35, 0));
+    } else {
+      const o = cloneWorld("building_tower_A_blue"); o.traverse((c) => { if (c.isMesh) { c.material = hueMaterial(c.material, hue); c.castShadow = true; } }); o.scale.setScalar(0.85 + 0.12 * tiers); t.add(o);
+    }
+    g.add(t);
+  }
+  if (lv >= 7) g.add(goldRing(2.35, 0.12));                                   // золотая отделка
+  if (lv >= 9) { for (const s2 of [-1, 1]) { const bn = cloneProp("Banner_2"); bn.scale.setScalar(0.85); bn.position.set(s2 * 1.1, 1.3, 1.45); g.add(bn); } }
+  if (lv >= 11) g.add(goldRing(2.6, 0.32, 0.05));
+  if (lv >= 12) { g.add(auraRing(2.9, 0xffd34d)); }
+  if (lv >= 13) { const c = crown(b.h + 0.35, 1.2 + 0.1 * (lv - 13)); g.add(c); b.crown = c; b.h += 0.9; }
+  g.scale.setScalar(1 + 0.025 * k);
+  b.h *= 1 + 0.025 * k;
+  return bake(b);
+}
+export function buildTowerDeep(type, lv, hue, trim) {
+  const b = buildTower(type, Math.min(4, lv), hue);
+  mats();
+  const g = b.g, top = b.top.y;
+  if (trim != null) { const tm = new THREE.MeshStandardMaterial({ color: trim, metalness: 0.6, roughness: 0.35 }); const r = mesh(new THREE.TorusGeometry(0.62, 0.06, 6, 24), tm, 0, top * 0.45, 0); r.rotation.x = Math.PI / 2; g.add(r); }
+  if (lv <= 4) return bake(b);
+  const k = lv - 4;
+  g.add(goldRing(0.6, top - 0.35));
+  if (lv >= 6) { const pole = mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.0, 5), M.wood, 0.45, top + 0.3, 0); g.add(pole); const fm = hueMaterial(new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.6, side: THREE.DoubleSide }), hue); const fl = mesh(new THREE.PlaneGeometry(0.42, 0.26), fm, 0.66, top + 0.65, 0); g.add(fl); }
+  if (lv >= 7) { const gm = glowMat(0x7cd3ff, 2.2); const cr = mesh(new THREE.OctahedronGeometry(0.17, 0), gm, 0, top + 0.55, 0); g.add(cr); b.glow.push(gm); b.orb = b.orb || cr; }
+  if (lv >= 8) g.add(auraRing(1.05, 0x7cd3ff));
+  if (lv >= 9) g.add(goldRing(0.66, top * 0.7, 0.05));
+  if (lv >= 10) g.add(crown(top + 0.85, 0.75));
+  g.scale.setScalar(1 + 0.03 * k);
+  b.top.y *= 1 + 0.03 * k;
+  return bake(b);
+}
+// ---------- Добытчики: лесопилка, каменоломня, золотой рудник ----------
+const GMODEL = { saw: ["building_lumbermill_blue", 1.45], quarry: ["building_blacksmith_blue", 1.4], mine: ["building_mine_blue", 1.5] };
+const PILE = { saw: () => cloneWorld("resource_lumber"), quarry: () => cloneWorld("resource_stone"), mine: () => cloneProp("Coin_Pile_2") };
+export function buildGatherer(k, lv, hue, broken) {
+  mats();
+  const g = new THREE.Group(), out = { g, spin: null, cart: null, fx: [], pile: null, h: 2.2 };
+  if (broken) { const o = cloneWorld("building_destroyed"); o.scale.setScalar(1.6); g.add(o); out.fx.push({ k: "smoke", p: new THREE.Vector3(0, 0.8, 0) }); return bake(out); }
+  const [name, s0] = GMODEL[k], o = cloneWorld(name);
+  o.traverse((c) => { if (c.isMesh) { c.material = hueMaterial(c.material, hue); c.castShadow = true; c.receiveShadow = true; } });
+  o.scale.setScalar(s0 * (0.85 + 0.035 * lv)); g.add(o);
+  const side = (x, z, obj, s, ry) => { obj.position.set(x, 0, z); obj.scale.setScalar(s); obj.rotation.y = ry || 0; obj.traverse((c) => { if (c.isMesh) c.castShadow = true; }); g.add(obj); return obj; };
+  // анимированная «работа»: пила, точильный круг, вагонетка
+  if (k === "saw") { const blade = new THREE.Group(); const disc = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.04, 20), M.iron); disc.rotation.z = Math.PI / 2; blade.add(disc); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2, t = mesh(new THREE.ConeGeometry(0.05, 0.12, 3), M.iron, 0, Math.cos(a) * 0.44, Math.sin(a) * 0.44); t.rotation.x = a; blade.add(t); } blade.position.set(1.15, 0.65, 0.7); g.add(blade); out.spin = blade; out.spinAxis = "x";
+    side(1.15, 1.35, cloneWorld("resource_lumber"), 0.9, 0.3); }
+  if (k === "quarry") { const wheel = mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.18, 14), M.stone, -1.1, 0.5, 0.8); wheel.rotation.z = Math.PI / 2; g.add(wheel); out.spin = wheel; out.spinAxis = "y"; out.fx.push({ k: "smoke", p: new THREE.Vector3(0.2, 2.3, -0.2) }); }
+  if (k === "mine") { const cart = new THREE.Group(); cart.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.35), M.iron, 0, 0.3, 0)); const gold = mesh(new THREE.SphereGeometry(0.17, 8, 6), M.gold, 0, 0.45, 0); cart.add(gold); cart.position.set(1.1, 0, 0.9); g.add(cart); out.cart = cart;
+    const rail = mesh(new THREE.BoxGeometry(0.05, 0.03, 2.0), M.iron, 1.0, 0.03, 0.9); rail.rotation.y = Math.PI / 2; g.add(rail); }
+  // уровни: тачка, мешки, тележка (авто-доставка), флажок, бочки, факелы, золото, корона
+  if (lv >= 2) side(-1.2, 1.2, cloneWorld("wheelbarrow"), 1.1, 0.6);
+  if (lv >= 3) { side(-0.4, 1.45, cloneWorld("sack"), 1.2, 0); side(-0.05, 1.55, cloneWorld("crate_A_big"), 0.9, 0.4); }
+  if (lv >= 4) { out.cartBig = side(1.4, -1.0, cloneProp("Stall_Cart_Empty"), 0.6, -0.8); }
+  if (lv >= 5) { const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 5), M.wood, -1.3, 0.9, -0.9); g.add(pole); const fm = hueMaterial(new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.6, side: THREE.DoubleSide }), hue); g.add(mesh(new THREE.PlaneGeometry(0.5, 0.32), fm, -1.05, 1.6, -0.9)); }
+  if (lv >= 6) { side(-1.45, 0.3, cloneWorld("barrel"), 1.2, 0); side(-1.5, -0.25, cloneWorld("barrel"), 1.1, 1); }
+  if (lv >= 7) { for (const sx of [-1, 1]) { const t = side(sx * 1.0, 1.75, cloneProp("Torch_Metal"), 0.95, 0); out.fx.push({ k: "torch", p: new THREE.Vector3(sx * 1.0, 1.15, 1.75) }); } }
+  if (lv >= 8) g.add(goldRing(1.7, 0.08, 0.05));
+  if (lv >= 9) g.add(auraRing(1.95, 0xffd34d));
+  if (lv >= 10) { g.add(crown(2.6, 0.7)); out.h = 3.1; }
+  const pile = new THREE.Group(); pile.add(PILE[k]()); pile.position.set(0.2, 0, 1.55); pile.visible = false; g.add(pile); out.pile = pile;
+  return bake(out);
+}
+
+// ---------- склейка статичных частей: одна постройка = несколько draw call вместо десятков ----------
+// всё, на что есть ссылка в out (пила, вагонетка, кристалл, флаг, корона, куча…), не трогаем — оно анимируется
+const _inv = new THREE.Matrix4(), _m = new THREE.Matrix4();
+export function bake(out) {
+  const root = out.g, keep = new Set();
+  for (const k in out) { if (k === "g") continue; const v = out[k]; if (v && v.isObject3D) keep.add(v); else if (Array.isArray(v)) v.forEach((x) => x && x.isObject3D && keep.add(x)); }
+  root.updateMatrixWorld(true); _inv.copy(root.matrixWorld).invert();
+  const groups = new Map(), kill = [];
+  const walk = (o) => {
+    for (const c of o.children) {
+      if (keep.has(c) || c.userData.orbit || c.userData.nobake) continue;
+      if (c.isMesh && !c.isSkinnedMesh && !c.isInstancedMesh && !Array.isArray(c.material) && c.visible && !c.geometry.morphAttributes.position) {
+        const key = c.material.uuid + (c.castShadow ? "s" : "") + (c.receiveShadow ? "r" : "");
+        let gr = groups.get(key); if (!gr) groups.set(key, (gr = { mat: c.material, cs: c.castShadow, rs: c.receiveShadow, list: [] }));
+        gr.list.push(c);
+      }
+      walk(c);
+    }
+  };
+  walk(root);
+  for (const gr of groups.values()) {
+    if (gr.list.length < 2) continue;
+    const geos = [];
+    for (const c of gr.list) {
+      let g = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+      for (const n of Object.keys(g.attributes)) if (n !== "position" && n !== "normal" && n !== "uv") g.deleteAttribute(n);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      for (const n of ["position", "normal", "uv"]) { const a = g.attributes[n]; if (a.isInterleavedBufferAttribute || a.normalized || !(a.array instanceof Float32Array)) { const f = new Float32Array(a.count * a.itemSize); for (let i = 0; i < a.count; i++) for (let j = 0; j < a.itemSize; j++) f[i * a.itemSize + j] = a.getComponent(i, j); g.setAttribute(n, new THREE.BufferAttribute(f, a.itemSize)); } }
+      g.applyMatrix4(_m.multiplyMatrices(_inv, c.matrixWorld));
+      geos.push(g);
+    }
+    const merged = mergeGeometries(geos, false); geos.forEach((g) => g.dispose());
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, gr.mat); m.castShadow = gr.cs; m.receiveShadow = gr.rs; m.userData.baked = 1;
+    root.add(m); kill.push(...gr.list);
+  }
+  for (const c of kill) { c.parent.remove(c); }
+  // опустевшие группы убираем
+  const prune = (o) => { for (const c of [...o.children]) { prune(c); if (!c.isMesh && !c.children.length && !keep.has(c) && c.type === "Group") o.remove(c); } };
+  prune(root);
+  return out;
+}
