@@ -5,7 +5,7 @@ const T = window.TG, tg = T && T.tg;
 const cloudOk = () => { try { return !!(tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast("6.9")); } catch (_) { return false; } };
 
 export const S = {
-  v: 1, t: 0, gems: 0, loc: {}, up: {}, skin: "medieval", skins: { medieval: 1 }, startw: { crossbow: 1 }, wpn: "crossbow",
+  v: 1, t: 0, gems: 0, loc: {}, up: {}, hero: "knight", skin: "medieval", skins: { medieval: 1 }, startw: { crossbow: 1 }, wpn: "crossbow",
   set: { music: 0.6, sfx: 0.8, q: "a", vib: 1 }, uid: "", runs: 0
 };
 function score(s) { let k = (s.gems || 0) + (s.runs || 0); for (const id in s.loc || {}) k += 100 * ((s.loc[id].stars || 0) + (s.loc[id].best || 0) / 100); for (const u in s.up || {}) k += 50 * s.up[u]; return k; }

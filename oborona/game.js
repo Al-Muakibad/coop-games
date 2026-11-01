@@ -6,7 +6,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { A, loadAll, makeChar, makeQ, cloneWorld, cloneWeapon, cloneProp, loadEnv } from "./assets.js";
+import { A, loadAll, ensure, has, makeChar, makeQ, cloneWorld, cloneWeapon, cloneProp, loadEnv, teamMaterial } from "./assets.js";
 import { buildTower, buildHouse } from "./builders.js";
 import { buildWorld, buildNodeViews, updNode, updateWorld, grassT, rng } from "./world.js";
 import { FX, COL } from "./fx.js";
@@ -125,20 +125,20 @@ function buildLocation(locId, seed, n) {
   world.clear(); obstacles = []; gateViews = [];
   const L = D.LOC[locId] || D.LOCS[0];
   const spots = houseSpots(n), msp = merchantSpot(n);
-  WD = buildWorld(world, renderer, locId, seed, spots, msp);
+  WD = buildWorld(world, renderer, locId, seed, spots, msp, spots.map((_, i) => (cfg && cfg.players && cfg.players[i] && cfg.players[i].color) || COLORS[i % 6]));
   buildNodeViews(world, WD);
   G.nodes = WD.nodes;
   G.nodes.forEach((nd) => updNode(WD, nd));
   obstacles = WD.obstacles.slice();
   // небо, свет, туман по биому
   const sk = L.sky;
-  DAY.sky.set(sk.day); NIGHT.sky.set(sk.night); DAY.sunC.set(sk.sun); NIGHT.sunC.set(sk.sunNight); DAY.fog.set(sk.fog);
+  DAY.sky.set(sk.day); NIGHT.sky.set(sk.night); DAY.sunC.set(sk.sun).lerp(new THREE.Color(0xffc98a), 0.3); NIGHT.sunC.set(sk.sunNight); DAY.fog.set(sk.fog);
   hemi.color.set(sk.hemi[0]); hemi.groundColor.set(sk.hemi[1]);
   scene.background.copy(DAY.sky); scene.fog.color.copy(DAY.fog);
   renderer.shadowMap.needsUpdate = true;
   navDirty = true;
 }
-const DAY = { sky: new THREE.Color(), fog: new THREE.Color(), hemi: 1.05, sun: 2.3, sunC: new THREE.Color() };
+const DAY = { sky: new THREE.Color(), fog: new THREE.Color(), hemi: 0.85, sun: 2.75, sunC: new THREE.Color() };   // тёплый ключевой свет, меньше плоской подсветки
 const NIGHT = { sky: new THREE.Color(), hemi: 0.55, sun: 1.15, sunC: new THREE.Color() };
 function buildGates() {
   gateViews.forEach((g) => world.remove(g)); gateViews = [];
@@ -256,16 +256,39 @@ function towerTop(h, s) { const p = slotPos(h, s), tv = h.view && h.view.turrets
 
 // ================= ПЕРСОНАЖИ =================
 const playerViews = [], enemyViews = new Map();
+// хват оружия в руке (handslot.r): арбалеты повёрнуты стволом вперёд, посохи и жезлы — как есть
+const PI_2 = Math.PI / 2;
+const GRIP = { crossbow_1handed: [0, PI_2, 0], crossbow_2handed: [0, PI_2, 0], Axe_Bronze: [PI_2, 0, 0], Sword_Bronze: [PI_2, 0, 0] };
+function attachWeapon(model, tint) {
+  const w = new THREE.Group(), kick = cloneWeapon(model); w.add(kick);
+  if (tint) kick.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.set(tint); } });
+  // дуло — дальний конец модели по самой длинной оси
+  kick.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(kick), sz = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+  const ax = sz.x > sz.y && sz.x > sz.z ? "x" : sz.y > sz.z ? "y" : "z", end = Math.abs(bb.max[ax]) > Math.abs(bb.min[ax]) ? bb.max[ax] : bb.min[ax];
+  const muzzle = new THREE.Object3D(); muzzle.position.copy(c); muzzle.position[ax] = end; kick.add(muzzle);
+  w.userData = { kick, muzzle, ax, sign: Math.sign(end) || 1 };
+  w.rotation.set(...(GRIP[model] || [0, 0, 0]));
+  return w;
+}
+const _mz = new THREE.Vector3();
+function muzzlePos(v) {   // мировая точка дула (кадр назад обновлена рендером; для надёжности пересчитываем ветку)
+  if (!v || !v.wpn || !v.wpn.parent || !v.root.visible) return null;
+  v.root.updateMatrixWorld(true);
+  return v.wpn.userData.muzzle.getWorldPosition(_mz);
+}
 function makePlayerView(p) {
-  const hero = D.HEROES[p.idx % D.HEROES.length], c = makeChar(hero);
-  c.obj.scale.setScalar(0.72);
+  const hero = D.HEROES.includes(p.hero) ? p.hero : D.HEROES[p.idx % D.HEROES.length], c = makeChar(hero);
+  c.obj.scale.setScalar(0.82);
   const root = new THREE.Group(); root.add(c.obj); root.add(blob(0.5)); world.add(root);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.56, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.8, depthWrite: false }));
-  ring.position.y = 0.05; root.add(ring);
+  // командный цвет: кольцо под ногами + мягкое пятно, ткань и доспехи героя в цвет игрока
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.68, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(p.color).multiplyScalar(1.5), transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false }));
+  ring.position.y = 0.05; ring.renderOrder = 2; root.add(ring);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: p.color, transparent: true, opacity: 0.22, depthWrite: false }));
+  disc.position.y = 0.045; disc.renderOrder = 2; root.add(disc);
   const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false })); orb.visible = false; root.add(orb);
   const v = { p, c, root, orb, ring, hero, wpn: null, wkey: "", arm: "", base: null, upper: null, recoil: 0, hurt: 0, deadShown: false, pos: new THREE.Vector3(p.x, 0, p.z), blades: [], rage: 0 };
-  v.cloth = c.meshes.filter((m) => /Body|Arm|Helmet|Hat|Cape/i.test(m.name)).map((m) => { m.material = m.material.clone(); return m; });
-  c.meshes.forEach((m) => { if (!v.cloth.includes(m)) m.material = m.material.clone(); });
+  c.meshes.forEach((m) => { m.material = /Head/i.test(m.name) ? m.material.clone() : teamMaterial(m.material, p.color, 0.45); m.castShadow = true; });
   v.allMats = c.meshes.map((m) => m.material);
   playerViews[p.idx] = v;
   updGear(v);
@@ -276,13 +299,12 @@ function updGear(v) {
   if (v.wkey !== p.wpn) {
     const hand = v.c.bone("handslotr");
     if (v.wpn && v.wpn.parent) v.wpn.parent.remove(v.wpn);
-    v.wpn = cloneWeapon(Wp.model);
+    v.wpn = attachWeapon(Wp.model, Wp.tint);
     if (/Axe_Bronze|Sword_Bronze/.test(Wp.model)) v.wpn.scale.setScalar(0.9);
-    if (Wp.tint) v.wpn.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.set(Wp.tint); } });
     if (hand) hand.add(v.wpn);
     v.wkey = p.wpn;
   }
-  if (v.arm !== p.arm) { const a = D.ARMOR[p.arm] || D.ARMOR.none; v.cloth.forEach((m) => m.material.color.set(a.tint || 0xffffff)); v.arm = p.arm; }
+  v.arm = p.arm;
   const am = D.AMULETS[p.amu]; v.orb.visible = !!(am && am.color); if (v.orb.visible) v.orb.material.color.set(am.color).multiplyScalar(2.2);
   // кружащие клинки (оружие «клинки» и перк «призрачные клинки»)
   const st = p.st || D.stats(p), nb = (st.kind === "orbit" ? st.n : 0) + st.ghost;
@@ -306,7 +328,9 @@ const KK_ANIM = {
 function monScale(M, e) { return (M.scale || 1) * (e.el ? 1.25 : 1); }
 function makeEnemyView(e) {
   const M = D.MON[e.type]; let c;
-  if (M.q) c = makeQ(M.q, M.qs * (e.el ? 1.25 : 1)); else { c = makeChar(M.model); c.obj.scale.setScalar(monScale(M, e)); }
+  if (M.q && has(M.q)) c = makeQ(M.q, M.qs * (e.el ? 1.25 : 1));
+  else if (!M.q && has(M.model)) { c = makeChar(M.model); c.obj.scale.setScalar(monScale(M, e)); }
+  else { c = makeChar("barbarian"); c.obj.scale.setScalar(0.75 * (M.boss ? 2 : 1)); ensure(modelsFor(G.loc).concat(M.q || M.model)); }   // модель ещё грузится — временно варвар
   const root = new THREE.Group(); root.add(c.obj); const bl = blob(M.r * (e.el ? 1.25 : 1)); root.add(bl); world.add(root);
   const mats = []; c.meshes.forEach((m) => { m.material = m.material.clone(); mats.push(m.material); if (!m.material.emissive) m.material.emissive = new THREE.Color(); });
   let tint = M.tint; if (e.type === "boss_dragon" && WD && WD.L.dragonTint) tint = WD.L.dragonTint;
@@ -359,7 +383,7 @@ let merchView = null;
 function updMerchantView() {
   const on = !!G.merchant;
   if (on && !merchView) {
-    const sp = merchantSpot(G.houses.length), c = makeChar("merchant");
+    const sp = merchantSpot(G.houses.length), c = makeChar(has("merchant") ? "merchant" : "rogue");
     c.obj.scale.setScalar(0.72);
     const root = new THREE.Group(); root.position.set(sp.x, 0, sp.z); root.add(c.obj); root.add(blob(0.5));
     const cart = cloneProp("Stall_Cart_Empty"); cart.scale.setScalar(0.85); cart.position.set(-1.6, 0, -1.2); cart.rotation.y = 0.5;
@@ -409,7 +433,7 @@ function newPlayer(c, i, spots) {
   const meta = c.meta || {}, items = { potion: 1, rage: 0, bomb: 0, scroll: 0 };
   return { idx: i, id: c.id, uid: c.uid || "", name: c.name, color: c.color, x: h.x + Math.cos(a) * 3.5, z: h.z + Math.sin(a) * 3.5, ry: 0, hp: 100, alive: true, downT: 0,
     wallet: { c: 20 + 12 * (meta.coins || 0), w: 10, s: 5 }, xp: 0, lvl: 1, perks: {}, wpn: c.wpn && D.WEAPONS[c.wpn] ? c.wpn : "crossbow", arm: "none", amu: "none", items, kills: 0, dmg: 0, built: 0,
-    ready: false, house: Math.min(i, spots.length - 1), tgt: 0, mv: 0, seq: 0, present: true, gn: -1, meta, style: c.style || "medieval", rageT: 0, angelUsed: false, seen: 0, killN: 0 };
+    ready: false, house: Math.min(i, spots.length - 1), tgt: 0, mv: 0, seq: 0, present: true, gn: -1, meta, style: c.style || "medieval", hero: c.hero, rageT: 0, angelUsed: false, seen: 0, killN: 0 };
 }
 function begin(c, snap) {
   cfg = c.cfg; room = c.room; me = cfg.me || 0;
@@ -477,7 +501,7 @@ function lateJoin(from, d) {
   if (!d) return;
   let p = G.players.find((q) => q.uid && q.uid === d.uid);
   if (!p && G.players.length < 6) {   // новый игрок посреди боя: без своего дома, живёт у ближайшего
-    const i = G.players.length, nm0 = (d.name || "Игрок").slice(0, 18), pc = { id: from, name: G.players.some((q) => q.name === nm0) ? `${nm0} ${i + 1}` : nm0, color: COLORS[i % 6], uid: d.uid, style: d.style, meta: d.meta, wpn: d.wpn };
+    const i = G.players.length, nm0 = (d.name || "Игрок").slice(0, 18), pc = { id: from, name: G.players.some((q) => q.name === nm0) ? `${nm0} ${i + 1}` : nm0, color: COLORS[i % 6], uid: d.uid, style: d.style, meta: d.meta, wpn: d.wpn, hero: d.hero };
     cfg.players.push(pc); p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); p.house = G.houses.findIndex((h) => h.alive); p.st = D.stats(p); p.hp = p.st.maxhp;
     G.players.push(p); makePlayerView(p);
   }
@@ -522,7 +546,7 @@ function makeSnap(full) {
   if (G.F.length) { s.F = G.F; G.F = []; }
   if (full || G.t - lastFull > 1.2 || dirtyFull) {
     lastFull = G.t; dirtyFull = false;
-    s.G = G.players.map((p) => [p.wpn, p.arm, p.amu, Object.entries(p.perks).map(([k, v]) => k + v).join(","), Object.entries(p.items).map(([k, v]) => k + v).join(","), p.uid, p.style, p.name, p.color, p.house, JSON.stringify(p.meta || {})]);
+    s.G = G.players.map((p) => [p.wpn, p.arm, p.amu, Object.entries(p.perks).map(([k, v]) => k + v).join(","), Object.entries(p.items).map(([k, v]) => k + v).join(","), p.uid, p.style, p.name, p.color, p.house, JSON.stringify(p.meta || {}), p.hero || ""]);
     s.H = G.houses.map((h) => [h.lv, Math.ceil(h.hp), h.wall, Math.ceil(h.whp), h.alive ? 1 : 0, h.turrets.map((t) => (t ? t.type + ":" + t.lv : "")).join(","), Math.round(h.max), Math.round(h.wmax), h.style, poolStr(h)]);
     s.D = [...G.drops.values()].map((d) => [d.id, Math.round(d.x * 10), Math.round(d.z * 10), d.v, d.o]);
     s.N = G.nodes.map((n) => n.amt).join("");
@@ -554,7 +578,7 @@ function applySnap(s, initial) {
   for (const id of [...G.enemies.keys()]) if (!seen.has(id)) { G.enemies.delete(id); killEnemyView(id); }
   if (s.G) s.G.forEach((g, i) => {
     let p = G.players[i];
-    if (!p) { const pc = { id: "", name: g[7], color: g[8], uid: g[5], style: g[6] }; if (!cfg.players[i]) cfg.players[i] = pc; p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); G.players[i] = p; p.st = D.stats(p); makePlayerView(p); teamDirty = true; }
+    if (!p) { const pc = { id: "", name: g[7], color: g[8], uid: g[5], style: g[6], hero: g[11] }; if (!cfg.players[i]) cfg.players[i] = pc; p = newPlayer(pc, i, G.houses.map((h) => ({ x: h.x, z: h.z }))); G.players[i] = p; p.st = D.stats(p); makePlayerView(p); teamDirty = true; }
     const perks = {}; (g[3] || "").split(",").filter(Boolean).forEach((x) => { const m = /^([a-z]+)(\d+)$/.exec(x); if (m) perks[m[1]] = +m[2]; });
     const items = {}; (g[4] || "").split(",").filter(Boolean).forEach((x) => { const m = /^([a-z]+)(\d+)$/.exec(x); if (m) items[m[1]] = +m[2]; });
     const ch = p.wpn !== g[0] || p.arm !== g[1] || p.amu !== g[2] || JSON.stringify(perks) !== JSON.stringify(p.perks);
@@ -947,6 +971,8 @@ function gameOver(win) {
   if (G.over) return; G.over = true;
   const d = { win, wave: G.wave, loc: G.loc, lost: G.lost, houses: G.houses.length, bossKills: G.bossKills, stats: G.players.map(pStat) };
   send("over", d); onOver(d);
+  // повторяем итог несколько раз: гость мог переподключаться к серверу в этот момент
+  for (let k = 1; k <= 6; k++) setTimeout(() => { if (room && phase === "over") send("over", d); }, k * 2000);
 }
 const pStat = (p) => [p.name, p.kills, Math.round(p.dmg), p.lvl, p.built];
 
@@ -1154,12 +1180,14 @@ const hitFlags = (st) => (st.frost ? 1 : 0) | (st.burn ? 2 : 0) | (st.poison ? 4
 // ---------- выстрелы игроков (все виды оружия) ----------
 function firePlayer(p, tgt, real) {
   const st = p.st, v = playerViews[p.idx], Wp = D.WEAPONS[p.wpn] || D.WEAPONS.crossbow;
-  const sx = p.x + Math.sin(p.ry) * 0.5, sz = p.z + Math.cos(p.ry) * 0.5, sy = 0.95;
-  const base = Math.atan2(tgt.x - p.x, tgt.z - p.z), mul = dmgMul(p);
+  // снаряд вылетает из дула арбалета / навершия посоха (если модели ещё нет — из рук)
+  const mz = muzzlePos(v), sx = mz ? mz.x : p.x + Math.sin(p.ry) * 0.45, sz = mz ? mz.z : p.z + Math.cos(p.ry) * 0.45, sy = mz ? Math.max(0.5, mz.y) : 0.75;
+  const base = Math.atan2(tgt.x - sx, tgt.z - sz), mul = dmgMul(p);
+  if (v) { v.shootT = 0.28; }
   const mine = p.idx === me;
   shotN++;
   if (st.kind === "chain") {
-    const pts = [new THREE.Vector3(sx, 1.1, sz)], hit = new Set(); let cur = tgt;
+    const pts = [new THREE.Vector3(sx, sy, sz)], hit = new Set(); let cur = tgt;
     for (let j = 0; j <= st.jumps && cur; j++) {
       hit.add(cur.id); pts.push(new THREE.Vector3(cur.x, 1, cur.z));
       if (mine) { const crit = Math.random() < st.crit; dealDamage(cur, st.dmg * mul * Math.pow(0.85, j) * (crit ? 2 : 1), crit, hitFlags(st)); }
@@ -1168,21 +1196,21 @@ function firePlayer(p, tgt, real) {
     fx.lightning(pts, COL.blue);
   } else if (st.kind === "cone") {
     const dx = Math.sin(base), dz = Math.cos(base);
-    fx.flame(sx + dx * 0.4, 1.0, sz + dz * 0.4, dx, dz, st.range / 4.8, st.cone);
+    fx.flame(sx + dx * 0.15, sy, sz + dz * 0.15, dx, dz, st.range / 4.8, st.cone);
     if (mine) for (const e of G.enemies.values()) { if (e.spawnT > 0) continue; const ex = e.x - p.x, ez = e.z - p.z, d = Math.hypot(ex, ez); if (d > st.range + e.r) continue; const a = Math.atan2(ex, ez); let da = Math.abs(((a - base + Math.PI) % PI2 + PI2) % PI2 - Math.PI); if (da < st.cone) dealDamage(e, st.dmg * mul, false, hitFlags(st), true); }
   } else if (st.kind === "boomer") {
-    for (let i = 0; i < st.n; i++) { const a = base + (st.n > 1 ? (i / (st.n - 1) - 0.5) * st.spread * st.n : 0); shots.push({ kind: "boomer", x: sx, y: 1, z: sz, vx: Math.sin(a) * st.speedP, vy: 0, vz: Math.cos(a) * st.speedP, life: 3, out: st.range, owner: p.idx, real, dmg: st.dmg * mul, hit: new Set(), boom: true, spin: 0 }); }
+    for (let i = 0; i < st.n; i++) { const a = base + (st.n > 1 ? (i / (st.n - 1) - 0.5) * st.spread * st.n : 0); shots.push({ kind: "boomer", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: 0, vz: Math.cos(a) * st.speedP, life: 3, out: st.range, owner: p.idx, real, dmg: st.dmg * mul, hit: new Set(), boom: true, spin: 0 }); }
   } else {
     const n = st.n, spread = n > 1 ? Math.max(st.spread, 0.12 * (n - 1)) : 0;
     for (let i = 0; i < n; i++) {
       const a = base + (n > 1 ? (i / (n - 1) - 0.5) * spread : 0) + (Math.random() - 0.5) * 0.04;
       const crit = Math.random() < st.crit;
-      shots.push({ kind: st.proj || "bolt", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: 0, vz: Math.cos(a) * st.speedP, life: st.range / st.speedP * 1.3, real, owner: p.idx, dmg: st.dmg * mul * (crit ? 2 : 1), crit, pierce: st.pierce, bounce: st.bounce, splash: st.splash, flags: hitFlags(st), hit: new Set(), tgt: st.kind === "rocket" ? tgt.id : n === 1 ? tgt.id : 0, homing: st.kind === "rocket", speed: st.speedP });
+      shots.push({ kind: st.proj || "bolt", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: (0.85 - sy) * st.speedP / Math.max(1.5, dist(sx, sz, tgt.x, tgt.z)), vz: Math.cos(a) * st.speedP, life: st.range / st.speedP * 1.3, real, owner: p.idx, dmg: st.dmg * mul * (crit ? 2 : 1), crit, pierce: st.pierce, bounce: st.bounce, splash: st.splash, flags: hitFlags(st), hit: new Set(), tgt: st.kind === "rocket" ? tgt.id : n === 1 ? tgt.id : 0, homing: st.kind === "rocket", speed: st.speedP });
     }
   }
   // гроза: каждый N-й выстрел — молния с неба
   if (st.storm && shotN % st.storm === 0) { if (mine) { dealDamage(tgt, st.dmg * mul * 2.2, true, 0); if (isHost()) emit(["strike", Math.round(tgt.x * 10), Math.round(tgt.z * 10)]); else send("a", { k: "fx", f: "strike", x: Math.round(tgt.x * 10), z: Math.round(tgt.z * 10) }); } }
-  if (st.kind !== "cone") fx.muzzle(sx + Math.sin(base) * 0.3, sy, sz + Math.cos(base) * 0.3, Math.sin(base), Math.cos(base), PROJ[st.proj || "bolt"] ? PROJ[st.proj || "bolt"].trail : COL.blue);
+  if (st.kind !== "cone") fx.muzzle(sx, sy, sz, Math.sin(base), Math.cos(base), PROJ[st.proj || "bolt"] ? PROJ[st.proj || "bolt"].trail : COL.blue);
   if (v) v.recoil = 1;
   if (st.kind !== "cone" || coneT <= 0) { AU.play(Wp.snd || "xbow", { x: p.x, z: p.z, vol: mine ? 0.55 : 0.3, gap: 0.09 }); coneT = 0.35; }
 }
@@ -1369,15 +1397,18 @@ function updateViews(dt) {
     v.cheer = (v.cheer || 0) - dt;
     if (!(v.cheer > 0 && !moving && !aiming)) {
       const Wp = D.WEAPONS[p.wpn] || {};
-      const upper = aiming ? (Wp.kind === "chain" || Wp.kind === "cone" ? "Cast_U" : Wp.model === "crossbow_2handed" ? "Aim2_U" : "Aim_U") : chop ? "Chop_U" : null;
+      // прицел и выстрел: арбалеты — 1H/2H Ranged (выстрел коротким рывком), посохи и жезлы — заклинание, бумеранг — бросок
+      const magic = Wp.model === "staff" || Wp.model === "wand", two = Wp.model === "crossbow_2handed", shooting = v.shootT > 0;
+      const upper = aiming ? (magic ? (shooting ? "CastShot_U" : "Cast_U") : Wp.kind === "boomer" ? (shooting ? "Chop_U" : "Idle_U") : Wp.kind === "orbit" ? null : two ? (shooting ? "Shoot2_U" : "Aim2_U") : (shooting ? "Shoot_U" : "Aim_U")) : chop ? "Chop_U" : null;
       playAnim(v, "base", moving ? (upper ? "Run_L" : "Running_A") : (upper ? "Idle_L" : "Idle"));
-      playAnim(v, "upper", upper);
+      playAnim(v, "upper", upper, 0.08);
       if (v.cheer > -0.5 && v.cheer < 0) { const a = v.c.act("Cheer"); if (a) a.fadeOut(0.2); v.cheer = -1; }
     }
     const runA = v.c.act("Running_A"); if (runA) runA.timeScale = p.st ? p.st.move / 5.2 : 1;
-    const ch = v.c.act("Chop_U"); if (ch) ch.timeScale = 1.35;
+    const ch = v.c.act("Chop_U"); if (ch) ch.timeScale = 1.35; for (const n of ["Shoot_U", "Shoot2_U"]) { const a = v.c.act(n); if (a) a.timeScale = 2.2; }
     v.c.mixer.update(dt);
-    v.recoil = Math.max(0, v.recoil - dt * 8); if (v.wpn) v.wpn.position.z = -v.recoil * 0.25;
+    v.recoil = Math.max(0, v.recoil - dt * 9); v.shootT = (v.shootT || 0) - dt;
+    if (v.wpn) { const u = v.wpn.userData; u.kick.position[u.ax] = -u.sign * v.recoil * 0.16; }
     v.hurt = Math.max(0, (v.hurt || 0) - dt * 4);
     const rg = p.rageT > 0 ? 0.35 + Math.sin(t * 10) * 0.15 : 0;
     v.allMats.forEach((m) => { if (m.emissive) m.emissive.setRGB(v.hurt * 0.9 + rg, rg * 0.15, 0); });
@@ -1453,7 +1484,7 @@ function updateViews(dt) {
     if (v.flag) v.flag.rotation.y = Math.sin(t * 2.5 + h.idx) * 0.25;
     if (!h.alive && Math.random() < dt * 4) fx.norm.add(h.x + (Math.random() - 0.5) * 2, 1, h.z + (Math.random() - 0.5) * 2, 0, 1.2, 0, 2, 0.8, 2.6, COL.smoke, -0.2, 0.3);
     const near = P() && dist(P().x, P().z, h.x, h.z) < 9;
-    v.slots.forEach((s) => { s.material.opacity = near ? 0.35 + Math.sin(t * 3) * 0.15 : 0.12; });
+    v.slots.forEach((s) => { s.material.opacity = near && G.ph === "build" ? 0.32 + Math.sin(t * 3) * 0.12 : near ? 0.13 : 0.05; });
   }
   // ресурсы
   for (const nd of G.nodes) {
@@ -1467,7 +1498,7 @@ function updateViews(dt) {
   G.clouds.forEach((c) => { if (!isHost()) c.t -= dt; if (Math.random() < 0.5) fx.cloud(c.x, c.z, c.r, COL.venom); });
   if (!isHost()) G.clouds = G.clouds.filter((c) => c.t > 0);
   // огонь лавы, костры
-  if (WD) for (const f of WD.fxPoints) { if (f.k === "campfire") { if (Math.random() < 0.7) fx.embers(f.x, 0.35, f.z, 1); if (Math.random() < 0.5) fx.add.add(f.x + (Math.random() - 0.5) * 0.3, 0.3, f.z + (Math.random() - 0.5) * 0.3, 0, 1.2, 0, 0.4, 0.55, 0.1, Math.random() < 0.5 ? COL.fire : COL.fire2, 0, 1); } else if (f.k === "lava" && Math.random() < 0.3) { const a = Math.random() * PI2, r = Math.random() * f.R; fx.embers(f.x + Math.cos(a) * r, 0, f.z + Math.sin(a) * r, 1); } }
+  if (WD) for (const f of WD.fxPoints) { if (f.k === "torch") { if (Math.random() < 0.55) fx.add.add(f.x + (Math.random() - 0.5) * 0.12, f.y, f.z + (Math.random() - 0.5) * 0.12, 0, 0.9, 0, 0.32, 0.32, 0.06, Math.random() < 0.5 ? COL.fire : COL.fire2, 0, 1); if (Math.random() < 0.12) fx.embers(f.x, f.y + 0.1, f.z, 1); continue; } if (f.k === "campfire") { if (Math.random() < 0.7) fx.embers(f.x, 0.35, f.z, 1); if (Math.random() < 0.5) fx.add.add(f.x + (Math.random() - 0.5) * 0.3, 0.3, f.z + (Math.random() - 0.5) * 0.3, 0, 1.2, 0, 0.4, 0.55, 0.1, Math.random() < 0.5 ? COL.fire : COL.fire2, 0, 1); } else if (f.k === "lava" && Math.random() < 0.3) { const a = Math.random() * PI2, r = Math.random() * f.R; fx.embers(f.x + Math.cos(a) * r, 0, f.z + Math.sin(a) * r, 1); } }
   A.wind.value += dt; grassT.value += dt;
 }
 const COIN = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 14).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xffc83a, metalness: 0.9, roughness: 0.25, emissive: 0x7a5200, emissiveIntensity: 0.6 }), 300);
@@ -1490,16 +1521,19 @@ function updateCamera(dt) {
   const p = P();
   const portrait = H > W;
   const vfov = camera.fov * Math.PI / 180, hfovT = Math.tan(vfov / 2) * camera.aspect;
-  let d = clamp((portrait ? 5.8 : 9) / hfovT, 15, 30);
-  const pitch = 0.98;
+  // ближе и чуть «киношнее»: герой и аванпост — главное на экране телефона
+  let d = clamp((portrait ? 4.9 : 8) / hfovT, 14, 24);
+  const pitch = 0.9;
   if (phase === "play" && p) {
     const vv = playerViews[me]; let tx = vv ? vv.root.position.x : p.x, tz = vv ? vv.root.position.z : p.z;
+    const hh = G.houses[p.house]; if (hh && hh.alive) { const dh = dist(tx, tz, hh.x, hh.z), k = 0.4 * clamp(1 - (dh - 3) / 7, 0, 1); tx = lerp(tx, hh.x, k); tz = lerp(tz, hh.z, k); }   // свой аванпост рядом — держим его в кадре
     if (bossCam > 0) { bossCam -= dt; const k = Math.min(1, bossCam / 0.4, (1.8 - bossCam) / 0.4); tx = lerp(tx, bossCamPos.x, k); tz = lerp(tz, bossCamPos.z, k); }
-    camPos.x = lerp(camPos.x, tx, 1 - Math.exp(-dt * 6)); camPos.z = lerp(camPos.z, tz + 1.2, 1 - Math.exp(-dt * 6));
+    camPos.x = lerp(camPos.x, tx, 1 - Math.exp(-dt * 6)); camPos.z = lerp(camPos.z, tz - 1.4, 1 - Math.exp(-dt * 6));   // смотрим чуть вперёд — герой в нижней половине
   } else { menuAng += dt * 0.05; d = 40; camPos.set(Math.cos(menuAng) * 7, 0, Math.sin(menuAng) * 7); }
   const sh = fx.shake * fx.shake * 0.5;
   camera.position.set(camPos.x + (Math.random() - 0.5) * sh, Math.sin(pitch) * d, camPos.z + Math.cos(pitch) * d + (Math.random() - 0.5) * sh);
   camLook.set(camPos.x, 0, camPos.z); camera.lookAt(camLook);
+  const ov = window.__camOv; if (ov) { const p0 = P() || { x: 0, z: 0 }; camera.position.set(p0.x + ov[0], ov[1], p0.z + ov[2]); camera.lookAt(p0.x, ov[3], p0.z); }   // только для отладки
   AU.setListener(camPos.x, camPos.z);
   const want = phase === "play" && G.ph === "wave" ? 1 : 0;
   dayK = lerp(dayK, want, 1 - Math.exp(-dt * 0.8));
@@ -1758,7 +1792,8 @@ function onOver(d) {
   setTimeout(() => $("screen-end").classList.remove("hidden"), 1300);
   if (room && isHost()) room.on("start", () => {});
 }
-function restart(loc) {
+async function restart(loc) {
+  await prep(loc);
   const c2 = Object.assign({}, cfg, { seed: Math.floor(Math.random() * 1e9), loc }); delete c2.me;
   c2.players = c2.players.filter((pc, i) => !room || (G.players[i] && G.players[i].present));
   if (room) send("start2", Object.assign({ hi: Math.max(0, c2.players.findIndex((pc) => pc.id === room.me.id)), ep: ep + 1 }, c2));
@@ -1774,7 +1809,7 @@ function toMenu() {
 
 // ================= ЛОББИ (своё) =================
 let lobbyInfo = {};
-function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn }; }
+function myHello() { return { uid: S.uid, name: T.playerName() === "Друг" ? "Игрок" : T.playerName(), style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero }; }
 async function hostParty(loc) {
   phase = "lobby"; showLobby({ status: "Создаём комнату…" });
   try { room = await Net.openParty(GAME, null, { name: myHello().name, max: 6, late: true }); }
@@ -1791,6 +1826,7 @@ async function hostParty(loc) {
     if (phase !== "lobby") return;
     loc = lc || loc; const Lc = D.LOC[loc];
     const ps = room.players;
+    send("lobloc", loc); ensure(modelsFor(loc)).catch(() => {});
     $("lobby-card").innerHTML = `<div style="font-size:40px">🏰</div><h2>Комната друзей</h2><p class="mut">Позови друзей одной ссылкой — до 6 игроков. Вход можно и после старта.</p>
       <button class="lobloc" id="lb-loc"><span class="ic">${Lc.icon}</span><div><b>${Lc.name}</b><small>${Lc.waves} волн · сменить локацию ›</small></div></button>
       ${ps.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return `<div class="lobp"><i style="background:${COLORS[i % 6]}"></i>${esc(p.name)}${p.id === room.me.id ? " (ты)" : ""}<small>${D.SKINS[inf.style || "medieval"].icon}</small></div>`; }).join("")}
@@ -1800,10 +1836,11 @@ async function hostParty(loc) {
     $("lb-inv").onclick = share;
     $("lb-loc").onclick = () => { $("lobby").classList.add("hidden"); UI.showMap({ title: "Выбери локацию", btn: "✔ Выбрать", sel: loc, onPick: (id) => { $("lobby").classList.remove("hidden"); drawLobby(id); }, onBack: () => $("lobby").classList.remove("hidden") }); };
     $("lb-x").onclick = () => { room.close(); room = null; toMenu(); };
-    $("lb-go").onclick = () => {
-      const players = room.players.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return { id: p.id, name: p.name, color: COLORS[i % 6], uid: inf.uid || p.id, style: inf.style || "medieval", meta: inf.meta || {}, wpn: inf.wpn || "crossbow" }; });
+    $("lb-go").onclick = async () => {
+      const players = room.players.map((p, i) => { const inf = lobbyInfo[p.id] || {}; return { id: p.id, name: p.name, color: COLORS[i % 6], uid: inf.uid || p.id, style: inf.style || "medieval", meta: inf.meta || {}, wpn: inf.wpn || "crossbow", hero: inf.hero }; });
       const used = {}; players.forEach((pp) => { const k = pp.name; used[k] = (used[k] || 0) + 1; if (used[k] > 1) pp.name = `${k} ${used[k]}`; });
       const c = { loc, seed: Math.floor(Math.random() * 1e9), players };
+      await prep(loc);
       room.lock(); send("start2", c);
       begin({ room, cfg: Object.assign({}, c, { me: 0 }), host: true, hostIdx: 0, ep: 0 });
     };
@@ -1811,6 +1848,7 @@ async function hostParty(loc) {
   };
   drawLobby(loc);
 }
+let welcoming = false;
 async function joinParty(id) {
   phase = "lobby"; showLobby({ status: "Подключаемся к комнате…" });
   try { room = await Net.openParty(GAME, id, { name: myHello().name }); }
@@ -1830,8 +1868,9 @@ async function joinParty(id) {
   room.on("roster", draw);
   room.on("full", (d) => showLobby({ error: d && d.started ? "Игра уже идёт, а мест нет 😕" : "Комната заполнена" }));
   room.on("host-left", () => { if (phase === "lobby") showLobby({ error: "Хозяин комнаты вышел 😕" }); });
-  room.on("start2", (c) => { if (phase === "play" || phase === "over") { if (!c) return; } const mi = c.players.findIndex((p) => p.id === room.me.id); if (mi < 0) return; clearInterval(hi); begin({ room, cfg: Object.assign({}, c, { me: mi }), host: false, hostIdx: c.hi || 0, ep: c.ep || 0 }); });
-  room.on("welcome", (d) => { if (!d || d.to !== room.me.id || phase === "play") return; clearInterval(hi); const c = Object.assign({}, d.cfg, { me: d.me }); begin({ room, cfg: c, host: false, hostIdx: d.hi, ep: d.ep }, d.snap); toast("Ты вернулся в бой!"); });
+  room.on("lobloc", (l) => { if (D.LOC[l]) ensure(modelsFor(l)).catch(() => {}); });   // хозяин выбрал локацию — заранее качаем её монстров
+  room.on("start2", async (c) => { if (phase === "play" || phase === "over") { if (!c) return; } const mi = c.players.findIndex((p) => p.id === room.me.id); if (mi < 0) return; clearInterval(hi); await prep(c.loc); begin({ room, cfg: Object.assign({}, c, { me: mi }), host: false, hostIdx: c.hi || 0, ep: c.ep || 0 }); });
+  room.on("welcome", async (d) => { if (!d || d.to !== room.me.id || phase === "play" || welcoming) return; welcoming = true; clearInterval(hi); const c = Object.assign({}, d.cfg, { me: d.me }); await prep(c.loc).finally(() => { welcoming = false; }); if (phase === "play") return; begin({ room, cfg: c, host: false, hostIdx: d.hi, ep: d.ep }, d.snap); toast("Ты вернулся в бой!"); });
   draw();
 }
 function showLobby(o) {
@@ -1841,13 +1880,16 @@ function showLobby(o) {
 }
 
 // ================= ГЛАВНЫЙ ЦИКЛ =================
+// ?fps=1 — счётчик кадров для проверки на телефоне
+const fpsEl = /[?&]fps=1/.test(location.search) ? Object.assign(document.body.appendChild(document.createElement("div")), { style: "position:fixed;left:6px;bottom:6px;z-index:99;font:700 11px monospace;color:#9f9;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:6px;pointer-events:none" }) : null;
+let fpsN2 = 0, fpsT2 = 0;
 let last = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsCheck = 0;
 function frame(ts) {
   requestAnimationFrame(frame);
   if (last && ts - last > 1500) { const n = performance.now(); lastSnapT = n; G.players.forEach((p) => { if (p.seen) p.seen = n; }); }   // вкладка спала — никого не считаем пропавшим
   let dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
   if (!A.ready) return;
-  const realDt = dt;
+  const realDt = dt, t0 = performance.now();
   if (window.__speed) dt *= window.__speed;
   if (slowMo()) dt *= 0.35;
   if (phase === "play" && !paused()) {
@@ -1862,9 +1904,12 @@ function frame(ts) {
   if (!paused()) { updateViews(phase === "menu" || phase === "lobby" ? dt * 0.5 : dt); fx.update(dt); }
   updateCamera(realDt);
   if (window.__norender) return;   // только для автотестов
+  const t1 = performance.now();
   renderer.info.autoReset = false; renderer.info.reset();
   if (composer) composer.render(); else renderer.render(scene, camera);
   drawOverlay();
+  if (fpsEl) { fpsN2++; if (ts - fpsT2 > 500) { fpsEl.textContent = `${Math.round(fpsN2 * 1000 / (ts - fpsT2))} fps · ${renderer.info.render.calls} dc · ${Math.round(renderer.info.render.triangles / 1000)}k tri · q${quality}`; fpsN2 = 0; fpsT2 = ts; } }
+  const pf = window.__perf; if (pf) { pf.n++; pf.logic += t1 - t0; pf.render += performance.now() - t1; pf.dc += renderer.info.render.calls; pf.tri += renderer.info.render.triangles; }
   if (qAuto && phase === "play") {
     fpsAcc += realDt; fpsN++; fpsCheck += realDt;
     if (fpsCheck > 4) { const fps = fpsN / fpsAcc; fpsAcc = fpsN = fpsCheck = 0; if (fps < 38 && quality > 0) { quality--; applyQuality(); toast(`Графика: ${["низкая", "средняя", "высокая"][quality]} (для плавности)`); } }
@@ -1890,29 +1935,53 @@ const menuHandlers = {
   onParty: () => { UI.hideMenu(); UI.showMap({ title: "Локация для друзей", btn: "👥 Создать комнату", onPick: (loc) => hostParty(loc), onBack: () => UI.showMenu(menuHandlers) }); },
   onQuality: readQ
 };
-function startSolo(loc) {
+// модели, нужные локации: монстры её семейств, боссы и их свита, торговец
+function modelsFor(locId) {
+  const L = D.LOC[locId] || D.LOCS[0], types = new Set();
+  for (const f of L.fam) for (const k of D.FAM[f]) types.add(k);
+  for (const k of [...Object.values(L.bosses), ...Object.values(L.mid)]) types.add(k);
+  for (const k of [...types]) { const M = D.MON[k]; if (M.minion) types.add(M.minion); if (M.split) types.add(M.split); }
+  const out = new Set(["merchant"]); for (const k of types) { const M = D.MON[k]; out.add(M.q || M.model); }
+  return [...out];
+}
+// перед боем: догружаем монстров локации (с полосой, если их ещё нет)
+async function prep(locId) {
+  const need = modelsFor(locId).filter((n) => !has(n));
+  if (!need.length) return;
+  const el = $("busy"); el.classList.remove("hidden"); el.querySelector("i").style.width = "4%";
+  try { await ensure(need, (k) => { el.querySelector("i").style.width = Math.max(4, k * 100).toFixed(0) + "%"; }); }
+  finally { el.classList.add("hidden"); }
+}
+async function startSolo(loc) {
   room = null;
+  await prep(loc);
   const h = myHello();
-  begin({ room: null, cfg: { loc, seed: Math.floor(Math.random() * 1e9), players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn }], me: 0 }, host: true });
+  begin({ room: null, cfg: { loc, seed: Math.floor(Math.random() * 1e9), players: [{ id: "me", name: h.name === "Игрок" ? "Ты" : h.name, color: COLORS[0], uid: S.uid, style: S.skin, meta: S.up, wpn: S.wpn, hero: S.hero }], me: 0 }, host: true });
 }
 
 T.init({ header: "#1a2230", bg: "#1a2230", back: "../" });
 applyQuality();
 requestAnimationFrame(frame);
 (async () => {
-  await loadSave(); readQ(); AU.applyVol();
-  $("m-gems").textContent = S.gems || 0;
+  const bt = window.__bootT = { start: performance.now() };
+  const saveP = loadSave().then(() => { bt.save = performance.now(); });   // облако Telegram — параллельно с загрузкой моделей
   const B = window.Boot || { set() {}, done() {}, fail() {} };
   B.set(0.15, "Загружаем героев, монстров и мир…");
   const mb = (b) => (b / 1048576).toFixed(1);
   await loadAll((k, g, t) => { B.set(0.15 + k * 0.8, null, t ? `${mb(g)} из ~${mb(t)} МБ` : ""); $("load").firstElementChild.style.width = (k * 100).toFixed(0) + "%"; });
+  bt.assets = performance.now();
+  await saveP; readQ(); AU.applyVol(); $("m-gems").textContent = S.gems || 0;
   B.set(0.96, "Готовим карту…", "");
   $("load").style.display = "none";
   loadEnv(renderer, (env) => { envMap = env; scene.environment = env; });
   const inv = readInvite();
   $("menu").classList.remove("hidden");
   if (inv) { $("menu").classList.add("hidden"); buildMenuScene(); B.done(); joinParty(inv); return; }
-  buildMenuScene(); UI.showMenu(menuHandlers); AU.music("menu"); B.done();
+  // меню доступно сразу; 3D-фон строится в следующем кадре (если игрок уже начал бой — не нужен)
+  UI.showMenu(menuHandlers); AU.music("menu"); B.done(); bt.done = performance.now();
+  requestAnimationFrame(() => setTimeout(() => { if (phase === "menu") buildMenuScene(); bt.scene = performance.now(); }, 0));
+  // пока игрок в меню — тихо качаем монстров текущей локации кампании
+  setTimeout(() => { const cur = D.LOCS.find((l) => !locState(l.id).cleared) || D.LOCS[0]; ensure(modelsFor(cur.id)).catch(() => {}); }, 1500);
 })().catch((e) => { console.error(e); window.Boot && Boot.fail(); const l = $("m-camp-sub"); if (l) l.textContent = "Не удалось загрузить игру 😕 Проверь интернет"; });
 
 // отладка и автотесты
@@ -1922,5 +1991,6 @@ window.__game = {
   killAll() { for (const e of [...G.enemies.values()]) killEnemy(e, me); G.queue = []; },
   setQuality(q) { S.set.q = String(q); readQ(); }, openPanel: (k) => openPanel(k, nearHouse()), tp(x, z) { const p = P(); p.x = x; p.z = z; if (hosting) p.seq++; },
   sim(sec, cb) { const dt = 1 / 30; for (let i = 0; i < sec * 30 && phase === "play"; i++) { if (cb) cb(i); if (isHost()) hostStep(dt); localStep(dt); remoteFire(dt); updateShots(dt); if (i % 6 === 0) { updateViews(dt * 6); fx.update(dt * 6); } } hud(); return { w: G.wave, ph: G.ph, en: G.enemies.size, q: G.queue.length, over: G.over, phase }; },
+  startSoloWith(hero, wpn, loc) { S.hero = hero; S.wpn = wpn; return startSolo(loc); },
   D, poolTarget, get renderer() { return renderer; }, get shots() { return shots; }, get room() { return room; }, scene, camera, get flows() { return flows; }, get WD() { return WD; }
 };

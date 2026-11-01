@@ -6,7 +6,6 @@
 <title>Аванпост</title>
 <script>window.SFX_NO_MUSIC = true; window.SFX_OFF = true;</script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="../shared/i18n.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
 <script type="importmap">
@@ -49,16 +48,27 @@
   .map-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; font-family: "Russo One", sans-serif; font-weight: 400; font-size: 18px; }
   .map-top .gbtn { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
   .map-area { position: relative; flex: 1; margin: 0 10px; border-radius: 22px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 10px 30px rgba(0,0,0,.4); }
-  .map-area svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .mdeco { position: absolute; transform: translate(-50%,-50%); pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.3)); }
-  .mnode { position: absolute; transform: translate(-50%,-50%); width: 74px; border: 0; background: none; color: #fff; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
-  .mnode .mic { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; background: radial-gradient(circle at 35% 30%, #fff8e6, #d9b97a 70%); border: 3px solid #5a3a1a; box-shadow: 0 6px 14px rgba(0,0,0,.45); transition: transform .2s; }
-  .mnode.sel .mic { transform: scale(1.15); box-shadow: 0 0 0 4px rgba(255,211,106,.9), 0 0 26px rgba(255,200,80,.9); animation: glow 1.4s ease-in-out infinite; }
   @keyframes glow { 50% { box-shadow: 0 0 0 6px rgba(255,211,106,.6), 0 0 36px rgba(255,200,80,1); } }
-  .mnode.lock .mic { filter: grayscale(1) brightness(.7); }
-  .mnode.done .mic { border-color: #2f7a3a; }
-  .mnode .mname { margin-top: 4px; font-size: 11.5px; font-weight: 800; text-shadow: 0 1px 3px #000, 0 0 6px #000; white-space: nowrap; }
-  .mnode .mst, .mc-h small { color: #6a5a3a; } .mst i, .mc-h i { font-style: normal; color: rgba(255,255,255,.35); text-shadow: 0 1px 2px #000; } .mst i.on, .mc-h i.on { color: #ffd36a; }
+  .map-area { background: #143f5c; }
+  .map-area canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #map-fx { pointer-events: none; }
+  .mcloud { position: absolute; left: -45%; width: 42%; height: 9%; border-radius: 50%; pointer-events: none; opacity: var(--o); background: radial-gradient(ellipse at 50% 60%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%); filter: blur(2px); animation: cloud var(--d) linear infinite; }
+  .mcloud::after { content: ""; position: absolute; left: 25%; top: -45%; width: 55%; height: 120%; border-radius: 50%; background: radial-gradient(ellipse, rgba(255,255,255,.9), rgba(255,255,255,0) 70%); }
+  @keyframes cloud { from { transform: translateX(0); } to { transform: translateX(360%); } }
+  .mnode { position: absolute; transform: translate(-50%,-50%); width: 92px; border: 0; background: none; color: #fff; display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 0; }
+  .mnode .mic { position: relative; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; font-size: 27px;
+    background: radial-gradient(circle at 38% 30%, color-mix(in srgb, var(--bc) 70%, #fff), var(--bc) 55%, var(--bd)); border: 3px solid #e9c46a;
+    box-shadow: 0 0 0 2px #7a5a1a, inset 0 -4px 8px rgba(0,0,0,.35), inset 0 3px 6px rgba(255,255,255,.35), 0 6px 12px rgba(0,0,0,.45); transition: transform .2s; }
+  .mnode .mic em { font-style: normal; filter: drop-shadow(0 2px 2px rgba(0,0,0,.45)); }
+  .mnode .mck { position: absolute; right: -4px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%; background: #2f9e4a; color: #fff; font-size: 13px; display: grid; place-items: center; border: 2px solid #e9c46a; }
+  .mnode.sel .mic { transform: scale(1.14); box-shadow: 0 0 0 2px #7a5a1a, 0 0 0 5px rgba(255,214,110,.85), 0 0 26px rgba(255,200,80,.9), inset 0 -4px 8px rgba(0,0,0,.35); animation: glow 1.4s ease-in-out infinite; }
+  .mnode.lock .mic { background: radial-gradient(circle at 38% 30%, #8a8f96, #4d535b 60%, #2e3238); border-color: #8a8f96; box-shadow: 0 0 0 2px #2e3238, inset 0 -4px 8px rgba(0,0,0,.45), 0 6px 12px rgba(0,0,0,.45); font-size: 22px; }
+  .mnode .mname { margin-top: 5px; padding: 2px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 800; color: #3a2610; white-space: nowrap; background: linear-gradient(#fff4d6, #e8cf98); box-shadow: 0 2px 4px rgba(0,0,0,.35); }
+  .mnode.lock .mic em { filter: grayscale(.85) brightness(.75); opacity: .8; }
+  .mnode .mlk { position: absolute; right: -5px; bottom: -3px; width: 22px; height: 22px; border-radius: 50%; background: #2e3238; font-size: 11px; display: grid; place-items: center; border: 2px solid #8a8f96; }
+  .mnode.lock .mname { background: linear-gradient(#d8d8d8, #a9adb3); color: #33373d; }
+  .mnode .mst { margin-top: 1px; font-size: 13px; line-height: 1; }
+  .mst i, .mc-h i { font-style: normal; color: rgba(255,255,255,.35); text-shadow: 0 1px 2px #000; } .mst i.on, .mc-h i.on { color: #ffd36a; }
   .map-card { margin: 10px; padding: 14px; border-radius: 22px; background: var(--glass2); border: 1px solid var(--line); margin-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .mc-h { display: flex; gap: 10px; align-items: center; } .mc-ic { font-size: 34px; } .mc-h b { display: block; font-size: 19px; } .mc-h small { color: var(--mut); font-weight: 700; }
   .map-card p { margin: 8px 0; color: var(--mut); font-size: 13.5px; line-height: 1.35; font-weight: 600; }
@@ -161,6 +171,10 @@
   .mut { color: var(--mut); font-weight: 700; font-size: 13.5px; }
   #end-buttons .btn { display: block; width: 100%; margin: 8px 0 0; padding: 13px 16px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.08); color: var(--tx); font: 800 15px Manrope, sans-serif; text-align: center; }
   #end-buttons .btn.primary { background: linear-gradient(135deg, #ffb347, #ff7a2f); border-color: transparent; color: #2a1405; } #end-buttons .btn.ghost { background: transparent; }
+  #busy { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8,10,18,.45); }
+  #busy .glass { padding: 18px 22px; border-radius: 18px; text-align: center; min-width: 230px; }
+  #busy .bbar { height: 8px; border-radius: 6px; background: rgba(255,255,255,.12); margin-top: 12px; overflow: hidden; } #busy .bbar i { display: block; height: 100%; width: 4%; background: linear-gradient(90deg, #ffb347, #ff6a3d); transition: width .2s; }
+  #vig { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse 85% 70% at 50% 46%, rgba(0,0,0,0) 58%, rgba(28,14,4,.34) 100%); }
 </style>
 </head>
 <body>
@@ -191,6 +205,7 @@
 })();
 </script>
 <canvas id="gl"></canvas>
+<div id="vig"></div>
 <canvas id="ov"></canvas>
 <div id="hud" class="hidden">
   <div id="hud-row">
@@ -214,6 +229,7 @@
 <div id="joy"><i></i></div>
 <div id="msg" class="tx"></div>
 <div id="toast" class="tx glass"></div>
+<div id="busy" class="hidden"><div class="glass"><b>Призываем чудовищ…</b><div class="bbar"><i></i></div></div></div>
 <div id="gift" class="glass"></div>
 <div id="dead" class="tx hidden"></div>
 <div id="perks" class="hidden"></div>

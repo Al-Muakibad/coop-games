@@ -77,9 +77,9 @@ function waterMaterial(kind, sky) {
 }
 
 // ---------- построение мира ----------
-export function buildWorld(world, renderer, locId, seed, spots, msp) {
+export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   const L = D.LOC[locId] || D.LOCS[0], G = L.ground, r = rng(seed);
-  const W = { L, obstacles: [], water: [], nodes: [], fxPoints: [], resInst: {}, update: null, lights: [] };
+  const W = { L, obstacles: [], water: [], nodes: [], fxPoints: [], resInst: {}, update: null, lights: [], colors };
   // озёра: подальше от домов и центра
   const lakes = [];
   const nLakes = L.water === "lava" ? 3 : L.water === "oasis" ? 1 : 2;
@@ -98,8 +98,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
     const x = pos.getX(i), z = pos.getZ(i), rr = Math.hypot(x, z);
     let alt = clamp((fbm(x * 0.05, z * 0.05) - 0.45) * 2.2, 0, 1) * 0.85, path = 0, plaza = 0;
     let d = 1e9; for (const s of spots) d = Math.min(d, dist(x, z, s.x, s.z));
-    plaza = clamp(1 - (d - 3.8) / 1.6, 0, 1) * (0.75 + 0.25 * noise2(x * 0.8, z * 0.8));
-    path = clamp(1 - (d - 5.5) / 2.5, 0, 1) * 0.6;
+    const edge = 3.0 + (noise2(x * 0.9 + 7, z * 0.9) - 0.5) * 1.6;   // рваный край мощёного двора
+    plaza = clamp(1 - (d - edge) / 0.8, 0, 1) * (0.8 + 0.2 * noise2(x * 1.7, z * 1.7));
+    path = clamp(1 - (d - 4.4 - (noise2(x * 0.5, z * 0.5) - 0.5) * 2.2) / 1.8, 0, 1) * (0.45 + 0.35 * noise2(x * 1.3 + 3, z * 1.3));   // утоптанная земля вокруг
     const dm = dist(x, z, msp.x, msp.z); plaza = Math.max(plaza, clamp(1 - (dm - 2.2) / 1.5, 0, 1) * 0.8);
     // тропинки от домов к центру и к краю
     for (const s of spots) {
@@ -120,6 +121,14 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
     sp[i * 4] = alt; sp[i * 4 + 1] = path; sp[i * 4 + 2] = plaza; sp[i * 4 + 3] = fbm(x * 0.09 + 3, z * 0.09);
   }
   geo.setAttribute("splat", new THREE.BufferAttribute(sp, 4)); geo.computeVertexNormals();
+  // маска земли в любой точке (билинейно по сетке): [альт-трава, тропа, двор]
+  const splatAt = (x, z) => {
+    const fx = (x + GS / 2) / GS * seg, fz = (z + GS / 2) / GS * seg, i = clamp(Math.floor(fx), 0, seg - 1), j = clamp(Math.floor(fz), 0, seg - 1), tx = fx - i, tz = fz - j;
+    const k = (a, b) => (a + b * (seg + 1)) * 4, out = [0, 0, 0];
+    for (let c = 0; c < 3; c++) out[c] = lerp(lerp(sp[k(i, j) + c], sp[k(i + 1, j) + c], tx), lerp(sp[k(i, j + 1) + c], sp[k(i + 1, j + 1) + c], tx), tz);
+    return out;
+  };
+  W.splatAt = splatAt;
   const ground = new THREE.Mesh(geo, terrainMaterial(G)); ground.receiveShadow = true; world.add(ground);
   W.ground = ground;
   // вода
@@ -164,8 +173,18 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
     const s = (kind === "tree" ? 0.9 + r() * 0.3 : 0.95 + r() * 0.3) * NS(model); return { kind, model, x, z, s, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * s, ry: r() * PI2, amt: D.RES[kind].amount, regrow: 0 };
   }
   // мелкий декор внутри поля
-  const decoN = L.id === "snow" ? 60 : L.id === "desert" ? 50 : 120;
-  for (let i = 0; i < decoN; i++) { const a = r() * PI2, rr = Math.sqrt(r()) * (D.MAP_R + 2), x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (!freeAt(x, z, -2.5)) continue; const n = L.deco[Math.floor(r() * L.deco.length)]; put(n, x, z, 0.8 + r() * 0.5); }
+  const clusters = L.id === "snow" ? 14 : L.id === "desert" ? 12 : L.id === "volcano" ? 12 : 26;
+  const okDeco = (x, z) => freeAt(x, z, -2.2) && splatAt(x, z)[1] < 0.3 && splatAt(x, z)[2] < 0.1 && Math.hypot(x, z) < D.MAP_R + 3;
+  for (let c = 0, t = 0; c < clusters && t < 600; t++) {
+    // центр кучки — чаще у деревьев и камней (там «живописнее»)
+    let cx, cz; const nd = W.nodes.length && r() < 0.6 ? W.nodes[Math.floor(r() * W.nodes.length)] : null;
+    if (nd) { const a = r() * PI2; cx = nd.x + Math.cos(a) * 1.3; cz = nd.z + Math.sin(a) * 1.3; } else { const a = r() * PI2, rr = 5 + Math.sqrt(r()) * (D.MAP_R - 4); cx = Math.cos(a) * rr; cz = Math.sin(a) * rr; }
+    if (!okDeco(cx, cz)) continue; c++;
+    const kinds = [L.deco[Math.floor(r() * L.deco.length)], L.deco[Math.floor(r() * L.deco.length)]], n = 3 + Math.floor(r() * 5);
+    for (let k = 0; k < n; k++) { const a = r() * PI2, rr = Math.pow(r(), 0.7) * 1.6, x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr; if (okDeco(x, z)) put(kinds[k % 2], x, z, (1.0 - rr * 0.18) * (0.75 + r() * 0.45)); }
+  }
+  // опушка: кусты и папоротники плотнее к краю поля — мягкий переход в лес
+  const edgeD = L.deco.filter((n) => /Bush|Fern|Plant/.test(n)); if (edgeD.length) for (let i = 0; i < 70; i++) { const a = r() * PI2, rr = D.MAP_R - 1.5 + Math.pow(r(), 0.6) * 4.5, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (freeAt(x, z, -2) && splatAt(x, z)[1] < 0.4) put(edgeD[Math.floor(r() * edgeD.length)], x, z, 0.9 + r() * 0.6); }
   // камни-валуны декоративные
   for (let i = 0; i < 10; i++) { const a = r() * PI2, rr = 8 + r() * 18, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (!freeAt(x, z, 0.5)) continue; put("RockPath_Round_Small_1", x, z, 1.0); }
   // руины
@@ -185,6 +204,22 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
     W.fxPoints.push({ k: "campfire", x: camp.x, z: camp.z }); W.obstacles.push({ x: camp.x, z: camp.z, r: 0.7 });
     const b = cloneProp("Bench"); b.scale.setScalar(1.1); b.position.set(camp.x + 1.4, 0, camp.z + 0.6); b.rotation.y = 1.2; world.add(b);
   }
+  // обжитой вид у каждого аванпоста (только снаружи кольца башен, проходы свободны)
+  spots.forEach((sp0, si) => {
+    const toC = Math.atan2(msp.z - sp0.z, msp.x - sp0.x) || 0, at = (ang, rr) => ({ x: sp0.x + Math.cos(ang) * rr, z: sp0.z + Math.sin(ang) * rr });
+    const place = (obj, p, s, ry, rad) => { obj.position.set(p.x, 0, p.z); obj.scale.setScalar(s); obj.rotation.y = ry; obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); world.add(obj); if (rad) W.obstacles.push({ x: p.x, z: p.z, r: rad }); };
+    const team = (W.colors && W.colors[si]) || null;
+    for (const sgn of [-1, 1]) {   // знамёна по бокам тропы к центру
+      const p = at(toC + sgn * 0.42, 6.3);
+      place(makeBanner(team || "#c0392b"), p, 1, -toC + Math.PI / 2, 0.3);
+      const tp = at(toC + Math.PI + sgn * 0.36, 6.2), t = cloneProp("Torch_Metal"); place(t, tp, 1.3, 0, 0.25);
+      W.fxPoints.push({ k: "torch", x: tp.x, z: tp.z, y: 1.55 });
+    }
+    const cl = at(toC + 1.75, 6.9);   // бочки и ящики
+    [["Barrel", 0, 0, 1.0], ["Crate_Wooden", 0.75, 0.35, 0.95], ["Barrel_Apples", -0.55, 0.6, 0.9], ["Bucket_Wooden_1", 0.3, -0.7, 0.9]].forEach(([n, dx, dz, sc]) => { const o = cloneProp(n); place(o, { x: cl.x + dx, z: cl.z + dz }, sc, r() * PI2, 0); });
+    W.obstacles.push({ x: cl.x, z: cl.z, r: 1.0 });
+    const wp = at(toC - 1.75, 6.8), lumber = cloneWorld("resource_lumber"); place(lumber, wp, 1.25, toC, 0.8);
+  });
   // инстансинг всего, что накопилось
   W.inst = [];
   for (const [name, list] of Object.entries(inst)) {
@@ -197,6 +232,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
       if (L.snowy && /Leaves|Leaf/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.85, 0.92, 1.0); }
       if (L.charred && /Bark/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(0.35, 0.3, 0.3); }
       if (L.id === "autumn" && /Leaves_Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.2, 0.7, 0.35); }
+      if ((L.id === "desert" || L.id === "volcano") && /Grass|Leaves$|^Leaves/.test(mat.name) && !/Pine|Twisted|Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.05, 0.88, 0.55); }   // сухая трава пустыни
       const im = new THREE.InstancedMesh(o.geometry, mat, list.length); im.castShadow = big; im.receiveShadow = true;
       const local = o.matrixWorld.clone(), mm = new THREE.Matrix4();
       list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, 0, it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(it.s, it.s, it.s)); im.setMatrixAt(i, mm.multiply(local)); });
@@ -220,10 +256,27 @@ export function buildWorld(world, renderer, locId, seed, spots, msp) {
     if (crownSrc && crowns.length) crownSrc.traverse((o) => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, o.material, crowns.length); im.castShadow = true; const mm = new THREE.Matrix4(); crowns.forEach((c, i) => { mm.compose(new THREE.Vector3(c.x, c.y - 0.3, c.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() * PI2, 0)), new THREE.Vector3(2.6 * c.s, 1.6 * c.s, 2.6 * c.s)); im.setMatrixAt(i, mm); }); world.add(im); });
   }
   // трава-травинки (дёшево, много)
-  buildGrass(world, L, spots, lakeD);
+  buildGrass(world, L, spots, lakeD, splatAt);
   // погода
   W.weather = makeWeather(world, L.weather);
   return W;
+}
+
+// знамя на шесте: древко, перекладина, полотнище цвета команды (колышется на ветру), золотое навершие
+const bannerGeo = { pole: new THREE.CylinderGeometry(0.05, 0.065, 2.7, 7).translate(0, 1.35, 0), bar: new THREE.CylinderGeometry(0.035, 0.035, 0.9, 6).rotateZ(Math.PI / 2).translate(0, 2.45, 0), tip: new THREE.ConeGeometry(0.09, 0.22, 8).translate(0, 2.8, 0), cloth: new THREE.PlaneGeometry(0.8, 1.25, 4, 6).translate(0, 1.82, 0.02) };
+const bannerMats = {};
+export function makeBanner(color) {
+  const g = new THREE.Group(), key = String(color);
+  if (!bannerMats[key]) {
+    const cm = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.75, side: THREE.DoubleSide });
+    cm.onBeforeCompile = (sh) => { sh.uniforms.uWind = A.wind; sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform float uWind;").replace("#include <begin_vertex>", `#include <begin_vertex>
+      float k = clamp((2.45 - position.y) / 1.25, 0.0, 1.0); transformed.z += sin(uWind * 2.6 + position.x * 3.0 + position.y * 2.0) * 0.09 * k; transformed.x += sin(uWind * 1.9 + position.y * 2.5) * 0.04 * k;`); };
+    cm.customProgramCacheKey = () => "banner";
+    bannerMats[key] = { cloth: cm, wood: new THREE.MeshStandardMaterial({ color: 0x5a3b24, roughness: 0.85 }), gold: new THREE.MeshStandardMaterial({ color: 0xd4a73a, metalness: 0.7, roughness: 0.35 }) };
+  }
+  const M = bannerMats[key];
+  g.add(new THREE.Mesh(bannerGeo.pole, M.wood), new THREE.Mesh(bannerGeo.bar, M.wood), new THREE.Mesh(bannerGeo.tip, M.gold), new THREE.Mesh(bannerGeo.cloth, M.cloth));
+  return g;
 }
 
 // ---------- ресурсные узлы: инстансы целого и срубленного ----------
@@ -260,8 +313,8 @@ export function updNode(W, nd) {
 
 // ---------- травинки ----------
 export const grassT = { value: 0 };
-function buildGrass(world, L, spots, lakeD) {
-  const count = L.id === "snow" ? 350 : L.id === "desert" ? 250 : L.id === "volcano" ? 200 : 1100;
+function buildGrass(world, L, spots, lakeD, splatAt) {
+  const count = L.id === "snow" ? 500 : L.id === "desert" ? 380 : L.id === "volcano" ? 300 : 1700;
   const g = new THREE.BufferGeometry(), P3 = [], C3 = [];
   for (let b = 0; b < 5; b++) {
     const a = b / 5 * Math.PI + 0.3, w = 0.06, h = 0.32 + (b % 3) * 0.12, ox = Math.cos(a) * 0.09, oz = Math.sin(a) * 0.09, lean = 0.1;
@@ -280,16 +333,19 @@ function buildGrass(world, L, spots, lakeD) {
   const col = new THREE.Color(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3();
   let k = 0;
   const [h0, s0, l0] = L.grass;
-  for (let i = 0; i < count * 4 && k < count; i++) {
-    const a = Math.random() * PI2, rr = Math.sqrt(Math.random()) * (D.MAP_R + 4), x = Math.cos(a) * rr, z = Math.sin(a) * rr;
-    if (spots.some((p) => dist(x, z, p.x, p.z) < 5.4)) continue;
+  // кучки травы: центры там, где земля «дикая» (не тропа и не двор); внутри кучки плотность спадает к краю
+  let cx = 0, cz = 0, left = 0, cl = 0, ch = 0;
+  for (let i = 0; i < count * 8 && k < count; i++) {
+    if (left <= 0) { const a = Math.random() * PI2, rr = Math.sqrt(Math.random()) * (D.MAP_R + 4); cx = Math.cos(a) * rr; cz = Math.sin(a) * rr; left = 6 + Math.floor(Math.random() * 16); cl = (Math.random() - 0.5) * 0.12; ch = (Math.random() - 0.5) * 0.04; }
+    const a = Math.random() * PI2, rr = Math.pow(Math.random(), 0.65) * 1.5, x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
+    left--;
+    if (spots.some((p) => dist(x, z, p.x, p.z) < 5.0)) { left = 0; continue; }
     if (lakeD(x, z) < 0.3) continue;
-    if (noise2(x * 0.15, z * 0.15) < 0.38 && Math.random() < 0.75) continue;
-    m.compose(v.set(x, 0, z), q.setFromEuler(e.set(0, Math.random() * PI2, 0)), s.setScalar(0.8 + Math.random() * 1.2));
+    const sm = splatAt(x, z); if (sm[1] > 0.3 || sm[2] > 0.05) continue;
+    m.compose(v.set(x, 0, z), q.setFromEuler(e.set(0, Math.random() * PI2, 0)), s.setScalar((0.7 + Math.random() * 0.8) * (1.15 - rr * 0.3)));
     im.setMatrixAt(k, m);
-    const f = Math.random();
-    if (L.id === "forest" && f < 0.05) col.set([0xffe066, 0xff9ecf, 0xffffff, 0xb08cff][Math.floor(Math.random() * 4)]);
-    else col.setHSL(h0 + (Math.random() - 0.5) * 0.05, s0, l0 + Math.random() * 0.15);
+    if (L.id === "forest" && Math.random() < 0.04) col.set([0xffe066, 0xff9ecf, 0xffffff, 0xb08cff][Math.floor(Math.random() * 4)]);
+    else col.setHSL(h0 + ch + (Math.random() - 0.5) * 0.03, s0, l0 + cl + Math.random() * 0.1);
     im.setColorAt(k, col); k++;
   }
   im.count = k; world.add(im);

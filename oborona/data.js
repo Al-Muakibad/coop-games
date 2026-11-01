@@ -6,6 +6,7 @@ export const SLOT_R = 4.7;
 export const SLOTS = 6;
 export const BUILD_FIRST = 40, BUILD_TIME = 26;
 export const HEROES = ["knight", "barbarian", "rogue", "mage"];
+export const HERO_INFO = { knight: { name: "Рыцарь", icon: "🛡️", desc: "Доспехи в цвет твоей команды" }, barbarian: { name: "Варвар", icon: "🐻", desc: "Медвежья шапка и плащ" }, rogue: { name: "Следопыт", icon: "🏹", desc: "Плащ с капюшоном" }, mage: { name: "Волшебница", icon: "🔮", desc: "Шляпа и мантия" } };
 
 // ---------- Локации кампании ----------
 // ground: base/alt/path/plaza — наборы PBR-текстур из assets/tex
@@ -35,7 +36,7 @@ export const LOCS = [
     waves: 12, diff: 1.45, fam: ["orcs", "undead", "beasts", "flyers"], bosses: { 12: "boss_dragon" }, mid: { 6: "boss_spider" }, music: "desert",
     ground: { base: "sand", alt: "redsand", path: "gravel", plaza: "sandpave", tint: [1.05, 0.98, 0.88], tintAlt: [1, 0.95, 0.9] },
     trees: [["DeadTree_3", 1], ["Pine_5", 0.3]], deadTrees: 0.6, palms: true,
-    deco: ["Plant_7_Big", "Plant_1_Big", "Pebble_Round_1", "Pebble_Round_3"],
+    deco: ["Plant_7_Big", "Grass_Wispy_Short", "Pebble_Round_1", "Pebble_Round_3", "Grass_Common_Short"],
     grass: [0.16, 0.45, 0.45], water: "oasis", weather: "dust", house: "eastern", dragonTint: 0xe8b04a,
     sky: { day: 0xf6dcae, night: 0x3b3466, fog: 0xf3d9a8, sun: 0xfff1c0, sunNight: 0xff8a5a, hemi: [0xfff2d8, 0x8a6a3a] } },
   { id: "snow", name: "Снежный перевал", icon: "🏔️", desc: "Ледяной перевал в горах. Мороз, метель и ледяной великан.",
