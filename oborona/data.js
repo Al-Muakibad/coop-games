@@ -225,7 +225,7 @@ export function stats(p) {
     frost: !!(w.frost || k.frost), burn: !!(w.burn || k.burn), poison: !!(w.poison || k.venom), pyro: !!k.pyro,
     move: 5.2 * (1 + 0.12 * (k.speed || 0) + (a.spd || 0)) * (am === "wind" ? 1.2 : 1),
     maxhp: Math.round((100 + 30 * (k.hp || 0) + a.hp) * (1 + 0.08 * (m.hp || 0))), def: Math.min(0.6, a.def + 0.07 * (k.armor || 0)), regen: 0.4 + 1.2 * (k.regen || 0),
-    magnet: 3.4 * (1 + 0.6 * (k.magnet || 0)), gather: 1 + (k.lumber || 0) + (m.gather || 0),
+    magnet: 3.4 * (1 + 0.6 * (k.magnet || 0)), gather: 2 + (k.lumber || 0) + (m.gather || 0),
     coinMul: (am === "greed" ? 1.4 : 1) * (1 + 0.25 * (k.greed || 0)), vamp: (am === "vamp" ? 3 : 0) + 2 * (k.leech || 0),
     turretMul: (am === "guard" ? 1.35 : 1) * (1 + 0.2 * (k.engineer || 0)) * (1 + 0.06 * (m.tower || 0)),
     storm: am === "storm" ? 6 : k.stormp ? 5 : 0, berserk: !!k.berserk, ghost: 2 * (k.ghost || 0), nova: !!k.nova, chain: !!k.chain, plague: !!k.plague, shatter: !!k.shatter,
@@ -235,12 +235,22 @@ export function stats(p) {
 }
 
 // ---------- Дом, стены, башни ----------
-export const HOUSE_LV = [null, { hp: 400 }, { hp: 650, cost: { c: 35, w: 30, s: 15 } }, { hp: 950, cost: { c: 80, w: 60, s: 45 } }, { hp: 1400, cost: { c: 160, w: 90, s: 100 } }];
+// Аванпост растёт долго: дом до 15 уровня, стены — 8 ступеней, башни и добытчики — до 10. Цены растут плавно:
+// в начале улучшение почти каждую волну, дальше — реже.
+const geo = (base, k, n) => Math.round(base * Math.pow(k, n));
+export const HOUSE_MAX = 15;
+export const HOUSE_LV = [null, { hp: 400 }];
+for (let lv = 2; lv <= HOUSE_MAX; lv++) HOUSE_LV.push({ hp: geo(400, 1.3, lv - 1), cost: { c: geo(30, 1.45, lv - 2), w: geo(25, 1.42, lv - 2), s: geo(15, 1.48, lv - 2) } });
 export const WALL_LV = [
   { name: "Нет ограды", hp: 0 },
-  { name: "Деревянный частокол", hp: 200, cost: { w: 30 } },
-  { name: "Каменная ограда", hp: 450, cost: { w: 20, s: 40 } },
-  { name: "Крепостная стена", hp: 750, cost: { c: 50, s: 80 } }
+  { name: "Деревянный частокол", hp: 200, cost: { w: 25 } },
+  { name: "Каменная ограда", hp: 450, cost: { w: 20, s: 35 } },
+  { name: "Крепостная стена", hp: 750, cost: { c: 45, s: 70 } },
+  { name: "Укреплённая стена", hp: 1100, cost: { c: 90, w: 60, s: 110 } },
+  { name: "Стена с бойницами", hp: 1550, cost: { c: 150, w: 90, s: 170 } },
+  { name: "Бастион", hp: 2100, cost: { c: 240, w: 140, s: 260 } },
+  { name: "Королевская стена", hp: 2800, cost: { c: 380, w: 210, s: 400 } },
+  { name: "Цитадель", hp: 3700, cost: { c: 600, w: 320, s: 620 } }
 ];
 // beh: single / splash / chain / slow / burn / poison / pierce / multi
 export const TURRETS = {
@@ -253,9 +263,28 @@ export const TURRETS = {
   poison:   { name: "Ядовитый котёл", icon: "☠️", dmg: 7, rate: 0.6, range: 8.5, proj: "venom", speed: 12, splash: 2.2, cloud: 3, beh: "poison", cost: { c: 35, w: 15, s: 15 }, desc: "Ядовитое облако на 3 секунды", snd: "poison" },
   pagoda:   { name: "Пагода ниндзя", icon: "🏯", dmg: 9, rate: 1.4, range: 9, proj: "shuriken", speed: 22, multi: 3, beh: "multi", cost: { c: 45, w: 30 }, desc: "Сюрикены сразу по 3 целям", snd: "whoosh" }
 };
-export const TURRET_MAX = 4;
-export const turretMul = (lv) => 1 + 0.55 * (lv - 1);
-export const upCost = (cost, lv) => { const o = {}; for (const k in cost) o[k] = Math.round(cost[k] * (0.9 + 0.8 * lv)); return o; };
+export const TURRET_MAX = 10;
+export const turretMul = (lv) => 1 + 0.5 * (lv - 1);
+export const upCost = (cost, lv) => { const o = {}; for (const k in cost) o[k] = Math.round(cost[k] * (0.8 + 0.7 * lv) * Math.pow(1.12, lv)); return o; };
+// ---------- Добытчики: лесопилка, каменоломня, золотой рудник ----------
+// Работают всё время (и между волнами), складывают добычу рядом — герой собирает, проходя мимо; с 4 уровня — сама тележка возит.
+export const GATHER_MAX = 10;
+export const GATHER = {
+  saw: { name: "Лесопилка", icon: "🪚", res: "w", resName: "дерева", base: 12, model: "building_lumbermill_blue", cost: { c: 20, w: 10 } },
+  quarry: { name: "Каменоломня", icon: "⛏️", res: "s", resName: "камня", base: 9, model: "building_blacksmith_blue", cost: { c: 25, w: 20 } },
+  mine: { name: "Золотой рудник", icon: "💰", res: "c", resName: "монет", base: 10, model: "building_mine_blue", cost: { c: 40, w: 25, s: 15 } }
+};
+export const GATHER_KEYS = ["saw", "quarry", "mine"];
+export const gatherRate = (k, lv) => (lv > 0 ? Math.round(GATHER[k].base * (1 + 0.6 * (lv - 1))) : 0);   // в минуту
+export const gatherCost = (k, lv) => { const o = {}; for (const r in GATHER[k].cost) o[r] = Math.round(GATHER[k].cost[r] * Math.pow(1.55, lv - 1)); return o; };   // цена уровня lv
+export const gatherHp = (lv) => 140 + 70 * lv;
+export const AUTO_LV = 4;   // с этого уровня добычу привозит тележка
 export const REPAIR = { w: 12, part: 0.3 };
-export const RES = { tree: { give: "w", amount: 6, regrow: 45 }, rock: { give: "s", amount: 5, regrow: 60 } };
+export const RES = { tree: { give: "w", amount: 8, regrow: 40 }, rock: { give: "s", amount: 7, regrow: 50 } };
 export const fmtCost = (c) => [c.c ? `${c.c}🪙` : "", c.w ? `${c.w}🪵` : "", c.s ? `${c.s}🪨` : ""].filter(Boolean).join(" ");
+// места добытчиков вокруг аванпоста (снаружи кольца башен, в стороне от троп)
+export function gatherPos(hx, hz, mx, mz, k) {
+  const toC = Math.atan2(mz - hz, mx - hx) || 0;
+  const [a, r] = { saw: [1.75, 7.6], quarry: [-1.75, 7.6], mine: [Math.PI + 0.75, 8.1] }[k];
+  return { x: hx + Math.cos(toC + a) * r, z: hz + Math.sin(toC + a) * r };
+}
