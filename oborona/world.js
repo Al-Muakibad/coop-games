@@ -14,6 +14,30 @@ export function noise2(x, z) {
   const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi, u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
   return lerp(lerp(h(xi, zi), h(xi + 1, zi), u), lerp(h(xi, zi + 1), h(xi + 1, zi + 1), u), v);
 }
+// след модели на земле: центр и полуоси габарита при масштабе 1 (кэш по имени) — коллайдеры по реальному размеру, а не «на глаз»
+const FP = new Map(), _bx = new THREE.Box3();
+export function footprint(key, src) {
+  let f = FP.get(key); if (f) return f;
+  const g = new THREE.Group(); if (src) g.add(src.clone()); g.updateMatrixWorld(true); _bx.setFromObject(g);
+  f = _bx.isEmpty() ? { cx: 0, cz: 0, hx: 0.5, hz: 0.5, h: 1 } : { cx: (_bx.min.x + _bx.max.x) / 2, cz: (_bx.min.z + _bx.max.z) / 2, hx: (_bx.max.x - _bx.min.x) / 2, hz: (_bx.max.z - _bx.min.z) / 2, h: _bx.max.y };
+  FP.set(key, f); return f;
+}
+// круги-препятствия по следу (поворот ry, масштаб s, k — «запас»): вытянутое — цепочкой кругов вдоль длинной оси
+export function fpCircles(f, x, z, s, ry, k = 1) {
+  const c = Math.cos(ry), sn = Math.sin(ry), ox = (f.cx * c + f.cz * sn) * s, oz = (-f.cx * sn + f.cz * c) * s;
+  const a = Math.max(f.hx, f.hz) * s * k, b = Math.min(f.hx, f.hz) * s * k;
+  if (a < b * 1.6) return [{ x: x + ox, z: z + oz, r: (a + b) / 2 }];
+  const ux = f.hx >= f.hz ? c : sn, uz = f.hx >= f.hz ? -sn : c, n = Math.ceil(a / b), out = [];
+  for (let i = 0; i < n; i++) { const t = n === 1 ? 0 : (i / (n - 1) * 2 - 1) * (a - b); out.push({ x: x + ox + ux * t, z: z + oz + uz * t, r: b }); }
+  return out;
+}
+// ресурс-камень: коллайдер по габариту модели, а сама модель сдвинута так, чтобы её середина была в точке узла
+export function fitNode(nd) {
+  if (nd.kind !== "rock" || !A.nature[nd.model]) return nd;
+  const f = footprint(nd.model, A.nature[nd.model]), c = Math.cos(nd.ry), sn = Math.sin(nd.ry);
+  nd.ox = f.cx * c + f.cz * sn; nd.oz = -f.cx * sn + f.cz * c; nd.r = (f.hx + f.hz) / 2 * nd.s * 0.92; nd.vr = Math.max(f.hx, f.hz) * nd.s;
+  return nd;
+}
 const fbm = (x, z) => noise2(x, z) * 0.6 + noise2(x * 2.1 + 7, z * 2.1) * 0.3 + noise2(x * 4.3, z * 4.3 + 3) * 0.1;
 
 // ---------- рельеф: 4 слоя текстур смешиваются по весам в вершинах ----------
@@ -166,7 +190,10 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   }
   for (let i = 0; i < 40; i++) { const a = r() * PI2, rr = D.MAP_R + 1 + r() * 12; put("Rock_Medium_" + (1 + Math.floor(r() * 3)), Math.cos(a) * rr, Math.sin(a) * rr, 1.2 + r() * 1.6); }
   // ресурсы: деревья и камни (интерактивные)
-  const okNode = (x, z) => Math.hypot(x, z) < D.MAP_R - 2.5 && freeAt(x, z, 0) && W.nodes.every((q) => dist(x, z, q.x, q.z) > 2.6);
+  // декор у аванпостов (знамёна, факелы, бочки) и костёр у торговца ставится позже — места заранее держим свободными от ресурсов
+  const deco0 = [{ x: msp.x + 3.2, z: msp.z - 1.5, r: 1.6 }];
+  spots.forEach((s0) => { const a0 = Math.atan2(msp.z - s0.z, msp.x - s0.x) || 0, at = (ang, rr, r0) => deco0.push({ x: s0.x + Math.cos(ang) * rr, z: s0.z + Math.sin(ang) * rr, r: r0 }); for (const sg of [-1, 1]) { at(a0 + sg * 0.42, 6.3, 0.5); at(a0 + Math.PI + sg * 0.36, 6.2, 0.4); } at(a0 + 2.55, 6.2, 1.2); });
+  const okNode = (x, z) => Math.hypot(x, z) < D.MAP_R - 2.5 && freeAt(x, z, 0) && W.nodes.every((q) => dist(x, z, q.x, q.z) > 2.6) && deco0.every((d) => dist(x, z, d.x, d.z) > d.r + 1.4);
   const want = { tree: 22 + 4 * spots.length, rock: 10 + 3 * spots.length };
   for (const kind of ["tree", "rock"]) {
     let made = 0;
@@ -178,7 +205,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   }
   function mkNode(kind, x, z) {
     const model = kind === "tree" ? (L.palms && r() < 0.6 ? "palm" : pickTree()) : "Rock_Medium_" + (1 + Math.floor(r() * 3));
-    const s = (kind === "tree" ? 0.9 + r() * 0.3 : 0.95 + r() * 0.3) * NS(model); return { kind, model, x, z, s, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * s, ry: r() * PI2, amt: D.RES[kind].amount, regrow: 0 };
+    const s = (kind === "tree" ? 0.9 + r() * 0.3 : 0.95 + r() * 0.3) * NS(model); return fitNode({ kind, model, x, z, s, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * s, vr: kind === "tree" ? 1.1 : 1.5 * s, ry: r() * PI2, amt: D.RES[kind].amount, regrow: 0 });
   }
   // мелкий декор внутри поля
   const clusters = (L.base || L.id) === "snow" ? 14 : (L.base || L.id) === "desert" ? 12 : (L.base || L.id) === "volcano" ? 12 : 26;
@@ -200,9 +227,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   for (let i = 0; i < 4; i++) for (let t = 0; t < 60; t++) {
     const a = r() * PI2, rr = 12 + r() * 13, x = Math.cos(a) * rr, z = Math.sin(a) * rr;
     if (!freeAt(x, z, 2) || W.nodes.some((q) => dist(x, z, q.x, q.z) < 3.5)) continue;
-    const o = cloneWorld(["wall_straight", "building_destroyed", "wall_straight", "building_scaffolding"][i % 4]); o.position.set(x, -0.05, z); o.rotation.y = r() * PI2; o.scale.setScalar(i % 4 === 1 ? 2.2 : 1.7);
+    const rn = ["wall_straight", "building_destroyed", "wall_straight", "building_scaffolding"][i % 4], o = cloneWorld(rn); o.position.set(x, -0.05, z); o.rotation.y = r() * PI2; o.scale.setScalar(i % 4 === 1 ? 2.2 : 1.7);
     o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; c.material = c.material.clone(); c.material.color.multiplyScalar(0.8); } }); world.add(o);
-    W.obstacles.push({ x, z, r: i % 4 === 1 ? 1.8 : 1.4 }); ruins.push(o); break;
+    W.obstacles.push(...fpCircles(footprint(rn, A.world[rn]), x, z, o.scale.x, o.rotation.y)); ruins.push(o); break;
   }
   // костры и фонари у центра
   const camp = { x: msp.x + 3.2, z: msp.z - 1.5 };
@@ -247,8 +274,8 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
       list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, 0, it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(it.s, it.s, it.s)); im.setMatrixAt(i, mm.multiply(local)); });
       world.add(im); W.inst.push(im);
     });
-    if (/Rock_Medium/.test(name)) list.forEach((it) => { if (Math.hypot(it.x, it.z) < D.MAP_R + 1) W.obstacles.push({ x: it.x, z: it.z, r: 1.4 * it.s }); });
-    if (/RockPath_Round_Small/.test(name)) list.forEach((it) => W.obstacles.push({ x: it.x, z: it.z, r: 0.6 }));
+    // валуны — по габариту модели (с учётом поворота); плоские камни-тропинки (высота 10 см) не мешают ходить
+    if (/Rock_Medium/.test(name)) list.forEach((it) => { if (Math.hypot(it.x, it.z) < D.MAP_R + 1) W.obstacles.push(...fpCircles(footprint(name, src), it.x, it.z, it.s, it.ry, 0.92)); });
   }
   // пальмы (оазис): ствол из сегментов + крона из агавы
   if (L.palms) {
@@ -315,7 +342,8 @@ export function updNode(W, nd) {
   const sh = nd.shake > 0 ? Math.sin(nd.shake * 40) * 0.08 * nd.shake : 0;
   const grow = nd.kind === "tree" && up && nd.grow != null ? nd.grow : 1;
   const sc = nd.model === "palm" ? 1.8 : s;
-  setInst(ri.full, nd.slot, nd.x, 0, nd.z, nd.ry, up ? sc * (nd.kind === "rock" ? 0.55 + 0.45 * nd.amt / D.RES.rock.amount : grow) : 0.0001, sh, sh * 0.6);
+  const cs = up ? sc * (nd.kind === "rock" ? 0.55 + 0.45 * nd.amt / D.RES.rock.amount : grow) : 0.0001;
+  setInst(ri.full, nd.slot, nd.x - (nd.ox || 0) * cs, 0, nd.z - (nd.oz || 0) * cs, nd.ry, cs, sh, sh * 0.6);
   if (ri.cut.length) setInst(ri.cut, nd.slot, nd.x, 0, nd.z, nd.ry, up ? 0.0001 : s * 0.8, 0, 0);
   const changed = nd.shown !== up; nd.shown = up; return changed;
 }

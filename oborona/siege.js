@@ -8,7 +8,7 @@ import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import * as D from "./data.js";
 import { A, makeChar, makeQ, cloneWorld, cloneProp, cloneWeapon, cloneNature, pbr, has } from "./assets.js";
 import { buildTowerDeep, bake, BM, builderMats } from "./builders.js";
-import { terrainMaterial, makeWeather, makeBanner, rng, noise2, NS } from "./world.js";
+import { terrainMaterial, makeWeather, makeBanner, rng, noise2, NS, footprint, fpCircles, fitNode } from "./world.js";
 
 // ---------- геометрия крепости ----------
 export const WZ = -10, WT = 1.2, WH = 2.6;            // линия стены, полутолщина, высота боевого хода
@@ -19,9 +19,9 @@ const SPAWN_Z = -66, ZMIN = -84, ZMAX = 30, XMIN = -26, XMAX = 26;
 export const segX = (i) => X0 + SEGW * (i + 0.5);
 export const segOf = (x) => Math.max(0, Math.min(NSEG - 1, Math.floor((x - X0) / SEGW)));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, dist = (a, b, c, d) => Math.hypot(a - c, b - d);
-// полуширина ущелья: внутри крепости — 16.5 м, снаружи расширяется к лагерю врага, за цитаделью — скалы смыкаются
+// полуширина ущелья: внутри крепости — 16.5 м, снаружи расширяется к лагерю врага
 export function halfW(z) {
-  if (z >= WZ - 1.3) return z > 22 ? Math.max(4, 16.5 - (z - 22) * 1.6) : 16.5;
+  if (z >= WZ - 1.3) return 16.5;   // за цитаделью ущелье не сужается — там пологая гора (см. cliffY), камера над ней
   return Math.min(23, 16.5 + (WZ - 1.3 - z) * 0.14);
 }
 
@@ -61,24 +61,37 @@ export function bind(a) { api = a; }
 const G = () => api.G;
 
 // ================= МИР УЩЕЛЬЯ =================
+// камера игры смотрит под углом 0.9 рад с юга (с +z): дальше всего назад она уходит, когда герой у задней границы двора —
+// всё, что выше этой «штанги» (рельеф, деревья, валуны), оказалось бы в камере; склоны за цитаделью ниже неё с запасом
+export const HZMAX = 23;                                        // дальше назад (за цитадель) герой не заходит
+const CAM_TAN = Math.tan(0.9), armMin = (z) => CAM_TAN * Math.max(0, z - (HZMAX - 4.5));
 let world = null, W = null, views = null;
 const hgt = { f: null };
-export function buildSiegeWorld(wroot, renderer, seed) {
-  world = wroot; const r = rng(seed || 7), L = D.LOC.siege;
-  W = { L, obstacles: [], water: [], nodes: [], fxPoints: [], resInst: {}, lakes: [], lakeD: () => 99, lights: [], inst: [], siege: true };
-  // рельеф: дно ущелья, отвесные скалы по бокам, насыпь к воротам, двор цитадели
-  const GW = XMAX - XMIN + 30, GD = ZMAX - ZMIN + 30, sx = 96, sz = 132;
-  const geo = new THREE.PlaneGeometry(GW, GD, sx, sz); geo.rotateX(-Math.PI / 2); geo.translate((XMAX + XMIN) / 2, 0, (ZMAX + ZMIN) / 2);
+export function buildSiegeWorld(wroot, renderer, seed, np) {
+  world = wroot; const r = rng(seed || 7), L = D.LOC.siege; np = clamp(np || 1, 1, 6);
+  W = { L, obstacles: [], water: [], nodes: [], fxPoints: [], resInst: {}, lakes: [], lakeD: () => 99, lights: [], inst: [], siege: true, decor: [] };
+  // рельеф: дно ущелья, склоны гор по бокам, пологая гора за цитаделью и в глубине вражеского лагеря (без «края мира» в кадре)
+  const GW = XMAX - XMIN + 60, GD = ZMAX - ZMIN + 64, sx = 128, sz = 158;
+  const geo = new THREE.PlaneGeometry(GW, GD, sx, sz); geo.rotateX(-Math.PI / 2); geo.translate((XMAX + XMIN) / 2, 0, (ZMAX + ZMIN) / 2 + 2);
   const pos = geo.attributes.position, sp = new Float32Array(pos.count * 4);
   const fb = (x, z) => noise2(x, z) * 0.6 + noise2(x * 2.1 + 7, z * 2.1) * 0.3 + noise2(x * 4.3, z * 4.3 + 3) * 0.1;
-  const cliffY = (x, z) => { const e = Math.abs(x) - halfW(z); const eb = z - 26; let y = 0; if (e > 0) y = Math.min(24, Math.pow(e, 1.3) * 1.5) * (0.65 + 0.7 * fb(x * 0.08, z * 0.08)); if (eb > 0) y = Math.max(y, Math.min(24, Math.pow(eb, 1.3) * 1.6) * (0.7 + 0.6 * fb(x * 0.07 + 3, z * 0.07))); return y; };
+  const BZ = HZMAX + 1.5, FZ = ZMIN - 2;
+  const cliffY = (x, z) => {
+    const e = Math.abs(x) - halfW(z), eb = z - BZ, ef = FZ - z; let y = 0;
+    if (e > 0) y = Math.min(26, Math.pow(e, 1.25) * 0.95) * (0.7 + 0.6 * fb(x * 0.08, z * 0.08));                       // склоны: круто, но не стеной
+    if (eb > 0) y = Math.max(y, Math.min(17, eb * 0.55 + eb * eb * 0.025) * (0.82 + 0.36 * fb(x * 0.07 + 3, z * 0.07)));   // за цитаделью — пологая гора ниже камеры
+    if (ef > 0) y = Math.max(y, Math.min(30, Math.pow(ef, 1.2) * 1.3) * (0.75 + 0.5 * fb(x * 0.06, z * 0.06 + 5)));       // в глубине ущелья, за лагерем
+    return y;
+  };
   hgt.f = cliffY;
+  // ниже всего рельефа в круге — чтобы камень или ствол на склоне не висел над землёй
+  const lowY = (x, z, rr) => { let y = cliffY(x, z); for (let k = 0; k < 6; k++) { const a = k * 1.047; y = Math.min(y, cliffY(x + Math.cos(a) * rr, z + Math.sin(a) * rr)); } return y; };
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), y = cliffY(x, z);
     const e = Math.abs(x) - halfW(z);
     let alt = clamp((e + 1.2) / 2.5, 0, 1), path = 0, plaza = 0;
-    alt = Math.max(alt, clamp((z - 25) / 3, 0, 1));
-    if (z < WZ - 1) path = clamp(1 - (Math.abs(x + Math.sin(z * 0.09) * 1.2) - 2.6) / 1.4, 0, 1) * (0.75 + 0.25 * noise2(x * 1.3, z * 1.3));   // насыпь-дорога к воротам
+    alt = Math.max(alt, clamp((z - BZ + 1) / 3, 0, 1), clamp((FZ - z + 1) / 3, 0, 1));
+    if (z < WZ - 1) path = clamp(1 - (Math.abs(x + Math.sin(z * 0.09) * 1.2) - 2.6) / 1.4, 0, 1) * (0.75 + 0.25 * noise2(x * 1.3, z * 1.3)) * clamp((z - FZ) / 4, 0, 1);   // насыпь-дорога к воротам
     if (z > WZ + 1 && z < KZ) path = Math.max(path, clamp(1 - (Math.abs(x) - 1.8) / 1.2, 0, 1) * 0.8);                                         // дорога от ворот к донжону
     plaza = clamp(1 - (dist(x, z, 0, KZ) - 7.5 - (noise2(x * 0.8, z * 0.8) - 0.5) * 2) / 1.2, 0, 1);
     if (z > WZ - 2.5 && z < WZ + 4.5 && Math.abs(x) < 17) plaza = Math.max(plaza, 0.55 * clamp(1 - Math.abs(z - WZ - 1) / 3.5, 0, 1));
@@ -89,44 +102,102 @@ export function buildSiegeWorld(wroot, renderer, seed) {
   }
   geo.setAttribute("splat", new THREE.BufferAttribute(sp, 4)); geo.computeVertexNormals();
   const ground = new THREE.Mesh(geo, terrainMaterial(L.ground)); ground.receiveShadow = true; world.add(ground); W.ground = ground;
+  // след модели (габарит при масштабе 1) — для коллайдеров и проверки «не влезает ли одно в другое»
+  const FPn = (n) => footprint(n, A.nature[n]), FPw = (n) => footprint(n, A.world[n]);
+  const VS = (n) => (/Pine|Dead/.test(n) ? 0.6 : /Rock_Medium/.test(n) ? 0.55 : /Grass/.test(n) ? 0.35 : 1.2);   // базовый масштаб инстансов ниже
+  // декор не лезет в «штангу» камеры: верх ниже неё на 2 м там, где над ним может пройти камера
+  // (у задней границы и за ней — с большим запасом: камера там близко, крупные ели и глыбы заслонили бы низ экрана)
+  const camOk = (x, z, top, rad) => z > HZMAX - 4 && Math.abs(x) < halfW(22) + 10 ? top < armMin(z) - 6 : Math.abs(x) - rad > halfW(Math.min(z, 22)) - 0.6 || top < armMin(z) - 2;
+  const blocked = (x, z, rad) => W.decor.some((d) => dist(x, z, d.x, d.z) < d.r + rad);
+  const addDecor = (x, z, rr, n) => W.decor.push({ x, z, r: rr, n });
+  // дома ремесленников вдоль ущелья (препятствия, «живая» крепость)
+  const houses = [["building_barracks_blue", -9, KZ - 3, 2.0, 0.6], ["building_blacksmith_blue", 9.5, KZ - 4, 1.9, -0.7], ["building_home_A_blue", -12.6, WZ + 9.5, 2.0, 1.2], ["building_home_B_blue", 12.8, WZ + 10, 2.0, -1.3], ["building_well_blue", 4.8, KZ - 9, 1.5, 0], ["building_market_blue", -6.2, WZ + 13.5, 1.7, 0.3]];
+  for (const [n, x, z, s, ry] of houses) {
+    const o = cloneWorld(n); o.position.set(x, 0, z); o.scale.setScalar(s); o.rotation.y = ry; o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } }); world.add(o);
+    const cs = fpCircles(FPw(n), x, z, s, ry, 1.02); W.obstacles.push(...cs); for (const c of cs) addDecor(c.x, c.z, c.r, n);
+  }
+  addDecor(0, KZ, 4.5, "keep");
   // скалы, ели и сухие деревья на склонах — инстансами
   const inst = {}; const put = (n, x, y, z, s, ry) => (inst[n] = inst[n] || []).push({ x, y, z, s, ry: ry == null ? r() * 6.28 : ry });
-  for (let i = 0; i < 170; i++) {
-    const z = ZMIN + 6 + r() * (ZMAX - ZMIN - 2), side = r() < 0.5 ? -1 : 1, hw = halfW(z), e = 0.3 + Math.pow(r(), 1.6) * 12, x = side * (hw + e);
-    const y = cliffY(x, z);
-    if (e < 3.2) put("Rock_Medium_" + (1 + Math.floor(r() * 3)), x, y - 0.3, z, 1.4 + r() * 2.2);
-    else put(r() < 0.75 ? (r() < 0.5 ? "Pine_2" : "Pine_3") : "DeadTree_1", x, y - 0.2, z, 0.7 + r() * 0.6);
+  for (let i = 0; i < 190; i++) {
+    const z = ZMIN + 4 + r() * (HZMAX + 2 - ZMIN - 4), side = r() < 0.5 ? -1 : 1, hw = halfW(z), rock = r() < 0.3;
+    if (rock) {
+      const n = "Rock_Medium_" + (1 + Math.floor(r() * 3)), s = 1.2 + r() * 1.4, f = FPn(n), rad = Math.max(f.hx, f.hz) * s * VS(n), e = rad * 0.55 + Math.pow(r(), 1.4) * 3, x = side * (hw + e), y = lowY(x, z, rad * 0.6) - 0.25;
+      if (camOk(x, z, y + f.h * s * VS(n), rad)) put(n, x, y, z, s);
+    } else {
+      const n = r() < 0.75 ? (r() < 0.5 ? "Pine_2" : "Pine_3") : "DeadTree_1", s = 0.7 + r() * 0.6, e = 3.4 + Math.pow(r(), 1.5) * 11, x = side * (hw + e), y = lowY(x, z, 0.4) - 0.15;
+      if (camOk(x, z, y + FPn(n).h * s * VS(n), FPn(n).hx * s * VS(n))) put(n, x, y, z, s);
+    }
   }
-  for (let i = 0; i < 40; i++) { const x = (r() - 0.5) * 30, z = 27 + r() * 8; put(r() < 0.6 ? "Pine_3" : "Rock_Medium_2", x, cliffY(x, z) - 0.2, z, 0.9 + r() * 0.8); }
-  // валуны на поле перед стеной — укрытия для орды и разнообразие маршрута
-  for (let i = 0; i < 16; i++) { const z = SPAWN_Z + 8 + r() * (WZ - 12 - SPAWN_Z - 8), hw = halfW(z), x = (r() < 0.5 ? -1 : 1) * (4.5 + r() * (hw - 6)); put("Rock_Medium_" + (1 + Math.floor(r() * 3)), x, 0, z, 0.9 + r() * 0.7); W.obstacles.push({ x, z, r: 1.0, out: true }); }
-  for (let i = 0; i < 60; i++) { const z = ZMIN + 10 + r() * (ZMAX - ZMIN - 14), x = (r() - 0.5) * 2 * (halfW(z) - 0.8); if (Math.abs(x) < 3.5 && z < WZ) continue; if (z > WZ - 2 && z < WZ + 4) continue; put(r() < 0.5 ? "Grass_Common_Short" : "Pebble_Round_1", x, 0, z, 0.8 + r() * 0.6); }
+  // гора за цитаделью: ели и камни по склону — только ниже «штанги» камеры
+  for (let i = 0; i < 70; i++) { const x = (r() - 0.5) * 2 * (halfW(30) + 6), z = BZ + 3 + r() * 24, n = r() < 0.65 ? (r() < 0.5 ? "Pine_3" : "Pine_2") : "Rock_Medium_2", s = 0.9 + r() * 0.8, y = lowY(x, z, 0.6) - 0.2; if (camOk(x, z, y + FPn(n).h * s * VS(n), 0)) put(n, x, y, z, s); }
+  // гора в глубине ущелья, за вражеским лагерем
+  for (let i = 0; i < 50; i++) { const x = (r() - 0.5) * 2 * (halfW(FZ) + 8), z = FZ - 3 - r() * 22, n = r() < 0.7 ? (r() < 0.5 ? "Pine_3" : "DeadTree_1") : "Rock_Medium_1", s = 0.9 + r() * 0.8; put(n, x, lowY(x, z, 0.6) - 0.2, z, s); }
+  // валуны на поле перед стеной — укрытия для орды и разнообразие маршрута (не друг в друге и не на дороге)
+  for (let i = 0, t = 0; i < 16 && t < 200; t++) {
+    const z = SPAWN_Z + 8 + r() * (WZ - 12 - SPAWN_Z - 8), hw = halfW(z), x = (r() < 0.5 ? -1 : 1) * (4.5 + r() * (hw - 6)), n = "Rock_Medium_" + (1 + Math.floor(r() * 3)), s = 0.9 + r() * 0.7, ry = r() * 6.28;
+    const cs = fpCircles(FPn(n), x, z, s * VS(n), ry, 0.92); if (cs.some((c) => blocked(c.x, c.z, c.r + 0.8) || Math.abs(c.x) - c.r < 4)) continue;
+    put(n, x, 0, z, s, ry); for (const c of cs) { W.obstacles.push(Object.assign(c, { out: true })); addDecor(c.x, c.z, c.r, n); } i++;
+  }
+  // лагерь врага в глубине ущелья: шатры, костры, тёмные знамёна (шатры не друг в друге и не в кострах)
+  const fires = []; for (let i = 0; i < 4; i++) fires.push({ x: (i - 1.5) * 7, z: ZMIN + 12 + r() * 3 });
+  for (const f of fires) { W.fxPoints.push({ k: "campfire", x: f.x, z: f.z }); addDecor(f.x, f.z, 0.8, "fire"); const b = makeBanner("#3a1020"); b.position.set(f.x + 1.5, 0, f.z + 1); b.scale.setScalar(1.3); world.add(b); addDecor(f.x + 1.5, f.z + 1, 0.3, "banner"); }
+  for (let i = 0, t = 0; i < 9 && t < 120; t++) {
+    const z = ZMIN + 4 + r() * 10, x = (r() - 0.5) * 2 * (halfW(z) - 4), s = 1.7 + r() * 0.5, ry = r() * 6.28, cs = fpCircles(FPw("tent"), x, z, s, ry, 1);
+    if (cs.some((c) => blocked(c.x, c.z, c.r + 0.6))) continue; i++;
+    const tn = cloneWorld("tent"); tn.position.set(x, 0, z); tn.scale.setScalar(s); tn.rotation.y = ry; tn.traverse((c) => { if (c.isMesh) { c.material = c.material.clone(); c.material.color.multiplyScalar(0.45); } }); world.add(tn);
+    for (const c of cs) { W.obstacles.push(Object.assign(c, { out: true })); addDecor(c.x, c.z, c.r, "tent"); }
+  }
+  // факелы вдоль насыпи и у ворот
+  for (let z = WZ - 7; z > SPAWN_Z + 6; z -= 9) for (const s of [-1, 1]) { const t = cloneProp("Torch_Metal"); t.position.set(s * 3.6, 0, z); t.scale.setScalar(1.4); world.add(t); W.fxPoints.push({ k: "torch", x: s * 3.6, z, y: 1.75 }); }
+  // ресурсы внутри крепости: деревья у скал и за донжоном, камни во дворе. Чем больше героев — тем больше ресурсов и быстрее растут.
+  // Узел не влезает в дома/донжон/вал, не перегораживает проход и до каждого можно дойти (проверка поиском в ширину ниже).
+  const rg = 1 + 0.3 * (np - 1);
+  const mk = (kind, x, z) => { const model = kind === "tree" ? ["CommonTree_1", "CommonTree_3", "Pine_2"][Math.floor(r() * 3)] : "Rock_Medium_" + (1 + Math.floor(r() * 3)), sc = (0.95 + r() * 0.3) * NS(model); return fitNode({ kind, x, z, amt: D.RES[kind].amount, regrow: 0, rg: Math.round(D.RES[kind].regrow / rg), model, ry: r() * 6.28, s: sc, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * sc, vr: kind === "tree" ? 1.2 : 1.5 * sc }); };
+  const nodeOk = (n) => n.z - n.vr > WZ + WT + 2.4 && n.z < HZMAX - 0.3 && Math.abs(n.x) - n.r > 3.6 && Math.abs(n.x) < halfW(n.z) - 0.9 && !blocked(n.x, n.z, n.vr + 0.35)
+    && W.nodes.every((q) => { const d = dist(q.x, q.z, n.x, n.z); return d > 2.4 && d > q.r + n.r + 1.1; });
+  const want = { tree: 16 + 3 * (np - 1), rock: 9 + 2 * (np - 1) };
+  const placeTree = () => { for (let t = 0; t < 300; t++) { const back = r() < 0.18, z = back ? KZ + 5 + r() * 4.5 : WZ + 5 + r() * (KZ + 9 - WZ - 5), x = (r() < 0.5 ? -1 : 1) * (back ? 4 + r() * 11 : 11.2 + r() * 3.9); const n = mk("tree", x, z); if (nodeOk(n)) { W.nodes.push(n); return true; } } return false; };
+  const placeRock = () => { for (let t = 0; t < 300; t++) { const z = WZ + 6 + r() * 17, x = (r() < 0.5 ? -1 : 1) * (5 + r() * 8); const n = mk("rock", x, z); if (nodeOk(n) && Math.abs(x) < 13) { W.nodes.push(n); return true; } } return false; };
+  for (let i = 0; i < want.tree; i++) placeTree();
+  for (let i = 0; i < want.rock; i++) placeRock();
+  // каждый узел достижим: недостижимые убираем и ставим взамен другие (до 6 проходов)
+  for (let pass = 0; pass < 6; pass++) {
+    const bad = unreachable(W.obstacles, W.nodes); if (!bad.length) break;
+    W.nodes = W.nodes.filter((n) => !bad.includes(n));
+    for (const n of bad) n.kind === "tree" ? placeTree() : placeRock();
+  }
+  { const bad = unreachable(W.obstacles, W.nodes); if (bad.length) W.nodes = W.nodes.filter((n) => !bad.includes(n)); }
+  for (const n of W.nodes) addDecor(n.x, n.z, n.kind === "tree" ? 0.5 : n.r, "node");
+  // трава и камешки во дворе и на поле — мимо домов, узлов и дороги
+  for (let i = 0; i < 70; i++) { const z = ZMIN + 10 + r() * (HZMAX - ZMIN - 11), x = (r() - 0.5) * 2 * (halfW(z) - 0.8); if (Math.abs(x) < 3.5 && z < WZ) continue; if (z > WZ - 2 && z < WZ + 4) continue; if (blocked(x, z, 0.5)) continue; put(r() < 0.5 ? "Grass_Common_Short" : "Pebble_Round_1", x, 0, z, 0.8 + r() * 0.6); }
   for (const [name, list] of Object.entries(inst)) {
     const src = A.nature[name]; if (!src) continue; src.updateMatrixWorld(true);
     src.traverse((o) => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, o.material, list.length); im.castShadow = /Rock_Medium/.test(name) && list.some((it) => Math.abs(it.x) < halfW(it.z) + 1); im.receiveShadow = true;
-      const mm = new THREE.Matrix4(), local = o.matrixWorld.clone(), sc = /Pine|Dead/.test(name) ? 0.6 : /Rock_Medium/.test(name) ? 0.55 : /Grass/.test(name) ? 0.35 : 1.2;
+      const mm = new THREE.Matrix4(), local = o.matrixWorld.clone(), sc = VS(name);
       list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, it.y, it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(1, 1, 1).multiplyScalar(it.s * sc)); im.setMatrixAt(i, mm.multiply(local)); });
       world.add(im); W.inst.push(im); });
   }
-  // ресурсы внутри крепости: деревья у скал и камни во дворе — добыча как обычно
-  const mk = (kind, x, z) => { const model = kind === "tree" ? ["CommonTree_1", "CommonTree_3", "Pine_2"][Math.floor(r() * 3)] : "Rock_Medium_" + (1 + Math.floor(r() * 3)), sc = (kind === "tree" ? 0.95 + r() * 0.3 : 0.95 + r() * 0.3) * NS(model); return { kind, x, z, amt: D.RES[kind].amount, regrow: 0, model, ry: r() * 6.28, s: sc, r: kind === "tree" ? 0.4 : 0.42 * 3.2 * sc }; };
-  const nodeOk = (x, z) => W.nodes.every((n) => dist(n.x, n.z, x, z) > 2.4) && dist(x, z, 0, KZ) > 8 && Math.abs(x) > 4;
-  for (let t = 0, n = 0; n < 16 && t < 800; t++) { const z = WZ + 5 + r() * (KZ + 9 - WZ - 5), side = r() < 0.5 ? -1 : 1, x = side * (11.5 + r() * 3.5); if (nodeOk(x, z)) { W.nodes.push(mk("tree", x, z)); n++; } }
-  for (let t = 0, n = 0; n < 9 && t < 800; t++) { const z = WZ + 6 + r() * 16, x = (r() < 0.5 ? -1 : 1) * (5 + r() * 8); if (nodeOk(x, z) && Math.abs(x) < 12) { W.nodes.push(mk("rock", x, z)); n++; } }
-  // дома ремесленников вдоль ущелья (препятствия, «живая» крепость)
-  const houses = [["building_barracks_blue", -9, KZ - 3, 1.6, 0.6], ["building_blacksmith_blue", 9.5, KZ - 4, 1.5, -0.7], ["building_home_A_blue", -12.5, WZ + 9, 1.4, 1.2], ["building_home_B_blue", 12.8, WZ + 10, 1.4, -1.3], ["building_well_blue", 4.5, KZ - 9, 1.2, 0], ["building_market_blue", -6, WZ + 13.5, 1.3, 0.3]];
-  for (const [n, x, z, s, ry] of houses) { const o = cloneWorld(n); o.position.set(x, 0, z); o.scale.setScalar(s); o.rotation.y = ry; o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } }); world.add(o); W.obstacles.push({ x, z, r: 1.5 * s }); }
-  // лагерь врага в глубине ущелья: шатры, костры, тёмные знамёна
-  for (let i = 0; i < 9; i++) { const z = ZMIN + 4 + r() * 10, x = (r() - 0.5) * 2 * (halfW(z) - 4); const t = cloneWorld("tent"); t.position.set(x, 0, z); t.scale.setScalar(1.7 + r() * 0.5); t.rotation.y = r() * 6.28; t.traverse((c) => { if (c.isMesh) { c.material = c.material.clone(); c.material.color.multiplyScalar(0.45); } }); world.add(t); }
-  for (let i = 0; i < 4; i++) { const x = (i - 1.5) * 7, z = ZMIN + 12 + r() * 3; W.fxPoints.push({ k: "campfire", x, z }); const b = makeBanner("#3a1020"); b.position.set(x + 1.5, 0, z + 1); b.scale.setScalar(1.3); world.add(b); }
-  // факелы вдоль насыпи и у ворот
-  for (let z = WZ - 7; z > SPAWN_Z + 6; z -= 9) for (const s of [-1, 1]) { const t = cloneProp("Torch_Metal"); t.position.set(s * 3.6, 0, z); t.scale.setScalar(1.4); world.add(t); W.fxPoints.push({ k: "torch", x: s * 3.6, z, y: 1.75 }); }
   // свет: тёплые факелы у ворот и донжона (немного — на телефоне каждый свет дорог)
   for (const [x, y, z, c, i] of [[0, 4.2, WZ - 2.4, 0xff9a4a, 9], [0, 3.5, KZ - 6, 0xffb066, 7], [-9, 3.2, WZ + 3, 0xff9a4a, 5]]) { const l = new THREE.PointLight(c, i, 14, 1.6); l.position.set(x, y, z); world.add(l); W.lights.push(l); }
   // дождь
   W.weather = makeWeather(world, "rain", 1.35);
   views = { seg: [], gate: null, slot: [], ladders: new Map(), rams: new Map(), oil: null };
   return W;
+}
+// поиск в ширину по двору (сетка 0.25 м, те же круги, что в collide/clampHero): какие узлы нельзя обойти до расстояния добычи
+function unreachable(obst, nodes) {
+  const PR = 0.42, st = 0.25, x0 = -16.5, z0 = WZ - WT + 0.2, nx = Math.ceil(33 / st), nz = Math.ceil((HZMAX - z0) / st) + 1;
+  const circ = obst.map((o) => [o.x, o.z, o.r + PR]).concat(nodes.map((n) => [n.x, n.z, n.r + PR]), [[0, KZ, 2.3 + 0.9 + PR]]);
+  const free = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const x = x0 + i * st, z = z0 + j * st; if (Math.abs(x) > halfW(z) - 0.6 - PR || z > HZMAX) continue;
+    let ok = 1; for (const c of circ) { const dx = x - c[0], dz = z - c[1]; if (dx * dx + dz * dz < c[2] * c[2]) { ok = 0; break; } } free[i + j * nx] = ok;
+  }
+  const seen = new Uint8Array(nx * nz), q = []; const s0 = Math.round((0 - x0) / st) + Math.round((KZ - 5.5 - z0) / st) * nx;
+  if (free[s0]) { seen[s0] = 1; q.push(s0); }
+  while (q.length) { const k = q.pop(), i = k % nx, j = (k / nx) | 0; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const ni = i + a, nj = j + b; if ((!a && !b) || ni < 0 || nj < 0 || ni >= nx || nj >= nz) continue; const nk = ni + nj * nx; if (seen[nk] || !free[nk]) continue; seen[nk] = 1; q.push(nk); } }
+  return nodes.filter((n) => { const R = n.r + 1.0; for (let i = Math.max(0, Math.floor((n.x - R - x0) / st)); i <= Math.min(nx - 1, Math.ceil((n.x + R - x0) / st)); i++) for (let j = Math.max(0, Math.floor((n.z - R - z0) / st)); j <= Math.min(nz - 1, Math.ceil((n.z + R - z0) / st)); j++) if (seen[i + j * nx] && dist(x0 + i * st, z0 + j * st, n.x, n.z) - n.r < 1.0) return false; return true; });
 }
 export const terrainY = (x, z) => (hgt.f ? hgt.f(x, z) : 0);
 
@@ -139,26 +210,53 @@ export function newState(cfg, np) {
   return s;
 }
 const intact = (sg, i) => (i === GATE ? !sg.gate.br : !sg.seg[i].br);
+// вал за пролётом есть, только пока пролёт цел (рухнул — осыпался вместе со стеной); у ворот вала нет
+const hasRamp = (sg, i) => i >= 0 && i < NSEG && i !== GATE && !sg.seg[i].br;
+// вал сходит на нет к краю, за которым его нет (ворота, пролом): без «ступеньки» высотой со стену
+export const RAMP_TP = 1.1;
+export function rampK(sg, i, lx) {
+  let k = 1; const sm = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  if (i > 0 && !hasRamp(sg, i - 1)) k = Math.min(k, sm((lx + SEGW / 2) / RAMP_TP));
+  if (i < NSEG - 1 && !hasRamp(sg, i + 1)) k = Math.min(k, sm((SEGW / 2 - lx) / RAMP_TP));
+  return k;
+}
 // высота поверхности для героев и врагов: боевой ход стены, насыпь за стеной (вал), иначе земля
 export function heightAt(x, z) {
   const sg = G().sg; if (!sg) return 0;
   if (Math.abs(x) > 16.5) return 0;
   const i = segOf(x);
   if (z >= WZ - WT && z <= WZ + WT) return intact(sg, i) ? WH : 0;
-  if (z > WZ + WT && z < WZ + WT + 2.2 && i !== GATE) return WH * (1 - (z - WZ - WT) / 2.2);
+  if (z > WZ + WT && z < WZ + WT + 2.2 && hasRamp(sg, i)) return WH * (1 - (z - WZ - WT) / 2.2) * rampK(sg, i, x - segX(i));
   return 0;
 }
+// прямая видимость у земли: целая стена или ворота между двумя точками закрывают (со стены вниз и на стену — видно)
+export function wallLos(ax, az, ay, bx, bz, by) {
+  const sg = G().sg; if (!sg || ay > WH * 0.75 || by > WH * 0.75) return true;
+  if ((az - WZ) * (bz - WZ) >= 0) return true;
+  const x = ax + (bx - ax) * (WZ - az) / (bz - az); if (Math.abs(x) > 16.5) return true;
+  return !intact(sg, segOf(x));
+}
+export const heroSees = (p, e) => !e.hz || e.st === 2 || wallLos(p.x, p.z, heightAt(p.x, p.z), e.x, e.z, unitY(e));
+// снаряд героя, летящий низко, упирается в целую стену/ворота (со стены стреляют поверх)
+export function shotWall(ox, oz, nx, nz, y) {
+  const sg = G().sg; if (!sg || y > WH - 0.15 || (oz - WZ) * (nz - WZ) >= 0) return false;
+  const x = ox + (nx - ox) * (WZ - oz) / (nz - oz); return Math.abs(x) < 16.5 && intact(sg, segOf(x));
+}
+const slotUp = (sg, k) => !!sg.slot[k] && !sg.seg[SLOTS[k]].br;   // башня стоит (её пролёт цел)
 export const onWall = (x, z) => z >= WZ - WT - 0.2 && z <= WZ + WT + 0.4 && heightAt(x, z) > WH * 0.8;
 // герой: внутри ущелья, наружу — только через пролом или выбитые ворота
 export function clampHero(o, r) {
   const sg = G().sg;
   const hw = halfW(o.z) - 0.6 - r; if (o.x > hw) o.x = hw; if (o.x < -hw) o.x = -hw;
-  if (o.z > 25.5) o.z = 25.5;
+  if (o.z > HZMAX) o.z = HZMAX;
   if (o.z < SPAWN_Z + 4) o.z = SPAWN_Z + 4;
   if (o.z < WZ - WT + 0.15 && o.z > WZ - WT - 1.4) { const i = segOf(o.x); if (intact(sg, i) && Math.abs(o.x) < 16.6) o.z = WZ - WT + 0.15; }
+  // в проломе (внизу) вбок на целую стену не запрыгнуть: упираемся в её торец
+  if (o.z > WZ - WT - 0.3 && o.z < WZ + WT && Math.abs(o.x) < 16.5 && o.__lx != null && Math.abs(o.__lx) < 16.5) { const i = segOf(o.x), j = segOf(o.__lx); if (i !== j && intact(sg, i) && !intact(sg, j)) o.x = X0 + SEGW * (i > j ? i : i + 1) + (i > j ? -0.01 : 0.01); }
   for (const ob of W.obstacles) { const d = dist(o.x, o.z, ob.x, ob.z), rr = ob.r + r; if (d < rr && d > 1e-4) { o.x = ob.x + (o.x - ob.x) / d * rr; o.z = ob.z + (o.z - ob.z) / d * rr; } }
   // башни на стене не мешают ходить по стене, но в них не входишь
-  for (let k = 0; k < SLOTS.length; k++) if (sg.slot[k]) { const tx = segX(SLOTS[k]), d = dist(o.x, o.z, tx, WZ), rr = 0.75 + r; if (d < rr && d > 1e-4) { o.x = tx + (o.x - tx) / d * rr; o.z = WZ + (o.z - WZ) / d * rr; } }
+  for (let k = 0; k < SLOTS.length; k++) if (slotUp(sg, k)) { const tx = segX(SLOTS[k]), d = dist(o.x, o.z, tx, WZ), rr = 0.75 + r; if (d < rr && d > 1e-4) { o.x = tx + (o.x - tx) / d * rr; o.z = WZ + (o.z - WZ) / d * rr; } }
+  o.__lx = o.x;
 }
 
 // ================= ПОЛЕ ПОТОКА =================
@@ -243,7 +341,7 @@ function pickType(w) {
   if (r < 0.48) return "hz_rat";
   return "hz_skel";
 }
-function spawnUnit(type, x, z) {
+export function spawnUnit(type, x, z) {
   const g = G(), sg = g.sg, M = HZ[type], hp = M.hp * sg.hpMul * (type === "ram" ? 1 + 0.25 * (sg.np - 1) : 1);
   const e = { id: g.eid++, type, hz: 1, x, z, ry: 0, hp, max: hp, r: M.r, lane: (Math.random() - 0.5) * 2 * (halfW(z) - 3), st: type === "hz_ladder" ? 5 : 0, cd: Math.random(), spawnT: 0, slowT: 0, burnT: 0, poisonT: 0, el: 0, dmgBy: {}, ab: {}, ph: Math.random() * 6.28, ram: type === "ram" ? 1 : 0, lc: Math.random() };
   if (type === "hz_ladder") { const opts = []; for (let i = 0; i < NSEG; i++) if (i !== GATE && !sg.seg[i].br) opts.push(i); const s0 = opts.length ? opts[Math.floor(Math.random() * opts.length)] : 2; e.lseg = s0; e.lx = segX(s0) + (Math.random() - 0.5) * 1.6; }
@@ -294,7 +392,7 @@ export function hostStep(dt, wave) {
   }
   // башни на стене
   for (let k = 0; k < SLOTS.length; k++) {
-    const t = sg.slot[k]; if (!t) continue; if (sg.seg[SLOTS[k]] && sg.seg[SLOTS[k]].br) continue;
+    const t = sg.slot[k]; if (!t || !slotUp(sg, k)) continue;   // башня на рухнувшем пролёте лежит в руинах — до починки стены
     t.cd -= dt; if (t.cd > 0) continue;
     const TD = D.TURRETS[t.type], tx = segX(SLOTS[k]), rng = TD.range * 1.2 * (1 + 0.025 * (t.lv - 1));
     let best = null, bd = rng; for (const e of g.enemies.values()) { if (!e.hz || e.st === 2) continue; const d = dist(tx, WZ, e.x, e.z) - (e.z > WZ ? 3 : 0); if (d < bd) { bd = d; best = e; } }
@@ -347,7 +445,7 @@ function unitStep(e, dt, sg, keep, players) {
   let mx = 0, mz = 0, want = 0;
   // лучники: встают на выстрел и бьют защитников на стене
   if (M.ranged && e.st !== 3) {
-    let tgt = null, bd = M.range; for (const p of players) { const d = dist(p.x, p.z, e.x, e.z); if (d < bd) { bd = d; tgt = p; } }
+    let tgt = null, bd = M.range; for (const p of players) { const d = dist(p.x, p.z, e.x, e.z); if (d < bd && wallLos(e.x, e.z, unitY(e), p.x, p.z, api.heroY(p))) { bd = d; tgt = p; } }
     if (tgt) { e.ry = Math.atan2(tgt.x - e.x, tgt.z - e.z); e.atk = 1; if (e.cd <= 0) { e.cd = 1 / M.rate; api.enemyArrow(e, tgt); } sep(e); return; }
   }
   if (tp && td < M.range + 0.3) {
@@ -439,13 +537,14 @@ const canPay = (w, c) => (w.c >= (c.c || 0)) && (w.w >= (c.w || 0)) && (w.s >= (
 const pay = (w, c) => { for (const r of ["c", "w", "s"]) w[r] -= c[r] || 0; };
 export function costOf(a) {
   const sg = G().sg;
-  if (a.op === "seg") { const s = sg.seg[a.i]; return s && WALL[s.lv + 1] ? WALL[s.lv + 1].cost : null; }
+  if (a.op === "seg") { const s = sg.seg[a.i]; return s && !s.br && WALL[s.lv + 1] ? WALL[s.lv + 1].cost : null; }
   if (a.op === "rep") { const s = a.i === GATE ? sg.gate : sg.seg[a.i]; if (!s) return null; return s.br ? (a.i === GATE ? GATE_FIX : FIX_COST) : s.hp < s.max ? REP_COST : null; }
-  if (a.op === "gate") return GATE_LV[sg.gate.lv + 1] ? GATE_LV[sg.gate.lv + 1].cost : null;
-  if (a.op === "oil") return OIL_COST[sg.gate.oil + 1] || null;
-  if (a.op === "rock") { const s = sg.seg[a.i]; return s && ROCK_COST[s.rock + 1] ? ROCK_COST[s.rock + 1] : null; }
-  if (a.op === "tw") { if (sg.slot[a.i] || !D.TURRETS[a.t]) return null; return D.TURRETS[a.t].cost; }
-  if (a.op === "twu") { const t = sg.slot[a.i]; return t && t.lv < D.TURRET_MAX ? D.upCost(D.TURRETS[t.type].cost, t.lv) : null; }
+  // на рухнувшем пролёте / выбитых воротах ничего не строим и не улучшаем — сначала заделать
+  if (a.op === "gate") return !sg.gate.br && GATE_LV[sg.gate.lv + 1] ? GATE_LV[sg.gate.lv + 1].cost : null;
+  if (a.op === "oil") return sg.gate.br ? null : OIL_COST[sg.gate.oil + 1] || null;
+  if (a.op === "rock") { const s = sg.seg[a.i]; return s && !s.br && ROCK_COST[s.rock + 1] ? ROCK_COST[s.rock + 1] : null; }
+  if (a.op === "tw") { if (sg.slot[a.i] || !D.TURRETS[a.t] || sg.seg[SLOTS[a.i]].br) return null; return D.TURRETS[a.t].cost; }
+  if (a.op === "twu") { const t = sg.slot[a.i]; return t && slotUp(sg, a.i) && t.lv < D.TURRET_MAX ? D.upCost(D.TURRETS[t.type].cost, t.lv) : null; }
   return null;
 }
 export function doAct(pi, a) {
@@ -493,13 +592,13 @@ export function panelHtml(p, esc, head) {
     h += gt.br ? item("🚪", "Поставить ворота заново", "ворота выбиты — орда идёт во двор!", { op: "rep", i: GATE }, "🔨 Поставить") : info("🚪", GL.name, `прочность ${Math.ceil(gt.hp)} / ${Math.round(gt.max)}`);
     if (!gt.br && gt.hp < gt.max) h += item("🔧", "Починить ворота", "+35% прочности", { op: "rep", i: GATE }, "🔧 Чинить");
     if (GATE_LV[gt.lv + 1]) h += item("🛡️", GATE_LV[gt.lv + 1].name, `прочность ${Math.round(GATE_LV[gt.lv + 1].hp * sg.hk)}`, { op: "gate" });
-    h += gt.oil ? info("🔥", gt.oil === 2 ? "Большой котёл смолы" : "Котёл смолы", "встань на ворота и нажми «🔥 Смола»") : "";
-    if (gt.oil < 2) h += item("🔥", gt.oil ? "Большой котёл смолы" : "Котёл смолы над воротами", gt.oil ? "урон ×1.7, перезарядка 11 с" : "выливает кипящую смолу на тех, кто у ворот (таран — ×3)", { op: "oil" });
+    h += gt.oil ? info("🔥", gt.oil === 2 ? "Большой котёл смолы" : "Котёл смолы", gt.br ? "упал вместе с воротами — встанет, когда поставишь их заново" : "встань на ворота и нажми «🔥 Смола»") : "";
+    if (gt.oil < 2 && !gt.br) h += item("🔥", gt.oil ? "Большой котёл смолы" : "Котёл смолы над воротами", gt.oil ? "урон ×1.7, перезарядка 11 с" : "выливает кипящую смолу на тех, кто у ворот (таран — ×3)", { op: "oil" });
   }
   if (n.seg !== GATE) {
     const s = sg.seg[n.seg];
     h += `<div class="sec">Пролёт стены ${n.seg + 1}</div>`;
-    h += s.br ? item("🧱", "Заделать пролом", "пока пролом открыт — орда идёт сюда", { op: "rep", i: n.seg }, "🔨 Заделать") : info(WALL[s.lv].icon, WALL[s.lv].name, `прочность ${Math.ceil(s.hp)} / ${Math.round(s.max)}`);
+    h += s.br ? item("🧱", "Заделать пролом", "пока пролом открыт — орда идёт сюда" + (s.rock || SLOTS.some((q, k) => q === n.seg && sg.slot[k]) ? "; башня и камнемёт встанут вместе со стеной" : ""), { op: "rep", i: n.seg }, "🔨 Заделать") : info(WALL[s.lv].icon, WALL[s.lv].name, `прочность ${Math.ceil(s.hp)} / ${Math.round(s.max)}`);
     if (!s.br && s.hp < s.max) h += item("🔧", "Починить пролёт", "+35% прочности", { op: "rep", i: n.seg }, "🔧 Чинить");
     if (!s.br && WALL[s.lv + 1]) h += item(WALL[s.lv + 1].icon, WALL[s.lv + 1].name, `прочность ${Math.round(WALL[s.lv + 1].hp * sg.hk)} — орда ищет места слабее`, { op: "seg", i: n.seg }, "⬆️ Улучшить");
     if (!s.br && s.rock < 2) h += item("🪨", s.rock ? "Тяжёлый камнемёт" : "Камнемёт", s.rock ? "чаще и больнее" : "сбрасывает камни на тех, кто ломает стену", { op: "rock", i: n.seg });
@@ -507,7 +606,8 @@ export function panelHtml(p, esc, head) {
   if (n.slot >= 0) {
     const t = sg.slot[n.slot];
     h += `<div class="sec">Башня на стене</div>`;
-    if (!t) for (const k of SG_TOWERS) { const TD = D.TURRETS[k]; h += item(TD.icon, TD.name, TD.desc + " · со стены бьёт дальше", { op: "tw", i: n.slot, t: k }); }
+    if (sg.seg[SLOTS[n.slot]].br) h += t ? info("🏚️", `${D.TURRETS[t.type].name} рухнула вместе со стеной`, `ур. ${t.lv} — встанет снова, когда заделаешь пролом`) : info("🧱", "Пролом", "сначала заделай пролом — потом строй башню");
+    else if (!t) for (const k of SG_TOWERS) { const TD = D.TURRETS[k]; h += item(TD.icon, TD.name, TD.desc + " · со стены бьёт дальше", { op: "tw", i: n.slot, t: k }); }
     else { const TD = D.TURRETS[t.type]; h += t.lv < D.TURRET_MAX ? item(TD.icon, `${TD.name} → ур. ${t.lv + 1}`, `урон ${Math.round(TD.dmg * D.turretMul(t.lv))} → ${Math.round(TD.dmg * D.turretMul(t.lv + 1))}`, { op: "twu", i: n.slot }, "⬆️ Улучшить") : info(TD.icon, `${TD.name} · максимум`, ""); }
   }
   return h;
@@ -530,7 +630,7 @@ export function applyStateStr(str) {
   const sg = G().sg; if (!sg || !str) return;
   const [segs, gs, sl, ld, left, killed, slv, br, km, cur] = str.split("|");
   if (cur) { const [w, tot, lad, rams, hm, dm] = cur.split(";"); sg.wave = +w; sg.total = +tot; sg.ladLeft = +lad; sg.ramAt = rams ? rams.split("_").map(Number) : []; sg.hpMul = +hm / 1000; sg.dmgMul = +dm / 1000; }
-  const chS = [];
+  const chS = [], brOld = sg.seg.map((x, i) => (i === GATE ? sg.gate.br : x.br));
   segs.split(",").forEach((x, i) => { if (!x || !sg.seg[i]) return; const [lv, hp, b, rock] = x.split(".").map(Number); const s = sg.seg[i]; if (s.lv !== lv || s.br !== b || s.rock !== rock) chS.push(i); s.lv = lv; s.max = WALL[lv].hp * sg.hk; s.hp = s.max * hp / 1000; s.br = b; s.rock = rock; });
   { const [lv, hp, b, oil, cd] = gs.split(".").map(Number), gt = sg.gate; const ch = gt.lv !== lv || gt.br !== b || gt.oil !== oil; gt.lv = lv; gt.max = GATE_LV[lv].hp * sg.hk; gt.hp = gt.max * hp / 1000; gt.br = b; gt.oil = oil; gt.oilCd = cd / 10; if (ch) chS.push(GATE); }
   const chT = []; sl.split(",").forEach((x, k) => { const old = sg.slot[k] ? sg.slot[k].type + ":" + sg.slot[k].lv : ""; if (old !== x) chT.push(k); sg.slot[k] = x ? { type: x.split(":")[0], lv: +x.split(":")[1], cd: 0 } : null; });
@@ -538,7 +638,8 @@ export function applyStateStr(str) {
   (ld || "").split(",").filter(Boolean).forEach((x) => { const [id, x10, pu] = x.split(".").map(Number); ids.add(id); let L = sg.lad.find((q) => q.id === id); if (!L) { L = { id, x: x10 / 10, push: 0, n: 0 }; sg.lad.push(L); } L.push = pu / 10; });
   sg.lad = sg.lad.filter((L) => ids.has(L.id));
   sg.left = +left; sg.killed = +killed; sg.slv = +slv; sg.breaches = +br; sg.keepMin = +km / 100;
-  chS.forEach(updSegView); chT.forEach(updSlotView);
+  const brCh = chS.filter((i) => (i === GATE ? sg.gate.br : sg.seg[i].br) !== brOld[i]);
+  chS.forEach(updSegView); brCh.forEach(updSegAround); chT.forEach(updSlotView);
 }
 // ---------- орда по сети ----------
 // Хозяин, 8 раз в секунду: раз в секунду «ключевой кадр» (все юниты: id + 4 байта, по надёжному каналу), между ними — дельты
@@ -928,6 +1029,14 @@ export function buildStructViews() {
   for (let k = 0; k < SLOTS.length; k++) updSlotView(k);
 }
 function stoneMat(lv) { builderMats(); return lv >= 4 ? (BM.stoneD || (BM.stoneD = BM.stone.clone(), BM.stoneD.color = new THREE.Color(0.82, 0.84, 0.9), BM.stoneD)) : BM.stone; }
+// вал за пролётом — поверхность по той же формуле, что heightAt (со скосом к воротам/пролому); торцы — только у соседнего вала
+function rampGeo(sg, i) {
+  const nx = 10, nz = 3, P = [], U = [], I = [], L = 2.2;
+  for (let j = 0; j <= nz; j++) for (let k = 0; k <= nx; k++) { const lx = -SEGW / 2 + SEGW * k / nx, t = j / nz; P.push(lx, WH * (1 - t) * rampK(sg, i, lx), WT + L * t); U.push(lx * 0.6, t * L * 0.6); }
+  for (let j = 0; j < nz; j++) for (let k = 0; k < nx; k++) { const a = k + j * (nx + 1), b = a + 1, c = a + nx + 1, d = c + 1; I.push(a, c, b, b, c, d); }
+  for (const sd of [-1, 1]) { const lx = sd * SEGW / 2, h = WH * rampK(sg, i, lx); if (h < 0.05) continue; const o = P.length / 3; P.push(lx, 0, WT, lx, 0, WT + L, lx, h, WT); U.push(0, 0, L * 0.6, 0, 0, h * 0.6); I.push(...(sd < 0 ? [o, o + 1, o + 2] : [o, o + 2, o + 1])); }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2)); g.setIndex(I); g.computeVertexNormals(); return g;
+}
 function segGroup(i) {
   const sg = G().sg, x0 = segX(i), g = new THREE.Group(); g.position.set(x0, 0, WZ);
   const m = (geo, mat, x, y, z, ry) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); if (ry) o.rotation.y = ry; o.castShadow = true; o.receiveShadow = true; g.add(o); return o; };
@@ -944,16 +1053,18 @@ function segGroup(i) {
       m(new THREE.BoxGeometry(2.4, WH - 0.35, 0.22), planks, 0, (WH - 0.35) / 2, -0.55);
       if (gt.lv >= 2) for (const y of [0.5, 1.4]) m(new THREE.BoxGeometry(2.42, 0.12, 0.25), iron, 0, y, -0.56);
     } else { for (let k = 0; k < 5; k++) { const o = m(new THREE.BoxGeometry(0.3, 0.12, 1.1 + Math.random()), planks, (Math.random() - 0.5) * 2, 0.08, -1.4 - Math.random() * 1.6, Math.random() * 3); o.rotation.z = (Math.random() - 0.5) * 0.4; } }
-    if (gt.oil) { const c = cloneProp("Cauldron"); c.position.set(0, WH + 0.35, -0.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c); out.fx.push({ k: "oil", x: x0, y: WH + 0.9, z: WZ - 0.75 }); }
+    if (gt.oil && !gt.br) { const c = cloneProp("Cauldron"); c.position.set(0, WH + 0.35, -0.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c); out.fx.push({ k: "oil", x: x0, y: WH + 0.9, z: WZ - 0.75 }); }
+    else if (gt.oil) { const c = cloneProp("Cauldron"); c.position.set(0.9, 0.42, -2.3); c.rotation.set(0, 0.6, 1.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c); }   // котёл рухнул вместе с воротами — лежит на боку у входа
     for (const s of [-1, 1]) { const t = cloneProp("Torch_Metal"); t.position.set(s * 2.75, 0, -1.65); t.scale.setScalar(1.3); g.add(t); out.fx.push({ k: "torch", x: x0 + s * 2.75, y: 1.65, z: WZ - 1.65 }); }
     return bake(out);
   }
   const s = sg.seg[i];
-  // вал за стеной (насыпь с досками): по нему поднимаются на боевой ход
-  { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(2.2, 0); sh.lineTo(0, WH); sh.closePath(); const rg = new THREE.ExtrudeGeometry(sh, { depth: SEGW, bevelEnabled: false }); rg.rotateY(-Math.PI / 2); rg.translate(SEGW / 2, 0, WT); const o = m(rg, dirt, 0, 0, 0); o.castShadow = false; }
+  if (!s.br) { const o = m(rampGeo(sg, i), dirt, 0, 0, 0); o.castShadow = false; }   // вал за стеной (насыпь с досками): по нему поднимаются на боевой ход
   if (s.br) {
-    // пролом: груда камней и обломки
+    // пролом: груда камней и обломки; вал за стеной осыпался — низкий завал, через него идут по земле
     for (let k = 0; k < 16; k++) { const r = 0.35 + Math.random() * 0.6, o = m(new THREE.DodecahedronGeometry(r, 0), s.lv === 1 && k % 2 ? wood : stoneMat(Math.max(2, s.lv)), (Math.random() - 0.5) * 2.8, r * 0.45, (Math.random() - 0.5) * 3.2); o.rotation.set(Math.random() * 3, Math.random() * 3, 0); o.scale.y = 0.6; }
+    for (let k = 0; k < 9; k++) { const r = 0.25 + Math.random() * 0.35, o = m(new THREE.DodecahedronGeometry(r, 0), k % 3 ? dirt : planks, (Math.random() - 0.5) * 2.9, r * 0.3, WT + 0.3 + Math.random() * 1.9); o.rotation.set(Math.random() * 3, Math.random() * 3, 0); o.scale.y = 0.45; o.castShadow = false; }
+    if (s.rock) { for (let k = 0; k < 3; k++) { const o = m(new THREE.BoxGeometry(0.12, 0.12, 1.1 + k * 0.2), wood, 0.6 + (Math.random() - 0.5) * 0.8, 0.12, -1.6 - Math.random() * 0.8, Math.random() * 3); o.rotation.z = (Math.random() - 0.5) * 0.5; } const pile = cloneWorld("resource_stone"); pile.position.set(-0.7, 0, -1.9); pile.scale.setScalar(0.6); g.add(pile); }   // камнемёт рухнул: брусья и рассыпанные камни
     for (const sx of [-1, 1]) m(new THREE.BoxGeometry(0.5, WH * 0.6, 2.2), s.lv === 1 ? wood : stoneMat(s.lv), sx * 1.3, WH * 0.3, 0);
     out.fx.push({ k: "smoke", x: x0, y: 0.6, z: WZ });
     return bake(out);
@@ -987,10 +1098,22 @@ export function updSegView(i) {
   const v = segGroup(i); world.add(v.g); views.seg[i] = v; v.shake = 0;
   api.shadowsDirty();
 }
+// пролёт рухнул или встал: он сам, валы соседей (их скос к пролому) и башни на нём
+function updSegAround(i) {
+  for (let j = Math.max(0, i - 1); j <= Math.min(NSEG - 1, i + 1); j++) updSegView(j);
+  SLOTS.forEach((q, k) => { if (q === i) updSlotView(k); });
+}
 export function updSlotView(k) {
   if (!views || !world) return;
   const old = views.slot[k]; if (old) { world.remove(old.obj); views.slot[k] = null; }
-  const t = G().sg.slot[k]; if (!t) { api.shadowsDirty(); return; }
+  const sg = G().sg, t = sg.slot[k]; if (!t) { api.shadowsDirty(); return; }
+  if (!slotUp(sg, k)) {
+    // башня рухнула вместе с пролётом: груда камня и брёвен у подножия (встанет, когда пролом заделают)
+    builderMats(); const obj = new THREE.Group(), rnd = rng(k * 31 + 7); obj.position.set(segX(SLOTS[k]), 0, WZ - 0.4);
+    for (let q = 0; q < 10; q++) { const r = 0.3 + rnd() * 0.45, o = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), stoneMat(3)); o.position.set((rnd() - 0.5) * 2.2, r * 0.5 + (q < 3 ? 0.35 : 0), (rnd() - 0.5) * 2.4 - 0.5); o.rotation.set(rnd() * 3, rnd() * 3, 0); o.scale.y = 0.7; o.castShadow = true; obj.add(o); }
+    for (let q = 0; q < 3; q++) { const o = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.6), BM.wood); o.position.set((rnd() - 0.5) * 1.6, 0.25 + q * 0.12, -0.8 - rnd() * 0.8); o.rotation.set(0.2, rnd() * 3, (rnd() - 0.5) * 0.6); o.castShadow = true; obj.add(o); }
+    world.add(obj); views.slot[k] = { obj, b: null, kick: 0, ruin: 1 }; api.shadowsDirty(); return;
+  }
   const b = buildTowerDeep(t.type, t.lv, 0.02, null), obj = new THREE.Group(); obj.add(b.g); obj.position.set(segX(SLOTS[k]), WH - 0.05, WZ - 0.1); obj.scale.setScalar(0.82); world.add(obj);
   views.slot[k] = { obj, b, kick: 0 }; api.shadowsDirty();
 }
@@ -1002,7 +1125,7 @@ export function updateViews(dt, t) {
     if (f.k === "smoke" && Math.random() < 0.15) api.fx.puff(f.x + (Math.random() - 0.5) * 2, f.z + (Math.random() - 0.5) * 1.5, 1, api.COL.smoke, 0.7);
     if (f.k === "oil" && Math.random() < 0.2) api.fx.norm.add(f.x + (Math.random() - 0.5) * 0.3, f.y, f.z, 0, 0.6, 0, 0.9, 0.35, 0.3, api.COL.smoke, 0, 1);
   }
-  for (const s of views.slot) if (s) { s.kick = Math.max(0, s.kick - dt * 5); s.obj.scale.setScalar(0.82 * (1 + s.kick * 0.04)); if (s.b.spin) s.b.spin.rotation.y += dt * 2; if (s.b.orbs) s.b.orbs.forEach((o, i) => { const a = t * 2 + o.userData.orbit.a; o.position.set(Math.cos(a) * 0.55, s.b.spin.position.y + Math.sin(t * 3 + i) * 0.1, Math.sin(a) * 0.55); }); }
+  for (const s of views.slot) if (s && s.b) { s.kick = Math.max(0, s.kick - dt * 5); s.obj.scale.setScalar(0.82 * (1 + s.kick * 0.04)); if (s.b.spin) s.b.spin.rotation.y += dt * 2; if (s.b.orbs) s.b.orbs.forEach((o, i) => { const a = t * 2 + o.userData.orbit.a; o.position.set(Math.cos(a) * 0.55, s.b.spin.position.y + Math.sin(t * 3 + i) * 0.1, Math.sin(a) * 0.55); }); }
 }
 // события крепости (эффекты и звук у всех)
 export function onEvent(f) {
@@ -1016,9 +1139,15 @@ export function onEvent(f) {
   else if (k === "Sh") { const i = f[1], v = views && views.seg[i]; const x = segX(i); fx.chips(x + (Math.random() - 0.5) * 2.4, 1 + Math.random(), WZ - 1.3, i === GATE || (sg.seg[i] && sg.seg[i].lv === 1) ? COL.wood : COL.stone); AU.play("househit", { x, z: WZ, vol: 0.35, gap: 0.2 }); }
   else if (k === "Sm") { fx.explosion(0, WZ - WT - 0.4, 1.4); fx.chips(0, 1.2, WZ - 1.3, COL.wood); fx.shake = Math.min(1, fx.shake + 0.35); AU.play("boom2", { x: 0, z: WZ, vol: 0.7, gap: 0.3 }); }
   else if (k === "Sq") { api.msg("🐏 Таран!", "Его не взять стрелами — смола и камни ×3", 2600); AU.play("gong2", { vol: 0.8 }); }
-  else if (k === "Sb") { if (sg.seg[f[1]]) sg.seg[f[1]].br = 1; updSegView(f[1]); const x = segX(f[1]); fx.explosion(x, WZ, 3); fx.puff(x, WZ, 30, COL.dust, 1.2); AU.play("collapse", { x, z: WZ }); api.msg("Пролом в стене!", "Заделай его камнем или отходи к цитадели", 2600, "bad"); api.vib("notify", "error"); }
-  else if (k === "SB") { sg.gate.br = 1; updSegView(GATE); fx.explosion(0, WZ, 3.4); fx.puff(0, WZ, 30, COL.dust, 1.2); AU.play("collapse", { x: 0, z: WZ }); api.msg("Ворота выбиты!", "Орда идёт во двор — защищай цитадель!", 2800, "bad"); api.vib("notify", "error"); }
-  else if (k === "Sf") { const i = f[1]; if (i === GATE) sg.gate.br = 0; else if (sg.seg[i]) sg.seg[i].br = 0; updSegView(i); fx.puff(segX(i), WZ, 14, COL.dust, 0.8); AU.play("build", { x: segX(i), z: WZ }); }
+  else if (k === "Sb") {
+    const i = f[1]; if (sg.seg[i]) sg.seg[i].br = 1; updSegAround(i); const x = segX(i); fx.explosion(x, WZ, 3); fx.puff(x, WZ, 30, COL.dust, 1.2); fx.puff(x, WZ + WT + 1.1, 14, COL.dust, 0.9); AU.play("collapse", { x, z: WZ });
+    // что стояло на пролёте, падает вместе с ним: башня, камнемёт
+    const tw = SLOTS.some((q, j) => q === i && sg.slot[j]); if (tw) { fx.chips(x, WH + 2, WZ, COL.stone); fx.chips(x, WH + 1, WZ, COL.stone); fx.explosion(x, WZ - 0.5, 2.2); fx.shake = Math.min(1, fx.shake + 0.3); }
+    if (sg.seg[i] && sg.seg[i].rock) fx.chips(x + 0.9, WH + 0.6, WZ - 0.4, COL.wood);
+    api.msg("Пролом в стене!", tw ? "Башня рухнула вместе со стеной — заделай пролом, и она встанет снова" : "Заделай его камнем или отходи к цитадели", 2800, "bad"); api.vib("notify", "error");
+  }
+  else if (k === "SB") { sg.gate.br = 1; updSegAround(GATE); fx.explosion(0, WZ, 3.4); fx.puff(0, WZ, 30, COL.dust, 1.2); if (sg.gate.oil) { fx.chips(0, WH + 0.5, WZ - 0.75, COL.stone); fx.puff(0, WZ - 2, 10, COL.smoke, 0.8); } AU.play("collapse", { x: 0, z: WZ }); api.msg("Ворота выбиты!", "Орда идёт во двор — защищай цитадель!", 2800, "bad"); api.vib("notify", "error"); }
+  else if (k === "Sf") { const i = f[1]; if (i === GATE) sg.gate.br = 0; else if (sg.seg[i]) sg.seg[i].br = 0; updSegAround(i); fx.puff(segX(i), WZ, 14, COL.dust, 0.8); AU.play("build", { x: segX(i), z: WZ }); }
   else if (k === "Su") { const p = g.players[f[2]]; AU.play("build", { vol: 0.7 }); if (p && f[2] !== api.me) api.toast(`${p.name}: ${f[1]}`); else api.toast(`✔ ${f[1]}`); if (f[3] === "tw" || f[3] === "twu") updSlotView(f[4]); else if (f[4] >= 0) updSegView(f[4]); else updSegView(GATE); if (f[3] === "oil") updSegView(GATE); }
 }
 function towerShot(k, e) {
@@ -1028,7 +1157,7 @@ function towerShot(k, e) {
   else { const d = dist(top.x, top.z, e.x, e.z) || 1; sh.vx = (e.x - top.x) / d * TD.speed; sh.vz = (e.z - top.z) / d * TD.speed; sh.vy = (ey - y) / (d / TD.speed); sh.speed = TD.speed; if (TD.proj === "spear") sh.life = TD.range * 1.3 / TD.speed; }
   api.shots.push(sh);
   api.fx.muzzle(top.x, y, top.z, 0, 0, api.COL.spark);
-  const v = views && views.slot[k]; if (v) { v.kick = 1; if (v.b.aim) v.b.aim.rotation.y = Math.atan2(e.x - top.x, e.z - top.z); }
+  const v = views && views.slot[k]; if (v && v.b) { v.kick = 1; if (v.b.aim) v.b.aim.rotation.y = Math.atan2(e.x - top.x, e.z - top.z); }
   api.AU.play(TD.snd, { x: top.x, z: top.z, vol: 0.4, gap: 0.12 });
 }
 // подсказки и полоски поверх 3D

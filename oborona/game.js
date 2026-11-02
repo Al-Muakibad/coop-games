@@ -123,11 +123,11 @@ function gates() {
 
 // ================= МИР =================
 let gateViews = [];
-function buildLocation(locId, seed, n) {
+function buildLocation(locId, seed, n, np) {
   world.clear(); obstacles = []; gateViews = [];
   const L = D.LOC[locId] || D.LOCS[0];
   const spots = houseSpots(n), msp = merchantSpot(n);
-  if (locId === "siege") WD = SG.buildSiegeWorld(world, renderer, seed); else
+  if (locId === "siege") WD = SG.buildSiegeWorld(world, renderer, seed, np); else
   WD = buildWorld(world, renderer, locId, seed, spots, msp, spots.map((_, i) => { const pc = cfg && cfg.players && cfg.players[i], bn = pc && pc.cos && SE.BANNER[pc.cos.ban]; return (bn && bn.color) || (pc && pc.color) || COLORS[i % 6]; }));
   buildNodeViews(world, WD);
   G.nodes = WD.nodes;
@@ -522,7 +522,8 @@ function begin(c, snap) {
   const siege = G.loc === "siege"; G.sg = null; SG.dispose(); SG.resetNet(); lastHzT = -1;
   if (siege) D.LOC.siege.waves = SG.wavesFor(cfg.slv || 1);
   const n = siege ? 1 : cfg.houses || cfg.players.length, spots = siege ? [{ x: 0, z: SG.KZ }] : houseSpots(n);
-  buildLocation(G.loc, cfg.seed, n);
+  if (siege && !cfg.wnp) cfg.wnp = cfg.players.length;   // ресурсов в ущелье — по числу героев на старте (позднему гостю — тот же мир)
+  buildLocation(G.loc, cfg.seed, n, cfg.wnp);
   const wallMul = 1;
   // аванпост каждого игрока приходит из его сохранения: дом, стены, башни, добытчики — ничего не сбрасывается
   const msp0 = merchantSpot(n);
@@ -1246,7 +1247,7 @@ function doAct(pi, a) {
   switch (a.k) {
     case "g": {
       const nd = G.nodes[a.n]; if (!nd || nd.amt <= 0 || dist(p.x, p.z, nd.x, nd.z) > 3.5) return false;
-      nd.amt--; const g = D.RES[nd.kind].give; p.wallet[g] += p.st.gather; if (nd.amt <= 0) { nd.regrow = D.RES[nd.kind].regrow; navDirty = true; }
+      nd.amt--; const g = D.RES[nd.kind].give; p.wallet[g] += p.st.gather; if (nd.amt <= 0) { nd.regrow = nd.rg || D.RES[nd.kind].regrow; navDirty = true; }
       emit(["n", a.n, nd.amt, 0]); return true;
     }
     case "con": {   // вклад в стройку (можно в чужой дом)
@@ -1366,7 +1367,7 @@ function localStep(dt) {
   if (p.rageT > 0) p.rageT -= dt;
   // цель
   myTarget = null;
-  if (p.alive && p.st.kind !== "orbit") { let bd = p.st.range; for (const e of G.enemies.values()) { if (e.spawnT > 0) continue; const d = dist(p.x, p.z, e.x, e.z) - e.r * 0.5; if (d < bd) { bd = d; myTarget = e; } } }
+  if (p.alive && p.st.kind !== "orbit") { let bd = p.st.range; for (const e of G.enemies.values()) { if (e.spawnT > 0 || (G.sg && !SG.heroSees(p, e))) continue; const d = dist(p.x, p.z, e.x, e.z) - e.r * 0.5; if (d < bd) { bd = d; myTarget = e; } } }
   p.tgt = myTarget ? myTarget.id : 0;
   if (myTarget) p.ry = Math.atan2(myTarget.x - p.x, myTarget.z - p.z); else if (moving) p.ry = Math.atan2(mx, mz);
   fireCd -= dt;
@@ -1427,13 +1428,13 @@ function firePlayer(p, tgt, real) {
     for (let j = 0; j <= st.jumps && cur; j++) {
       hit.add(cur.id); pts.push(new THREE.Vector3(cur.x, 1, cur.z));
       if (mine) { const crit = Math.random() < st.crit; dealDamage(cur, st.dmg * mul * Math.pow(0.85, j) * (crit ? 2 : 1), crit, hitFlags(st)); }
-      let nb = null, bd = 4.5; for (const e of G.enemies.values()) { if (hit.has(e.id) || e.spawnT > 0) continue; const d = dist(e.x, e.z, cur.x, cur.z); if (d < bd) { bd = d; nb = e; } } cur = nb;
+      let nb = null, bd = 4.5; for (const e of G.enemies.values()) { if (hit.has(e.id) || e.spawnT > 0 || (G.sg && !SG.wallLos(cur.x, cur.z, SG.unitY(cur), e.x, e.z, SG.unitY(e)))) continue; const d = dist(e.x, e.z, cur.x, cur.z); if (d < bd) { bd = d; nb = e; } } cur = nb;
     }
     fx.lightning(pts, COL.blue);
   } else if (st.kind === "cone") {
     const dx = Math.sin(base), dz = Math.cos(base);
     fx.flame(sx + dx * 0.15, sy, sz + dz * 0.15, dx, dz, st.range / 4.8, st.cone);
-    if (mine) for (const e of G.enemies.values()) { if (e.spawnT > 0) continue; const ex = e.x - p.x, ez = e.z - p.z, d = Math.hypot(ex, ez); if (d > st.range + e.r) continue; const a = Math.atan2(ex, ez); let da = Math.abs(((a - base + Math.PI) % PI2 + PI2) % PI2 - Math.PI); if (da < st.cone) dealDamage(e, st.dmg * mul, false, hitFlags(st), true); }
+    if (mine) for (const e of G.enemies.values()) { if (e.spawnT > 0 || (G.sg && !SG.heroSees(p, e))) continue; const ex = e.x - p.x, ez = e.z - p.z, d = Math.hypot(ex, ez); if (d > st.range + e.r) continue; const a = Math.atan2(ex, ez); let da = Math.abs(((a - base + Math.PI) % PI2 + PI2) % PI2 - Math.PI); if (da < st.cone) dealDamage(e, st.dmg * mul, false, hitFlags(st), true); }
   } else if (st.kind === "boomer") {
     for (let i = 0; i < st.n; i++) { const a = base + (st.n > 1 ? (i / (st.n - 1) - 0.5) * st.spread * st.n : 0); shots.push({ kind: "boomer", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: 0, vz: Math.cos(a) * st.speedP, life: 3, out: st.range, owner: p.idx, real, dmg: st.dmg * mul, hit: new Set(), boom: true, spin: 0 }); }
   } else {
@@ -1505,6 +1506,7 @@ function updateShots(dt) {
       const ox = s.x, oz = s.z;
       s.x += s.vx * dt; s.y += (s.vy || 0) * dt; s.z += s.vz * dt; s.life -= dt;
       if (s.life <= 0) alive = false;
+      if (alive && G.sg && s.owner != null && SG.shotWall(ox, oz, s.x, s.z, s.y)) { alive = false; fx.hit(s.x, s.y, s.z, PROJ[s.kind].hit, false); }   // низкий выстрел героя — в стену, не сквозь неё
       const sx = s.x - ox, sz = s.z - oz, L2 = sx * sx + sz * sz || 1e-6, pad = Math.sqrt(L2) + 1.6;
       if (alive) for (const e of G.enemies.values()) {
         if (s.hit.has(e.id) || e.spawnT > 0) continue;
@@ -1782,6 +1784,8 @@ function updateCamera(dt) {
   } else { menuAng += dt * 0.05; d = 40; camPos.set(Math.cos(menuAng) * 7, 0, Math.sin(menuAng) * 7); }
   const sh = fx.shake * fx.shake * 0.5;
   camera.position.set(camPos.x + (Math.random() - 0.5) * sh, Math.sin(pitch) * d, camPos.z + Math.cos(pitch) * d + (Math.random() - 0.5) * sh);
+  // осада: камера не уходит в скалы и в гору за цитаделью — поднимаем её так, чтобы «штанга» от точки взгляда шла выше склона на 2 м
+  if (G.sg && phase === "play") { const cp = camera.position; let need = cp.y; for (let k = 0.3; k <= 1.001; k += 0.1) need = Math.max(need, (SG.terrainY(lerp(camPos.x, cp.x, k), lerp(camPos.z, cp.z, k)) + 2) / k); cp.y = need; }
   camLook.set(camPos.x, 0, camPos.z); camera.lookAt(camLook);
   const ov = window.__camOv; if (ov) { const p0 = P() || { x: 0, z: 0 }; camera.position.set(p0.x + ov[0], ov[1], p0.z + ov[2]); camera.lookAt(p0.x, ov[3], p0.z); }   // только для отладки
   AU.setListener(camPos.x, camPos.z);
@@ -2107,7 +2111,7 @@ function onSiegeOver(d, L) {
 }
 async function restart(loc, slv) {
   await prep(loc);
-  const c2 = Object.assign({}, cfg, { loc }); delete c2.me; if (slv) c2.slv = slv;
+  const c2 = Object.assign({}, cfg, { loc }); delete c2.me; delete c2.wnp; if (slv) c2.slv = slv;
   c2.players = c2.players.map((pc, i) => Object.assign({}, pc, i === me ? { op: S.op, prog: S.prog } : (G.players[i] && G.players[i].saved) ? G.players[i].saved : Object.assign(G.houses[i] ? { op: opOf(G.houses[i]) } : {}, G.players[i] ? { prog: progOf(G.players[i]) } : {}))).filter((pc, i) => !room || (G.players[i] && G.players[i].present));   // аванпосты и герои — как сейчас
   if (room) send("start2", Object.assign({ hi: Math.max(0, c2.players.findIndex((pc) => pc.id === room.me.id)), ep: ep + 1 }, c2));
   const mi = Math.max(0, c2.players.findIndex((pc) => pc.id === (room ? room.me.id : "me")));
@@ -2350,7 +2354,7 @@ window.__game = {
   killAll() { for (const e of [...G.enemies.values()]) killEnemy(e, me); G.queue = []; },
   setQuality(q) { S.set.q = String(q); readQ(); }, openPanel: (k) => openPanel(k, nearHouse()), tp(x, z) { const p = P(); p.x = x; p.z = z; if (hosting) p.seq++; },
   sim(sec, cb) { const dt = 1 / 30; for (let i = 0; i < sec * 30 && phase === "play"; i++) { if (cb) cb(i); if (isHost()) hostStep(dt); localStep(dt); remoteFire(dt); updateShots(dt); if (i % 6 === 0) { updateViews(dt * 6); fx.update(dt * 6); } } hud(); return { w: G.wave, ph: G.ph, en: G.enemies.size, q: G.queue.length, over: G.over, phase }; },
-  upd(h) { updHouseView(h); },
+  upd(h) { updHouseView(h); }, cam(sec) { for (let i = 0; i < sec * 30; i++) updateCamera(1 / 30); },
   startSoloWith(hero, wpn, loc) { S.hero = hero; S.wpn = wpn; return startSolo(loc); },
   SG, D, poolTarget, get renderer() { return renderer; }, get shots() { return shots; }, get room() { return room; }, scene, camera, get flows() { return flows; }, get WD() { return WD; }
 };
