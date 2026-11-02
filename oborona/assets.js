@@ -80,7 +80,7 @@ export async function loadAll(onProgress) {
   const byName = (sc, dst, fix) => { for (const ch of [...sc.children]) { ch.traverse((o) => { if (o.isMesh) fix && fix(o); }); dst[ch.name] = ch; } };
   byName(get("world").scene, A.world, (o) => { o.material.metalness = 0; o.material.roughness = 0.85; });
   byName(get("weapons").scene, A.weapons, (o) => { o.material.metalness = 0.1; o.material.roughness = 0.6; });
-  byName(get("props").scene, A.props, (o) => { o.material.envMapIntensity = 0.8; });
+  byName(get("props").scene, A.props, (o) => { o.material.envMapIntensity = 0.8; if (o.material.name === "MI_Banner") { o.material.metalness = 0; o.material.roughness = 0.8; } });   // ткань знамён в KayKit помечена металлом — в тени выходила чёрной
   byName(get("nature").scene, A.nature, (o) => {
     const m = o.material; m.envMapIntensity = 0.6;
     if (/Leaves|Grass|Flowers|Leaf/i.test(m.name) && !m.userData.wind) { m.userData.wind = 1; m.side = THREE.DoubleSide; m.alphaTest = Math.max(m.alphaTest || 0, 0.4); m.transparent = false; windify(m); }

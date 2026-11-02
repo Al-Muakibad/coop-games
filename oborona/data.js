@@ -86,7 +86,7 @@ export const MON = {
   boss_orc:   { name: "Вождь орков", fam: "boss", model: "barbarian", wpn: "Skeleton_Axe", tint: 0x4f8a3a, hp: 1500, spd: 1.35, dmg: 34, hdmg: 48, rate: 0.5, range: 2.3, xp: 85, coin: 55, r: 1.3, scale: 1.9, boss: true, abil: ["charge", "slam", "enrage"], minion: "orc", snd: "roar2" },
   boss_spider:{ name: "Королева пауков", fam: "boss", q: "m_spider", qa: { move: "Spider_Walk", atk: "Spider_Attack", die: "Spider_Death", idle: "Spider_Idle" }, qs: 2.3, tint: 0xb04aa0, hp: 1700, spd: 1.5, dmg: 28, hdmg: 40, rate: 0.55, range: 2.6, xp: 95, coin: 60, r: 1.5, boss: true, abil: ["web", "summon", "charge"], minion: "spider", snd: "roar" },
   boss_dragon:{ name: "Дракон", fam: "boss", q: "m_dragon", qa: { move: "Dragon_Flying", atk: "Dragon_Attack2", die: "Dragon_Death" }, qs: 3.0, fly: 3.2, hp: 2300, spd: 1.4, dmg: 30, hdmg: 45, rate: 0.5, range: 6, xp: 130, coin: 80, r: 1.6, boss: true, abil: ["breath", "volley", "summon"], minion: "dragonling", ranged: "fire", snd: "roar2" },
-  boss_giant: { name: "Ледяной великан", fam: "boss", model: "knight", tint: 0x9fd8ff, hp: 2600, spd: 1.15, dmg: 40, hdmg: 60, rate: 0.4, range: 2.6, xp: 140, coin: 85, r: 1.5, scale: 2.2, boss: true, abil: ["slam", "shards", "enrage"], minion: "walker", snd: "roar2" }
+  boss_giant: { name: "Ледяной великан", fam: "boss", model: "knight", wpn: "Skeleton_Axe", tint: 0x9fd8ff, hp: 2600, spd: 1.15, dmg: 40, hdmg: 60, rate: 0.4, range: 2.6, xp: 140, coin: 85, r: 1.5, scale: 2.2, boss: true, abil: ["slam", "shards", "enrage"], minion: "walker", snd: "roar2" }
 };
 export const MON_IDS = Object.keys(MON);
 export const FAM = { undead: ["walker", "runner", "caster", "brute"], orcs: ["orc", "orc_archer", "orc_brute"], zombies: ["zombie", "bomber"], beasts: ["spider", "rat", "frog", "slime"], flyers: ["bat", "wasp", "dragonling"] };
@@ -282,9 +282,14 @@ export const AUTO_LV = 4;   // с этого уровня добычу прив�
 export const REPAIR = { w: 12, part: 0.3 };
 export const RES = { tree: { give: "w", amount: 8, regrow: 40 }, rock: { give: "s", amount: 7, regrow: 50 } };
 export const fmtCost = (c) => [c.c ? `${c.c}🪙` : "", c.w ? `${c.w}🪵` : "", c.s ? `${c.s}🪨` : ""].filter(Boolean).join(" ");
-// места добытчиков вокруг аванпоста (снаружи кольца башен, в стороне от троп)
-export function gatherPos(hx, hz, mx, mz, k) {
-  const toC = Math.atan2(mz - hz, mx - hx) || 0;
-  const [a, r] = { saw: [1.75, 7.6], quarry: [-1.75, 7.6], mine: [Math.PI + 0.75, 8.1] }[k];
-  return { x: hx + Math.cos(toC + a) * r, z: hz + Math.sin(toC + a) * r };
+// раскладка аванпоста: добытчики стоят ровно между башнями (за кольцом башен), декор — в оставшихся просветах.
+// Башни (slotPos в game.js) — на base + 30° + k·60°. В одиночной игре base смотрит на 90° в сторону от торговца,
+// и одна башня стоит прямо на тропе к нему; в сетевой — base ≈ направлению к центру, тропа идёт между башнями.
+export function outpostLayout(hx, hz, mx, mz) {
+  const toC = Math.atan2(mz - hz, mx - hx) || 0, base = Math.atan2(-hz, -hx) || Math.PI / 2, solo = Math.cos(SLOTS * (base - toC)) < 0, D60 = Math.PI / 3;
+  const at = (a, r) => ({ x: hx + Math.cos(a) * r, z: hz + Math.sin(a) * r });
+  const ga = solo ? { saw: 0, quarry: 3 * D60, mine: 2 * D60 } : { saw: D60, quarry: -D60, mine: -2 * D60 };
+  return { toC, g: Object.fromEntries(Object.entries(ga).map(([k, a]) => [k, at(base + a, 9.0)])),
+    banners: [-1, 1].map((s) => at(toC + s * 0.42, 6.3)), torches: [-1, 1].map((s) => solo ? at(toC + s * 0.7, 7.2) : at(toC + Math.PI + s * 0.36, 6.2)), barrels: solo ? at(base + D60, 6.6) : at(base + 2 * D60, 6.6) };
 }
+export const gatherPos = (hx, hz, mx, mz, k) => outpostLayout(hx, hz, mx, mz).g[k];

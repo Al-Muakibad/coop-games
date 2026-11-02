@@ -160,6 +160,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     return out;
   };
   W.splatAt = splatAt;
+  // высота рельефа за краем поля (та же формула, что у сетки) — деревья и валуны опушки стоят на склоне, а не тонут в нём
+  const hAt = (x, z) => { const e = Math.hypot(x, z) - D.MAP_R - 1; return e > 0 ? Math.min(9, e * e * 0.045) * (0.5 + 0.9 * fbm(x * 0.04, z * 0.04)) : 0; };
+  W.hAt = hAt;
   const ground = new THREE.Mesh(geo, terrainMaterial(G)); ground.receiveShadow = true; world.add(ground);
   W.ground = ground;
   // вода
@@ -179,7 +182,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   const inst = {};   // name -> [{x,z,s,ry,tint}]
   const put = (name, x, z, s, ry) => (inst[name] = inst[name] || []).push({ x, z, s: s * NS(name.split("|")[0]), ry: ry == null ? r() * PI2 : ry });
   const gres = []; spots.forEach((s) => D.GATHER_KEYS.forEach((k) => gres.push(D.gatherPos(s.x, s.z, msp.x, msp.z, k)))); W.gres = gres;   // места добытчиков держим свободными
-  const freeAt = (x, z, pad) => spots.every((s) => dist(x, z, s.x, s.z) > 7.6 + pad) && gres.every((g) => dist(x, z, g.x, g.z) > 2.6 + pad) && dist(x, z, msp.x, msp.z) > 4.5 + pad && (!lakes.length || lakeD(x, z) > 0.8 + pad);
+  const freeAt = (x, z, pad) => spots.every((s) => dist(x, z, s.x, s.z) > 7.6 + pad) && gres.every((g) => dist(x, z, g.x, g.z) > 3.6 + pad) && dist(x, z, msp.x, msp.z) > 4.5 + pad && (!lakes.length || lakeD(x, z) > 0.8 + pad);
   const treeList = L.trees, totW = treeList.reduce((s, t) => s + t[1], 0);
   const pickTree = () => { let x = r() * totW; for (const [n, w] of treeList) { x -= w; if (x <= 0) return n; } return treeList[0][0]; };
   // лес по краю (не мешает игре) — плотное кольцо
@@ -192,7 +195,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   // ресурсы: деревья и камни (интерактивные)
   // декор у аванпостов (знамёна, факелы, бочки) и костёр у торговца ставится позже — места заранее держим свободными от ресурсов
   const deco0 = [{ x: msp.x + 3.2, z: msp.z - 1.5, r: 1.6 }];
-  spots.forEach((s0) => { const a0 = Math.atan2(msp.z - s0.z, msp.x - s0.x) || 0, at = (ang, rr, r0) => deco0.push({ x: s0.x + Math.cos(ang) * rr, z: s0.z + Math.sin(ang) * rr, r: r0 }); for (const sg of [-1, 1]) { at(a0 + sg * 0.42, 6.3, 0.5); at(a0 + Math.PI + sg * 0.36, 6.2, 0.4); } at(a0 + 2.55, 6.2, 1.2); });
+  spots.forEach((s0) => { const lay = D.outpostLayout(s0.x, s0.z, msp.x, msp.z); lay.banners.forEach((p) => deco0.push({ x: p.x, z: p.z, r: 0.5 })); lay.torches.forEach((p) => deco0.push({ x: p.x, z: p.z, r: 0.4 })); deco0.push({ x: lay.barrels.x, z: lay.barrels.z, r: 1.2 }); });
   const okNode = (x, z) => Math.hypot(x, z) < D.MAP_R - 2.5 && freeAt(x, z, 0) && W.nodes.every((q) => dist(x, z, q.x, q.z) > 2.6) && deco0.every((d) => dist(x, z, d.x, d.z) > d.r + 1.4);
   const want = { tree: 22 + 4 * spots.length, rock: 10 + 3 * spots.length };
   for (const kind of ["tree", "rock"]) {
@@ -219,9 +222,9 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     for (let k = 0; k < n; k++) { const a = r() * PI2, rr = Math.pow(r(), 0.7) * 1.6, x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr; if (okDeco(x, z)) put(kinds[k % 2], x, z, (1.0 - rr * 0.18) * (0.75 + r() * 0.45)); }
   }
   // опушка: кусты и папоротники плотнее к краю поля — мягкий переход в лес
-  const edgeD = L.deco.filter((n) => /Bush|Fern|Plant/.test(n)); if (edgeD.length) for (let i = 0; i < 70; i++) { const a = r() * PI2, rr = D.MAP_R - 1.5 + Math.pow(r(), 0.6) * 4.5, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (freeAt(x, z, -2) && splatAt(x, z)[1] < 0.4) put(edgeD[Math.floor(r() * edgeD.length)], x, z, 0.9 + r() * 0.6); }
+  const edgeD = L.deco.filter((n) => /Bush|Fern|Plant/.test(n)); if (edgeD.length) for (let i = 0; i < 70; i++) { const a = r() * PI2, rr = D.MAP_R - 1.5 + Math.pow(r(), 0.6) * 4.5, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (freeAt(x, z, -2) && splatAt(x, z)[1] < 0.4 && W.nodes.every((q) => dist(x, z, q.x, q.z) > (q.r || 0.5) + 0.8)) put(edgeD[Math.floor(r() * edgeD.length)], x, z, 0.9 + r() * 0.6); }
   // камни-валуны декоративные
-  for (let i = 0; i < 10; i++) { const a = r() * PI2, rr = 8 + r() * 18, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (!freeAt(x, z, 0.5)) continue; put("RockPath_Round_Small_1", x, z, 1.0); }
+  for (let i = 0; i < 10; i++) { const a = r() * PI2, rr = 8 + r() * 18, x = Math.cos(a) * rr, z = Math.sin(a) * rr; if (!freeAt(x, z, 0.5) || W.nodes.some((q) => dist(x, z, q.x, q.z) < (q.r || 0.5) + 1.6)) continue; put("RockPath_Round_Small_1", x, z, 1.0); }   // не на ресурсный камень
   // руины
   const ruins = [];
   for (let i = 0; i < 4; i++) for (let t = 0; t < 60; t++) {
@@ -241,16 +244,16 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
   }
   // обжитой вид у каждого аванпоста (только снаружи кольца башен, проходы свободны)
   spots.forEach((sp0, si) => {
-    const toC = Math.atan2(msp.z - sp0.z, msp.x - sp0.x) || 0, at = (ang, rr) => ({ x: sp0.x + Math.cos(ang) * rr, z: sp0.z + Math.sin(ang) * rr });
+    const lay = D.outpostLayout(sp0.x, sp0.z, msp.x, msp.z), toC = lay.toC;
     const place = (obj, p, s, ry, rad) => { obj.position.set(p.x, 0, p.z); obj.scale.setScalar(s); obj.rotation.y = ry; obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); world.add(obj); if (rad) W.obstacles.push({ x: p.x, z: p.z, r: rad }); };
     const team = (W.colors && W.colors[si]) || null;
-    for (const sgn of [-1, 1]) {   // знамёна по бокам тропы к центру
-      const p = at(toC + sgn * 0.42, 6.3);
+    for (let si2 = 0; si2 < 2; si2++) {   // знамёна по бокам тропы к центру, факелы — в просветах между башнями
+      const p = lay.banners[si2];
       place(makeBanner(team || "#c0392b"), p, 1, -toC + Math.PI / 2, 0.3);
-      const tp = at(toC + Math.PI + sgn * 0.36, 6.2), t = cloneProp("Torch_Metal"); place(t, tp, 1.3, 0, 0.25);
+      const tp = lay.torches[si2], t = cloneProp("Torch_Metal"); place(t, tp, 1.3, 0, 0.25);
       W.fxPoints.push({ k: "torch", x: tp.x, z: tp.z, y: 1.55 });
     }
-    const cl = at(toC + 2.55, 6.2);   // бочки и ящики
+    const cl = lay.barrels;   // бочки и ящики
     [["Barrel", 0, 0, 1.0], ["Crate_Wooden", 0.75, 0.35, 0.95], ["Barrel_Apples", -0.55, 0.6, 0.9], ["Bucket_Wooden_1", 0.3, -0.7, 0.9]].forEach(([n, dx, dz, sc]) => { const o = cloneProp(n); place(o, { x: cl.x + dx, z: cl.z + dz }, sc, r() * PI2, 0); });
     W.obstacles.push({ x: cl.x, z: cl.z, r: 1.0 });
   });
@@ -271,7 +274,7 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
       if (((L.base || L.id) === "desert" || (L.base || L.id) === "volcano" || L.base === "desert" || L.base === "volcano") && /Grass|Leaves$|^Leaves/.test(mat.name) && !/Pine|Twisted|Normal/.test(mat.name)) { mat = mat.clone(); mat.color.setRGB(1.05, 0.88, 0.55); }   // сухая трава пустыни
       const im = new THREE.InstancedMesh(o.geometry, mat, list.length); im.castShadow = big; im.receiveShadow = true;
       const local = o.matrixWorld.clone(), mm = new THREE.Matrix4();
-      list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, 0, it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(it.s, it.s, it.s)); im.setMatrixAt(i, mm.multiply(local)); });
+      list.forEach((it, i) => { mm.compose(new THREE.Vector3(it.x, Math.max(0, hAt(it.x, it.z) - 0.15), it.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, it.ry, 0)), new THREE.Vector3(it.s, it.s, it.s)); im.setMatrixAt(i, mm.multiply(local)); });
       world.add(im); W.inst.push(im);
     });
     // валуны — по габариту модели (с учётом поворота); плоские камни-тропинки (высота 10 см) не мешают ходить
@@ -285,11 +288,11 @@ export function buildWorld(world, renderer, locId, seed, spots, msp, colors) {
     for (const p of allPalms) {
       const h = 3.2 * p.s, pts = []; const lean = (r() - 0.5) * 0.8;
       for (let i = 0; i <= 6; i++) { const t = i / 6; pts.push(new THREE.Vector3(Math.sin(t * 1.4) * lean, t * h, 0)); }
-      const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 8, 0.14 * p.s, 6, false); const tm = new THREE.Mesh(tg, trunkM); tm.position.set(p.x, 0, p.z); tm.rotation.y = r() * PI2; tm.castShadow = true; world.add(tm);
-      const top = pts[6].clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), tm.rotation.y); crowns.push({ x: p.x + top.x, z: p.z + top.z, y: top.y, s: p.s });
+      const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 8, 0.14 * p.s, 6, false); const tm = new THREE.Mesh(tg, trunkM), y0 = hAt(p.x, p.z) - 0.1; tm.position.set(p.x, y0, p.z); tm.rotation.y = r() * PI2; tm.castShadow = true; world.add(tm);
+      const top = pts[6].clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), tm.rotation.y); crowns.push({ x: p.x + top.x, z: p.z + top.z, y: top.y + y0, s: p.s });
     }
     const crownSrc = A.nature.Plant_7_Big;
-    if (crownSrc && crowns.length) crownSrc.traverse((o) => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, o.material, crowns.length); im.castShadow = true; const mm = new THREE.Matrix4(); crowns.forEach((c, i) => { mm.compose(new THREE.Vector3(c.x, c.y - 0.3, c.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() * PI2, 0)), new THREE.Vector3(2.6 * c.s, 1.6 * c.s, 2.6 * c.s)); im.setMatrixAt(i, mm); }); world.add(im); });
+    if (crownSrc && crowns.length) crownSrc.traverse((o) => { if (!o.isMesh) return; const im = new THREE.InstancedMesh(o.geometry, palmLeaf(o.material), crowns.length); im.castShadow = true; const mm = new THREE.Matrix4(); crowns.forEach((c, i) => { mm.compose(new THREE.Vector3(c.x, c.y - 0.3, c.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() * PI2, 0)), new THREE.Vector3(2.6 * c.s, 1.6 * c.s, 2.6 * c.s)); im.setMatrixAt(i, mm); }); world.add(im); });
   }
   // трава-травинки (дёшево, много)
   buildGrass(world, L, spots, lakeD, splatAt, W.gres);
@@ -315,6 +318,15 @@ export function makeBanner(color) {
   return g;
 }
 
+// крона пальмы из агавы Plant_7_Big: у модели лиловые листья — перекрашиваем в зелень пальмы (тон по яркости исходного цвета)
+const palmMats = new Map();
+export function palmLeaf(m) {
+  if (palmMats.has(m)) return palmMats.get(m);
+  const p = m.clone(), base = m.onBeforeCompile;
+  p.onBeforeCompile = (sh, r) => { if (base) base(sh, r); sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\n float pl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11)); diffuseColor.rgb = mix(vec3(0.07, 0.2, 0.05), vec3(0.42, 0.66, 0.2), clamp(pl * 2.2, 0.0, 1.0));"); };
+  p.customProgramCacheKey = () => "palm" + (m.customProgramCacheKey ? m.customProgramCacheKey() : "");
+  palmMats.set(m, p); return p;
+}
 // ---------- ресурсные узлы: инстансы целого и срубленного ----------
 export function buildNodeViews(world, W) {
   const groups = {};
@@ -323,7 +335,7 @@ export function buildNodeViews(world, W) {
   for (const [model, list] of Object.entries(groups)) {
     const parts = [], stumps = [];
     const mk = (src, n, arr, tintF) => { src.updateMatrixWorld(true); src.traverse((o) => { if (!o.isMesh) return; let mat = o.material; if (tintF) mat = tintF(mat); const im = new THREE.InstancedMesh(o.geometry, mat, n); im.castShadow = true; im.receiveShadow = true; im.userData.local = o.matrixWorld.clone(); world.add(im); arr.push(im); }); };
-    if (model === "palm") { /* пальмы-ресурсы рисуем как агаву на стволе — упрощённо куст */ mk(A.nature.Plant_7_Big, list.length, parts); }
+    if (model === "palm") { /* пальмы-ресурсы рисуем как агаву на стволе — упрощённо куст */ mk(A.nature.Plant_7_Big, list.length, parts, palmLeaf); }
     else mk(A.nature[model], list.length, parts, (m) => { if (W.L.snowy && /Leaves|Leaf/.test(m.name)) { m = m.clone(); m.color.setRGB(0.85, 0.92, 1); } if (W.L.charred && /Bark/.test(m.name)) { m = m.clone(); m.color.setRGB(0.35, 0.3, 0.3); } if ((W.L.base || W.L.id) === "autumn" && /Leaves_Normal/.test(m.name)) { m = m.clone(); m.color.setRGB(1.2, 0.7, 0.35); } return m; });
     // пень: короткий цилиндр с текстурой коры
     if (list[0].kind === "tree") { const sg = new THREE.CylinderGeometry(0.28, 0.36, 0.45, 9); sg.translate(0, 0.22, 0); const im = new THREE.InstancedMesh(sg, pbr("cedar", 1, { color: 0x8a6a4a }), list.length); im.userData.local = new THREE.Matrix4(); im.castShadow = true; world.add(im); stumps.push(im); }
@@ -377,7 +389,7 @@ function buildGrass(world, L, spots, lakeD, splatAt, gres) {
     const a = Math.random() * PI2, rr = Math.pow(Math.random(), 0.65) * 1.5, x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
     left--;
     if (spots.some((p) => dist(x, z, p.x, p.z) < 5.0)) { left = 0; continue; }
-    if (gres && gres.some((g) => dist(x, z, g.x, g.z) < 1.9)) continue;
+    if (gres && gres.some((g) => dist(x, z, g.x, g.z) < 2.5)) continue;
     if (lakeD(x, z) < 0.3) continue;
     const sm = splatAt(x, z); if (sm[1] > 0.3 || sm[2] > 0.05) continue;
     m.compose(v.set(x, 0, z), q.setFromEuler(e.set(0, Math.random() * PI2, 0)), s.setScalar((0.7 + Math.random() * 0.8) * (1.15 - rr * 0.3)));

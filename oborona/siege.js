@@ -7,7 +7,7 @@ import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import * as D from "./data.js";
 import { A, makeChar, makeQ, cloneWorld, cloneProp, cloneWeapon, cloneNature, pbr, has } from "./assets.js";
-import { buildTowerDeep, bake, BM, builderMats } from "./builders.js";
+import { buildTowerDeep, bake, BM, builderMats, aimTower } from "./builders.js";
 import { terrainMaterial, makeWeather, makeBanner, rng, noise2, NS, footprint, fpCircles, fitNode } from "./world.js";
 
 // ---------- геометрия крепости ----------
@@ -90,7 +90,8 @@ export function buildSiegeWorld(wroot, renderer, seed, np) {
     const x = pos.getX(i), z = pos.getZ(i), y = cliffY(x, z);
     const e = Math.abs(x) - halfW(z);
     let alt = clamp((e + 1.2) / 2.5, 0, 1), path = 0, plaza = 0;
-    alt = Math.max(alt, clamp((z - BZ + 1) / 3, 0, 1), clamp((FZ - z + 1) / 3, 0, 1));
+    alt = Math.max(alt, clamp((FZ - z + 1) / 3, 0, 1));
+    const bk = clamp((z - BZ + 1) / 3, 0, 1); if (bk > 0) { alt = Math.max(alt * (1 - bk), 0.28 * bk); path = Math.max(path, 0.5 * bk * (0.75 + 0.5 * noise2(x * 0.35, z * 0.35))); }   // гора за цитаделью отвёрнута от луны: не чёрный «darkrock», а светлая каменистая осыпь (не провал в пустоту)
     if (z < WZ - 1) path = clamp(1 - (Math.abs(x + Math.sin(z * 0.09) * 1.2) - 2.6) / 1.4, 0, 1) * (0.75 + 0.25 * noise2(x * 1.3, z * 1.3)) * clamp((z - FZ) / 4, 0, 1);   // насыпь-дорога к воротам
     if (z > WZ + 1 && z < KZ) path = Math.max(path, clamp(1 - (Math.abs(x) - 1.8) / 1.2, 0, 1) * 0.8);                                         // дорога от ворот к донжону
     plaza = clamp(1 - (dist(x, z, 0, KZ) - 7.5 - (noise2(x * 0.8, z * 0.8) - 0.5) * 2) / 1.2, 0, 1);
@@ -180,6 +181,8 @@ export function buildSiegeWorld(wroot, renderer, seed, np) {
   }
   // свет: тёплые факелы у ворот и донжона (немного — на телефоне каждый свет дорог)
   for (const [x, y, z, c, i] of [[0, 4.2, WZ - 2.4, 0xff9a4a, 9], [0, 3.5, KZ - 6, 0xffb066, 7], [-9, 3.2, WZ + 3, 0xff9a4a, 5]]) { const l = new THREE.PointLight(c, i, 14, 1.6); l.position.set(x, y, z); world.add(l); W.lights.push(l); }
+  // заполняющий «лунный» свет с севера без теней: склон за цитаделью (внизу кадра) отвёрнут от основного света и без него уходил в черноту
+  { const fl = new THREE.DirectionalLight(0x8fa6d8, 0.9); fl.position.set(-4, 10, -24); fl.target.position.set(0, 0, 30); world.add(fl); world.add(fl.target); W.lights.push(fl); }
   // дождь
   W.weather = makeWeather(world, "rain", 1.35);
   views = { seg: [], gate: null, slot: [], ladders: new Map(), rams: new Map(), oil: null };
@@ -1046,19 +1049,26 @@ function segGroup(i) {
     const gt = sg.gate;
     // надвратная арка и две башни
     for (const s of [-1, 1]) { m(new THREE.BoxGeometry(1.3, WH + 1.6, 2.9), stoneMat(gt.lv + 1), s * 1.85, (WH + 1.6) / 2, 0); m(new THREE.ConeGeometry(1.05, 1.4, 4), BM.roofG, s * 1.85, WH + 1.6 + 0.7, 0, Math.PI / 4); for (const z of [-1.0, 1.0]) m(new THREE.BoxGeometry(0.34, 0.4, 0.34), stoneMat(gt.lv + 1), s * 1.85 + 0.45, WH + 1.8, z * 0.5); }
-    m(new THREE.BoxGeometry(2.6, 0.7, 2.6), stoneMat(gt.lv + 1), 0, WH - 0.05, 0);
-    for (let k = -1; k <= 1; k++) m(new THREE.BoxGeometry(0.4, 0.42, 0.3), stoneMat(gt.lv + 1), k * 0.85, WH + 0.5, -1.15);
+    if (!gt.br) { m(new THREE.BoxGeometry(2.6, 0.7, 2.6), stoneMat(gt.lv + 1), 0, WH - 0.05, 0); for (let k = -1; k <= 1; k++) m(new THREE.BoxGeometry(0.4, 0.42, 0.3), stoneMat(gt.lv + 1), k * 0.85, WH + 0.5, -1.15); }
+    else {   // ворота выбиты: надвратный ход обрушился (по нему уже не пройти — heightAt даёт землю), обломки перемычки в проёме
+      const r2 = rng(97 + gt.lv); for (const [x, y, z, rz, w] of [[-0.75, 0.32, -0.4, 0.42, 1.25], [0.82, 0.28, 0.5, -0.35, 1.1]]) { const o = m(new THREE.BoxGeometry(w, 0.42, 1.3), stoneMat(gt.lv + 1), x, y, z, r2() * 0.6 - 0.3); o.rotation.z = rz; }
+      for (let k = 0; k < 7; k++) { const rr = 0.18 + r2() * 0.22, o = m(new THREE.DodecahedronGeometry(rr, 0), stoneMat(gt.lv + 1), (r2() - 0.5) * 2.2, rr * 0.5, (r2() - 0.5) * 2.4); o.rotation.set(r2() * 3, r2() * 3, 0); }
+      for (const s2 of [-1, 1]) m(new THREE.BoxGeometry(0.5, 0.35, 2.4), stoneMat(gt.lv + 1), s2 * 1.05, WH - 0.4, 0, s2 * 0.08).rotation.z = s2 * 0.25;   // обломанные края перемычки на башнях
+    }
     if (!gt.br) {
       if (gt.lv >= 3) { for (let k = -5; k <= 5; k++) m(new THREE.BoxGeometry(0.07, WH - 0.4, 0.07), iron, k * 0.22, (WH - 0.4) / 2, -0.9); for (let k = 0; k < 6; k++) m(new THREE.BoxGeometry(2.4, 0.06, 0.07), iron, 0, 0.25 + k * 0.38, -0.9); }
       m(new THREE.BoxGeometry(2.4, WH - 0.35, 0.22), planks, 0, (WH - 0.35) / 2, -0.55);
       if (gt.lv >= 2) for (const y of [0.5, 1.4]) m(new THREE.BoxGeometry(2.42, 0.12, 0.25), iron, 0, y, -0.56);
     } else { for (let k = 0; k < 5; k++) { const o = m(new THREE.BoxGeometry(0.3, 0.12, 1.1 + Math.random()), planks, (Math.random() - 0.5) * 2, 0.08, -1.4 - Math.random() * 1.6, Math.random() * 3); o.rotation.z = (Math.random() - 0.5) * 0.4; } }
     if (gt.oil && !gt.br) { const c = cloneProp("Cauldron"); c.position.set(0, WH + 0.35, -0.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c); out.fx.push({ k: "oil", x: x0, y: WH + 0.9, z: WZ - 0.75 }); }
-    else if (gt.oil) { const c = cloneProp("Cauldron"); c.position.set(0.9, 0.42, -2.3); c.rotation.set(0, 0.6, 1.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c); }   // котёл рухнул вместе с воротами — лежит на боку у входа
+    else if (gt.oil) {   // котёл рухнул вместе с перемычкой — лежит на боку в проёме, смола разлита (видно и со двора, и с поля)
+      const c = cloneProp("Cauldron"); c.position.set(0.35, 0.42, -0.35); c.rotation.set(0, 0.6, 1.75); c.scale.setScalar(gt.oil === 2 ? 1.25 : 1.0); g.add(c);
+      const pud = new THREE.Mesh(new THREE.CircleGeometry(0.95, 18).rotateX(-Math.PI / 2), BM.sgTar || (BM.sgTar = new THREE.MeshStandardMaterial({ color: 0x120d09, roughness: 0.12, metalness: 0.2 }))); pud.position.set(-0.15, 0.035, -0.75); pud.scale.set(1, 1, 0.7); pud.receiveShadow = true; g.add(pud);
+    }
     for (const s of [-1, 1]) { const t = cloneProp("Torch_Metal"); t.position.set(s * 2.75, 0, -1.65); t.scale.setScalar(1.3); g.add(t); out.fx.push({ k: "torch", x: x0 + s * 2.75, y: 1.65, z: WZ - 1.65 }); }
     return bake(out);
   }
-  const s = sg.seg[i];
+  const s = sg.seg[i], sk = SLOTS.indexOf(i), tw = sk >= 0 && slotUp(sg, sk); out.tw = tw;   // на пролёте стоит башня: колья, зубцы и знамя у её подножия не ставим
   if (!s.br) { const o = m(rampGeo(sg, i), dirt, 0, 0, 0); o.castShadow = false; }   // вал за стеной (насыпь с досками): по нему поднимаются на боевой ход
   if (s.br) {
     // пролом: груда камней и обломки; вал за стеной осыпался — низкий завал, через него идут по земле
@@ -1071,25 +1081,25 @@ function segGroup(i) {
   }
   if (s.lv === 1) {
     // частокол: заострённые брёвна + помост
-    for (let k = 0; k < 9; k++) { const x = -1.33 + k * 0.333, h = WH + 0.6 + (k % 2) * 0.15; m(new THREE.CylinderGeometry(0.16, 0.18, h, 7), wood, x, h / 2, -0.85); m(new THREE.ConeGeometry(0.16, 0.38, 7), wood, x, h + 0.19, -0.85); }
+    for (let k = 0; k < 9; k++) { const x = -1.33 + k * 0.333, h = WH + 0.6 + (k % 2) * 0.15; if (tw && Math.abs(x) < 0.95) continue; m(new THREE.CylinderGeometry(0.16, 0.18, h, 7), wood, x, h / 2, -0.85); m(new THREE.ConeGeometry(0.16, 0.38, 7), wood, x, h + 0.19, -0.85); }
     m(new THREE.BoxGeometry(SEGW, 0.16, 1.9), planks, 0, WH - 0.08, 0.15);
     for (const x of [-1.2, 0, 1.2]) for (const z of [-0.6, 0.9]) m(new THREE.BoxGeometry(0.16, WH - 0.15, 0.16), wood, x, (WH - 0.15) / 2, z);
   } else {
     const H = WH + (s.lv >= 3 ? 0.1 : 0);
     m(new THREE.BoxGeometry(SEGW + 0.02, H, 2.4), stoneMat(s.lv), 0, H / 2, 0);
     m(new THREE.BoxGeometry(SEGW, 0.08, 1.5), planks, 0, H + 0.04, 0.25);
-    if (s.lv >= 3) for (let k = 0; k < 4; k++) m(new THREE.BoxGeometry(0.46, 0.55, 0.42), stoneMat(s.lv), -1.15 + k * 0.77, H + 0.27, -0.98);
+    if (s.lv >= 3) for (let k = 0; k < 4; k++) { if (tw && k > 0 && k < 3) continue; m(new THREE.BoxGeometry(0.46, 0.55, 0.42), stoneMat(s.lv), -1.15 + k * 0.77, H + 0.27, -0.98); }
     else m(new THREE.BoxGeometry(SEGW, 0.38, 0.3), stoneMat(s.lv), 0, H + 0.19, -1.05);
-    if (s.lv >= 4) { for (const sx of [-1.1, 1.1]) { const b = m(new THREE.BoxGeometry(0.5, H * 0.8, 0.6), stoneMat(s.lv), sx, H * 0.4, -1.45); b.rotation.x = 0.18; } const bn = makeBanner("#1f2a44"); bn.position.set(0, H - 0.2, -1.25); bn.rotation.y = Math.PI; bn.scale.setScalar(0.8); g.add(bn); }
+    if (s.lv >= 4) { for (const sx of [-1.1, 1.1]) { const b = m(new THREE.BoxGeometry(0.5, H * 0.8, 0.6), stoneMat(s.lv), sx, H * 0.4, -1.45); b.rotation.x = 0.18; } if (!tw) { const bn = makeBanner("#1f2a44"); bn.position.set(0, H - 0.2, -1.25); bn.rotation.y = Math.PI; bn.scale.setScalar(0.8); g.add(bn); } }
   }
   if (s.rock) {
     // камнемёт: стойка со стрелой и корзина камней
-    const H = WH + 0.1;
-    m(new THREE.BoxGeometry(0.14, 1.4, 0.14), wood, 0.9, H + 0.7, -0.4);
-    const arm = m(new THREE.BoxGeometry(0.1, 0.1, 1.5), wood, 0.9, H + 1.35, -0.85); arm.rotation.x = -0.3;
-    const pile = cloneWorld("resource_stone"); pile.position.set(0.9, H + 0.05, 0.35); pile.scale.setScalar(s.rock === 2 ? 0.75 : 0.55); g.add(pile);
+    const H = WH + 0.1, rx = tw ? 1.2 : 0.9;   // рядом с башней камнемёт сдвинут к краю пролёта
+    m(new THREE.BoxGeometry(0.14, 1.4, 0.14), wood, rx, H + 0.7, -0.4);
+    const arm = m(new THREE.BoxGeometry(0.1, 0.1, 1.5), wood, rx, H + 1.35, -0.85); arm.rotation.x = -0.3;
+    const pile = cloneWorld("resource_stone"); pile.position.set(rx, H + 0.05, 0.35); pile.scale.setScalar(s.rock === 2 ? 0.75 : 0.55); g.add(pile);
   }
-  if (i % 3 === 0) { const t = cloneProp("Torch_Metal"); t.position.set(0, WH - 0.05, 0.85); t.scale.setScalar(0.9); g.add(t); out.fx.push({ k: "torch", x: x0, y: WH + 1.05, z: WZ + 0.85 }); }
+  if (i % 3 === 0) { const t = cloneProp("Torch_Metal"); t.position.set(tw ? -1.05 : 0, WH - 0.05, 0.85); t.scale.setScalar(0.9); g.add(t); out.fx.push({ k: "torch", x: x0 + (tw ? -1.05 : 0), y: WH + 1.05, z: WZ + 0.85 }); }
   return bake(out);
 }
 export function updSegView(i) {
@@ -1103,10 +1113,12 @@ function updSegAround(i) {
   for (let j = Math.max(0, i - 1); j <= Math.min(NSEG - 1, i + 1); j++) updSegView(j);
   SLOTS.forEach((q, k) => { if (q === i) updSlotView(k); });
 }
+const i2b = (v) => !!v;
 export function updSlotView(k) {
   if (!views || !world) return;
   const old = views.slot[k]; if (old) { world.remove(old.obj); views.slot[k] = null; }
-  const sg = G().sg, t = sg.slot[k]; if (!t) { api.shadowsDirty(); return; }
+  const sg = G().sg, t = sg.slot[k], si = SLOTS[k]; if (views.seg[si] && i2b(views.seg[si].tw) !== i2b(slotUp(sg, k)) && !sg.seg[si].br) updSegView(si);   // пролёт под башней перестраиваем (без кольев/знамени у подножия)
+  if (!t) { api.shadowsDirty(); return; }
   if (!slotUp(sg, k)) {
     // башня рухнула вместе с пролётом: груда камня и брёвен у подножия (встанет, когда пролом заделают)
     builderMats(); const obj = new THREE.Group(), rnd = rng(k * 31 + 7); obj.position.set(segX(SLOTS[k]), 0, WZ - 0.4);
@@ -1125,7 +1137,7 @@ export function updateViews(dt, t) {
     if (f.k === "smoke" && Math.random() < 0.15) api.fx.puff(f.x + (Math.random() - 0.5) * 2, f.z + (Math.random() - 0.5) * 1.5, 1, api.COL.smoke, 0.7);
     if (f.k === "oil" && Math.random() < 0.2) api.fx.norm.add(f.x + (Math.random() - 0.5) * 0.3, f.y, f.z, 0, 0.6, 0, 0.9, 0.35, 0.3, api.COL.smoke, 0, 1);
   }
-  for (const s of views.slot) if (s && s.b) { s.kick = Math.max(0, s.kick - dt * 5); s.obj.scale.setScalar(0.82 * (1 + s.kick * 0.04)); if (s.b.spin) s.b.spin.rotation.y += dt * 2; if (s.b.orbs) s.b.orbs.forEach((o, i) => { const a = t * 2 + o.userData.orbit.a; o.position.set(Math.cos(a) * 0.55, s.b.spin.position.y + Math.sin(t * 3 + i) * 0.1, Math.sin(a) * 0.55); }); }
+  for (const s of views.slot) if (s && s.b) { s.kick = Math.max(0, s.kick - dt * 5); if (s.b.pitch) s.b.pitch.position.z = -0.16 * s.kick; if (s.b.spin) s.b.spin.rotation.y += dt * 2; if (s.b.orbs) s.b.orbs.forEach((o, i) => { const a = t * 2 + o.userData.orbit.a; o.position.set(Math.cos(a) * 0.55, s.b.spin.position.y + Math.sin(t * 3 + i) * 0.1, Math.sin(a) * 0.55); }); }
 }
 // события крепости (эффекты и звук у всех)
 export function onEvent(f) {
@@ -1138,7 +1150,7 @@ export function onEvent(f) {
   else if (k === "Sl") { const L = sg.lad.find((q) => q.id === f[1]); if (L) { falling.push({ x: L.x, t: 0 }); sg.lad = sg.lad.filter((q) => q !== L); AU.play("collapse", { x: L.x, z: WZ, vol: 0.6 }); fx.puff(L.x, WZ - 3, 8, COL.dust, 0.8); if (f[2] === api.me) { fx.text(L.x, WH + 2, WZ, "Лестница сброшена!", "#ffe9a0", 18, 1.2); api.vib("impact", "medium"); } } }
   else if (k === "Sh") { const i = f[1], v = views && views.seg[i]; const x = segX(i); fx.chips(x + (Math.random() - 0.5) * 2.4, 1 + Math.random(), WZ - 1.3, i === GATE || (sg.seg[i] && sg.seg[i].lv === 1) ? COL.wood : COL.stone); AU.play("househit", { x, z: WZ, vol: 0.35, gap: 0.2 }); }
   else if (k === "Sm") { fx.explosion(0, WZ - WT - 0.4, 1.4); fx.chips(0, 1.2, WZ - 1.3, COL.wood); fx.shake = Math.min(1, fx.shake + 0.35); AU.play("boom2", { x: 0, z: WZ, vol: 0.7, gap: 0.3 }); }
-  else if (k === "Sq") { api.msg("🐏 Таран!", "Его не взять стрелами — смола и камни ×3", 2600); AU.play("gong2", { vol: 0.8 }); }
+  else if (k === "Sq") { api.msg("🪵 Таран!", "Его не взять стрелами — смола и камни ×3", 2600); AU.play("gong2", { vol: 0.8 }); }
   else if (k === "Sb") {
     const i = f[1]; if (sg.seg[i]) sg.seg[i].br = 1; updSegAround(i); const x = segX(i); fx.explosion(x, WZ, 3); fx.puff(x, WZ, 30, COL.dust, 1.2); fx.puff(x, WZ + WT + 1.1, 14, COL.dust, 0.9); AU.play("collapse", { x, z: WZ });
     // что стояло на пролёте, падает вместе с ним: башня, камнемёт
@@ -1151,13 +1163,13 @@ export function onEvent(f) {
   else if (k === "Su") { const p = g.players[f[2]]; AU.play("build", { vol: 0.7 }); if (p && f[2] !== api.me) api.toast(`${p.name}: ${f[1]}`); else api.toast(`✔ ${f[1]}`); if (f[3] === "tw" || f[3] === "twu") updSlotView(f[4]); else if (f[4] >= 0) updSegView(f[4]); else updSegView(GATE); if (f[3] === "oil") updSegView(GATE); }
 }
 function towerShot(k, e) {
-  const t = G().sg.slot[k]; if (!t) return; const TD = D.TURRETS[t.type], top = slotTop(k), y = top.y, ey = unitY(e) + 0.7;
+  const t = G().sg.slot[k]; if (!t) return; const v = views && views.slot[k], ey = unitY(e) + 0.7, TD = D.TURRETS[t.type], tip = v && v.b && v.b.aim ? aimTower(v.b, e.x, ey, e.z) : null, top = tip || slotTop(k), y = top.y;   // баллиста — с кончика арбалета
   const sh = { kind: TD.proj || "arrow", x: top.x, y, z: top.z, life: 4, real: false, tgt: e.id, splash: TD.splash || 0, slow: TD.slow, burn: TD.burn, pierce: TD.pierce || 0, tower: 900 + k, sgSlot: k, hit: new Set(), homing: TD.proj !== "stone" && TD.proj !== "spear" };
   if (TD.proj === "stone" || TD.proj === "fire" || TD.proj === "venom") { sh.arc = true; sh.sx = top.x; sh.sz = top.z; sh.sy = y; sh.tx = e.x; sh.tz = e.z; sh.t = 0; sh.dur = Math.max(0.6, dist(top.x, top.z, e.x, e.z) / TD.speed); }
   else { const d = dist(top.x, top.z, e.x, e.z) || 1; sh.vx = (e.x - top.x) / d * TD.speed; sh.vz = (e.z - top.z) / d * TD.speed; sh.vy = (ey - y) / (d / TD.speed); sh.speed = TD.speed; if (TD.proj === "spear") sh.life = TD.range * 1.3 / TD.speed; }
   api.shots.push(sh);
-  api.fx.muzzle(top.x, y, top.z, 0, 0, api.COL.spark);
-  const v = views && views.slot[k]; if (v && v.b) { v.kick = 1; if (v.b.aim) v.b.aim.rotation.y = Math.atan2(e.x - top.x, e.z - top.z); }
+  { const d = dist(top.x, top.z, e.x, e.z) || 1; api.fx.muzzle(top.x, y, top.z, (e.x - top.x) / d, (e.z - top.z) / d, api.COL.spark); }
+  if (v && v.b) v.kick = 1;
   api.AU.play(TD.snd, { x: top.x, z: top.z, vol: 0.4, gap: 0.12 });
 }
 // подсказки и полоски поверх 3D
@@ -1169,7 +1181,7 @@ export function overlay(octx, scr, bar, me) {
     const k = s.hp / s.max; bar(p.x, p.y, i === GATE ? 54 : 40, 5, k, k > 0.5 ? "#8fd16a" : k > 0.25 ? "#ffc14d" : "#ff5a4a");
   }
   for (const L of sg.lad) { const p = scr(L.x, WH + 1.2, WZ - 1.3); if (!p.on) continue; octx.font = "20px sans-serif"; octx.textAlign = "center"; octx.fillText("🪜", p.x, p.y); if (L.push > 0) bar(p.x, p.y + 8, 34, 5, L.push / 1.1, "#ffe9a0"); }
-  for (const e of G().enemies.values()) if (e.ram) { const p = scr(e.x, 3.2, e.z); if (p.on) { const k = (e.hpPct != null ? e.hpPct / 100 : e.hp / e.max); bar(p.x, p.y, 56, 6, k, "#ff6a4a"); octx.font = "16px sans-serif"; octx.textAlign = "center"; octx.fillText("🐏", p.x, p.y - 6); } }
+  for (const e of G().enemies.values()) if (e.ram) { const p = scr(e.x, 3.2, e.z); if (p.on) { const k = (e.hpPct != null ? e.hpPct / 100 : e.hp / e.max); bar(p.x, p.y, 56, 6, k, "#ff6a4a"); octx.font = "16px sans-serif"; octx.textAlign = "center"; octx.fillText("🪵", p.x, p.y - 6); } }
 }
 export function hudText() {
   const sg = G().sg; if (!sg) return "";

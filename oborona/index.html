@@ -148,7 +148,8 @@
   #toast.on { opacity: 1; }
   #gift { position: fixed; left: 50%; top: 34%; transform: translate(-50%, 0); z-index: 8; pointer-events: none; padding: 10px 16px; border-radius: 16px; font-weight: 800; opacity: 0; }
   #gift.on { animation: giftIn 2.4s ease forwards; } @keyframes giftIn { 0% { opacity: 0; transform: translate(-50%, -40px) scale(.6); } 15% { opacity: 1; transform: translate(-50%, 0) scale(1.08); } 25% { transform: translate(-50%,0) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, 30px) scale(.9); } }
-  #near { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 3; pointer-events: none; font-size: 13px; text-align: center; max-width: 60%; }
+  #near { position: fixed; left: 12px; right: 112px; margin: 0 auto; width: fit-content; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 3; pointer-events: none; font-size: 13px; text-align: center; padding: 6px 11px; border-radius: 12px; background: rgba(12,15,24,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  #near:empty { display: none; }   /* подсказка слева от кнопок действий, на подложке */
   #joy { position: fixed; z-index: 3; width: 118px; height: 118px; margin: -59px 0 0 -59px; border-radius: 50%; background: radial-gradient(rgba(255,255,255,.06), rgba(255,255,255,.14)); border: 2px solid rgba(255,255,255,.3); pointer-events: none; display: none; }
   #joy i { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #c9d3ea); box-shadow: 0 4px 12px rgba(0,0,0,.35); }
   #dead { position: fixed; left: 0; right: 0; top: 42%; text-align: center; font-size: 22px; z-index: 5; pointer-events: none; }

@@ -7,7 +7,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { A, loadAll, ensure, has, makeChar, makeQ, cloneWorld, cloneWeapon, cloneProp, loadEnv, teamMaterial } from "./assets.js";
-import { buildTowerDeep, buildHouseDeep, buildGatherer } from "./builders.js";
+import { buildTowerDeep, buildHouseDeep, buildGatherer, makePick, aimTower } from "./builders.js";
 import { buildWorld, buildNodeViews, updNode, updateWorld, grassT, rng, makeBanner } from "./world.js";
 import { FX, COL } from "./fx.js";
 import * as D from "./data.js";
@@ -170,7 +170,7 @@ function rebuildNav() {
   for (const o of obstacles) markCircle(blocked, o.x, o.z, o.r * 0.85);
   for (const nd of G.nodes) if (nd.amt > 0) markCircle(blocked, nd.x, nd.z, (nd.r || 0.5) * 0.8);
   for (const h of G.houses) if (h.alive) h.turrets.forEach((t, s) => { if (t) { const p = slotPos(h, s); markCircle(blocked, p.x, p.z, 0.8); } });
-  for (const h of G.houses) if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) markCircle(blocked, g.x, g.z, 1.0); }
+  for (const h of G.houses) if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) markCircle(blocked, g.x, g.z, 1.3); }
   flows = G.houses.map((h) => (h.alive ? flowTo(h) : null));
 }
 function flowTo(h) {
@@ -291,42 +291,10 @@ function attachWeapon(model, tint) {
   const ax = sz.x > sz.y && sz.x > sz.z ? "x" : sz.y > sz.z ? "y" : "z", end = Math.abs(bb.max[ax]) > Math.abs(bb.min[ax]) ? bb.max[ax] : bb.min[ax];
   const muzzle = new THREE.Object3D(); muzzle.position.copy(c); muzzle.position[ax] = end; kick.add(muzzle);
   w.userData = { kick, muzzle, ax, sign: Math.sign(end) || 1 };
-  w.rotation.set(...(GRIP[model] || [0, 0, 0]));
+  w.rotation.set(...(GRIP[model] || [0, 0, 0])); w.userData.grip = w.quaternion.clone();
   return w;
 }
 // инструменты добычи: у дерева герой сам берёт топор, у камня — кирку (оружие на это время убирается)
-let pickProto = null;
-function makePick() {
-  // кирка собирается по топору: та же длина и та же ось рукояти, головка — изогнутый клюв поперёк, в сторону лезвия топора
-  if (!pickProto) {
-    const axe = cloneWeapon("Axe_Bronze"); axe.updateMatrixWorld(true);
-    const pts = []; axe.traverse((o) => { if (o.isMesh) { const pa = o.geometry.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < pa.count; i++) pts.push(v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).clone()); } });
-    const bb = new THREE.Box3().setFromPoints(pts), sz = bb.getSize(new THREE.Vector3()), ax = sz.x > sz.y && sz.x > sz.z ? "x" : sz.y > sz.z ? "y" : "z";
-    const others = ["x", "y", "z"].filter((k) => k !== ax), L = sz[ax], lo = bb.min[ax], hi = bb.max[ax];
-    const spread = (sel) => { const b2 = new THREE.Box3(); pts.filter(sel).forEach((q) => b2.expandByPoint(q)); return b2.isEmpty() ? 0 : Math.max(...others.map((k) => b2.max[k] - b2.min[k])); };
-    const headHi = spread((q) => q[ax] > hi - L * 0.3) >= spread((q) => q[ax] < lo + L * 0.3);
-    const hb = new THREE.Box3(); pts.filter((q) => headHi ? q[ax] > hi - L * 0.3 : q[ax] < lo + L * 0.3).forEach((q) => hb.expandByPoint(q));
-    const bl = (hb.max[others[0]] - hb.min[others[0]]) >= (hb.max[others[1]] - hb.min[others[1]]) ? others[0] : others[1];
-    const c = bb.getCenter(new THREE.Vector3()), up = new THREE.Vector3(), side = new THREE.Vector3(); up[ax] = headHi ? 1 : -1; side[bl] = 1;
-    const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.8 }), iron = new THREE.MeshStandardMaterial({ color: 0x8d949c, roughness: 0.45, metalness: 0.6 });
-    const g = new THREE.Group(), r = L * 0.035;
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.15, L * 0.98, 8), wood);
-    handle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up); handle.position.copy(c); g.add(handle);
-    const top = c.clone().addScaledVector(up, L * 0.42);
-    // клюв: два конуса из общей втулки, концы чуть загнуты к рукояти
-    const hub = new THREE.Mesh(new THREE.BoxGeometry(r * 3.2, r * 3.2, r * 3.2), iron); hub.position.copy(top); hub.quaternion.copy(handle.quaternion); g.add(hub);
-    for (const sg of [1, -1]) {
-      const len = L * (sg > 0 ? 0.34 : 0.26), cone = new THREE.Mesh(new THREE.ConeGeometry(r * 1.5, len, 6), iron);
-      const dir = side.clone().multiplyScalar(sg).addScaledVector(up, -0.28).normalize();
-      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); cone.position.copy(top).addScaledVector(dir, len * 0.5 + r * 1.2); g.add(cone);
-    }
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    pickProto = g;
-  }
-  const w = new THREE.Group(), k = pickProto.clone(); w.add(k);
-  w.rotation.set(...GRIP.Axe_Bronze); w.scale.setScalar(0.9);
-  return w;
-}
 function setTool(v, tool) {
   v.tool = tool; v.tools = v.tools || {};
   const hand = v.c.bone("handslotr");
@@ -339,6 +307,18 @@ function muzzlePos(v) {   // мировая точка дула (кадр наз
   if (!v || !v.wpn || !v.wpn.parent || !v.root.visible) return null;
   v.root.updateMatrixWorld(true);
   return v.wpn.userData.muzzle.getWorldPosition(_mz);
+}
+// арбалет в прицеле смотрит точно на цель: от хвата в руке доворачиваем оружие (ось модели +z) на цель, плавно
+const _aM = new THREE.Matrix4(), _aW = new THREE.Vector3(), _aQ = new THREE.Quaternion(), _aP = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
+function aimWeapon(v, p, aiming, dt) {
+  const w = v.wpn; if (!w || !w.parent || !w.userData.grip) return;
+  const e = aiming && /^crossbow/.test((D.WEAPONS[p.wpn] || {}).model || "") ? G.enemies.get(p.tgt) : null;
+  if (e) (v.aimT = v.aimT || new THREE.Vector3()).set(e.x, (G.sg ? SG.unitY(e) : 0) + 0.85, e.z);
+  v.aimK = lerp(v.aimK || 0, e ? 1 : 0, 1 - Math.exp(-dt * 20));
+  if (v.aimK < 0.01 || !v.aimT) { w.quaternion.copy(w.userData.grip); return; }
+  v.root.updateMatrixWorld(true); w.getWorldPosition(_aW);
+  _aQ.setFromRotationMatrix(_aM.lookAt(v.aimT, _aW, _UP)); w.parent.getWorldQuaternion(_aP);
+  w.quaternion.copy(w.userData.grip).slerp(_aP.invert().multiply(_aQ), v.aimK);
 }
 function makePlayerView(p) {
   const hero = D.HEROES.includes(p.hero) ? p.hero : D.HEROES[p.idx % D.HEROES.length], c = makeChar(hero);
@@ -1062,7 +1042,7 @@ function enemyAI(e, dt) {
   if (tp && !(hd < houseStop + 0.5)) { tx = tp.x; tz = tp.z; stop = M.ranged ? M.range * 0.85 : M.range + 0.35; }
   else { tx = h.x; tz = h.z; stop = M.ranged ? Math.max(houseStop, Math.min(M.range, M.boss ? M.range : 6.5)) : houseStop; tp = null; }
   // часть монстров идёт громить добытчиков — их стоит защищать
-  let gt = null; if (!tp && e.gk && h.g) { gt = h.g[e.gk]; if (gt && gt.lv && gt.ok) { tx = gt.x; tz = gt.z; stop = (M.ranged ? Math.min(M.range, 5) : 1.4) + e.r; } else { e.gk = null; gt = null; } }
+  let gt = null; if (!tp && e.gk && h.g) { gt = h.g[e.gk]; if (gt && gt.lv && gt.ok) { tx = gt.x; tz = gt.z; stop = (M.ranged ? Math.min(M.range, 5) : 1.6) + e.r; } else { e.gk = null; gt = null; } }
   let dx = tx - e.x, dz = tz - e.z; const d = Math.hypot(dx, dz) || 1;
   e.cd -= dt;
   // способности боссов
@@ -1344,7 +1324,7 @@ let myTarget = null, fireCd = 0, gatherCd = 0, lastLvl = 1, perkQueue = 0, hurtT
 function collide(o, r, isEnemy, big) {
   for (const h of G.houses) {
     const hr = (h.alive ? (h.lv >= 4 ? 2.3 : h.lv >= 3 ? 1.9 : D.HOUSE_R) : 1.4) + r; push(o, h.x, h.z, hr);
-    if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) push(o, g.x, g.z, 1.15 + r); }
+    if (h.g) for (const k of D.GATHER_KEYS) { const g = h.g[k]; if (g.lv) push(o, g.x, g.z, 1.35 + r); }
     if (h.alive) { h.turrets.forEach((t, s) => { if (t) { const p = slotPos(h, s); push(o, p.x, p.z, 0.85 + r); } });
       if (isEnemy && h.whp > 0) { const d = dist(o.x, o.z, h.x, h.z); if (d < D.WALL_R + r && d > 0.01) { o.x = h.x + (o.x - h.x) / d * (D.WALL_R + r); o.z = h.z + (o.z - h.z) / d * (D.WALL_R + r); } } }
   }
@@ -1442,7 +1422,7 @@ function firePlayer(p, tgt, real) {
     for (let i = 0; i < n; i++) {
       const a = base + (n > 1 ? (i / (n - 1) - 0.5) * spread : 0) + (Math.random() - 0.5) * 0.04;
       const crit = Math.random() < st.crit;
-      shots.push({ kind: st.proj || "bolt", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: (0.85 - sy) * st.speedP / Math.max(1.5, dist(sx, sz, tgt.x, tgt.z)), vz: Math.cos(a) * st.speedP, life: st.range / st.speedP * 1.3, real, owner: p.idx, dmg: st.dmg * mul * (crit ? 2 : 1), crit, pierce: st.pierce, bounce: st.bounce, splash: st.splash, flags: hitFlags(st), hit: new Set(), tgt: st.kind === "rocket" ? tgt.id : n === 1 ? tgt.id : 0, homing: st.kind === "rocket", speed: st.speedP });
+      shots.push({ kind: st.proj || "bolt", x: sx, y: sy, z: sz, vx: Math.sin(a) * st.speedP, vy: ((G.sg ? SG.unitY(tgt) : 0) + 0.85 - sy) * st.speedP / Math.max(1.5, dist(sx, sz, tgt.x, tgt.z)), vz: Math.cos(a) * st.speedP, life: st.range / st.speedP * 1.3, real, owner: p.idx, dmg: st.dmg * mul * (crit ? 2 : 1), crit, pierce: st.pierce, bounce: st.bounce, splash: st.splash, flags: hitFlags(st), hit: new Set(), tgt: st.kind === "rocket" ? tgt.id : n === 1 ? tgt.id : 0, homing: st.kind === "rocket", speed: st.speedP });
     }
   }
   // гроза: каждый N-й выстрел — молния с неба
@@ -1470,13 +1450,13 @@ function orbitBlades(p, dt, mine) {
   if (bladeCd.size > 2000) bladeCd.clear();
 }
 function turretShot(h, s, t, e, real) {
-  const TD = D.TURRETS[t.type], top = towerTop(h, s), y = top.y;
+  const TD = D.TURRETS[t.type], tv = h.view && h.view.turrets[s], tip = tv && tv.b && tv.b.aim ? aimTower(tv.b, e.x, 1, e.z) : null, top = tip || towerTop(h, s), y = top.y;   // баллиста стреляет с кончика арбалета
   const sh = { kind: TD.proj, x: top.x, y, z: top.z, life: 4, real: false, tgt: e.id, splash: TD.splash || 0, slow: TD.slow, burn: TD.burn, cloud: TD.cloud, pierce: TD.pierce || 0, tower: h.idx * 10 + s, hit: new Set(), homing: TD.proj !== "stone" && TD.proj !== "spear" };
   if (TD.proj === "stone" || TD.proj === "fire" || TD.proj === "venom") { sh.arc = true; sh.sx = top.x; sh.sz = top.z; sh.sy = y; sh.tx = e.x + (e.vx || 0) * 0.3; sh.tz = e.z + (e.vz || 0) * 0.3; sh.t = 0; sh.dur = Math.max(0.6, dist(top.x, top.z, e.x, e.z) / TD.speed); }
   else { const d = dist(top.x, top.z, e.x, e.z) || 1; sh.vx = (e.x - top.x) / d * TD.speed; sh.vz = (e.z - top.z) / d * TD.speed; sh.vy = (1 - y) / (d / TD.speed); sh.speed = TD.speed; if (TD.proj === "spear") sh.life = TD.range / TD.speed * 1.2; }
   shots.push(sh);
-  fx.muzzle(top.x, y, top.z, 0, 0, PROJ[TD.proj] ? PROJ[TD.proj].trail : COL.spark);
-  const tv = h.view && h.view.turrets[s]; if (tv) { tv.kick = 1; if (tv.b && tv.b.aim) tv.b.aim.rotation.y = Math.atan2(e.x - top.x, e.z - top.z) - tv.obj.rotation.y; }
+  { const d = dist(top.x, top.z, e.x, e.z) || 1; fx.muzzle(top.x, y, top.z, (e.x - top.x) / d, (e.z - top.z) / d, PROJ[TD.proj] ? PROJ[TD.proj].trail : COL.spark); }   // вспышка — в сторону цели
+  if (tv) tv.kick = 1;
   AU.play(TD.snd, { x: top.x, z: top.z, vol: 0.45, gap: 0.12 });
 }
 function enemyShot(e, tx, tz, kind, real) {
@@ -1617,6 +1597,13 @@ function remoteFire(dt) {
 // ================= ОТРИСОВКА =================
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 let menuAng = 0, dayK = 0;
+// частицы рабочих анимаций добытчиков (builders.js → anim)
+function gEmit(k, x, y, z) {
+  if (k === "chips") { fx.chips(x, y, z, COL.stone); fx.norm.add(x, y, z, 0, 0.5, 0.3, 0.5, 0.12, 0.4, COL.dust, 0, 1.5); }
+  else if (k === "dust") fx.norm.add(x, y, z, (Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 0.7, (Math.random() - 0.5) * 0.8, 0.5 + Math.random() * 0.3, 0.05, 0.14, COL.dust, 1.5, 1.2);
+  else if (k === "thud") fx.puff(x, z, 3, COL.dust, 0.3);
+  else if (k === "gold") fx.sparkle(x, y, z, COL.gold, 5);
+}
 function updateViews(dt) {
   const t = G.t;
   G.players.forEach((p, i) => {
@@ -1648,6 +1635,7 @@ function updateViews(dt) {
     const runA = v.c.act("Running_A"); if (runA) runA.timeScale = p.st ? p.st.move / 5.2 : 1;
     const ch = v.c.act("Chop_U"); if (ch) ch.timeScale = 1.35; for (const n of ["Shoot_U", "Shoot2_U"]) { const a = v.c.act(n); if (a) a.timeScale = 2.2; }
     v.c.mixer.update(dt);
+    aimWeapon(v, p, aiming, dt);
     v.recoil = Math.max(0, v.recoil - dt * 9); v.shootT = (v.shootT || 0) - dt;
     if (v.wpn) { const u = v.wpn.userData; u.kick.position[u.ax] = -u.sign * v.recoil * 0.16; }
     v.hurt = Math.max(0, (v.hurt || 0) - dt * 4);
@@ -1710,21 +1698,23 @@ function updateViews(dt) {
     v.shake = Math.max(0, v.shake - dt);
     if (h.g) for (const k of D.GATHER_KEYS) {
       const gv = v.gath[k], g = h.g[k], b = gv && gv.b; if (!b) continue;
-      if (b.spin) b.spin.rotation[b.spinAxis || "x"] += dt * 7;
-      if (b.cart) b.cart.position.z = 0.9 + Math.sin(t * 1.3 + h.idx) * 0.7;
+      if (b.anim && !(Math.abs(g.x - camX) > 24 || Math.abs(g.z - camZ) > 28)) b.anim(t + h.idx * 1.7 + D.GATHER_KEYS.indexOf(k) * 0.9, dt, gEmit);   // рабочая анимация (вдали — стоит)
       if (gv.pop > 0) { gv.pop = Math.max(0, gv.pop - dt * 2.2); gv.obj.scale.setScalar(1 + Math.sin(gv.pop * Math.PI) * 0.15); }
       gv.shake = Math.max(0, (gv.shake || 0) - dt); gv.obj.position.x = g.x + Math.sin(t * 70) * gv.shake * 0.1;
-      if (b.pile) { const cap = Math.max(30, D.gatherRate(k, g.lv) * 2.5), f = Math.min(1, g.pile / cap); b.pile.visible = g.pile >= 1 && g.ok; b.pile.scale.setScalar(0.5 + 0.9 * f); }
+      const cap = Math.max(30, D.gatherRate(k, g.lv) * 2.5), f = g.ok ? Math.min(1, g.pile / cap) : 0;
+      if (b.pile) { b.pile.visible = g.pile >= 1 && g.ok; b.pile.scale.setScalar(0.5 + 0.9 * f); }
+      if (b.stack) { const n = g.pile >= 1 ? Math.max(1, Math.ceil(f * b.stack.children.length)) : 0; b.stack.children.forEach((o, i) => (o.visible = i < n)); }   // штабель блоков = запас камня
       for (const f of b.fx) { if (Math.random() > (quality === 0 ? 0.2 : 0.45)) continue; const wp = f.p.clone().applyMatrix4(gv.obj.matrixWorld); if (f.k === "smoke") fx.norm.add(wp.x, wp.y, wp.z, 0.15, 0.9, 0, 1.8, 0.25, 0.9, COL.smoke, -0.1, 0.2); else if (f.k === "torch") fx.add.add(wp.x, wp.y, wp.z, 0, 0.8, 0, 0.3, 0.3, 0.05, COL.fire, 0, 1); }
     }
     if (v.model) v.model.position.x = Math.sin(t * 70) * v.shake * 0.12;
     if (v.pop > 0) { v.pop = Math.max(0, v.pop - dt * 2.2); const s = 1 + Math.sin(v.pop * Math.PI) * 0.1; v.model.scale.y = s * (v.model.userData.sy || (v.model.userData.sy = v.model.scale.y)); }
     v.turrets.forEach((tv) => {
       if (!tv || !tv.obj) return;
-      const s0 = tv.obj.userData.s0 || (tv.obj.userData.s0 = 1);
-      if (tv.pop > 0) { tv.pop = Math.max(0, tv.pop - dt * 2.5); tv.obj.scale.y = 1 + Math.sin(tv.pop * Math.PI) * 0.25; } else tv.obj.scale.y = 1;
-      if (tv.kick > 0) { tv.kick = Math.max(0, tv.kick - dt * 6); tv.obj.scale.y *= 1 - tv.kick * 0.05; }
+      const s0 = tv.obj.userData.s0 || (tv.obj.userData.s0 = tv.obj.scale.x);   // у глубоких уровней башня крупнее — не сбрасываем масштаб в 1
+      if (tv.pop > 0) { tv.pop = Math.max(0, tv.pop - dt * 2.5); tv.obj.scale.y = s0 * (1 + Math.sin(tv.pop * Math.PI) * 0.25); } else tv.obj.scale.y = s0;
       const b = tv.b; if (!b) return;
+      if (tv.kick > 0) tv.kick = Math.max(0, tv.kick - dt * 6);
+      if (b.pitch) b.pitch.position.z = -0.16 * (tv.kick || 0);   // отдача — только люлька с арбалетами
       if (b.spin) b.spin.rotation.y += dt * 1.6, b.spin.position.y += Math.sin(t * 2) * 0.002;
       if (b.orbs) b.orbs.forEach((o, i) => { const a = t * 2 + o.userData.orbit.a; o.position.set(Math.cos(a) * 0.55, b.spin.position.y + Math.sin(t * 3 + i) * 0.1, Math.sin(a) * 0.55); });
       if (b.orb) b.orb.scale.setScalar(1 + Math.sin(t * 5) * 0.12);
