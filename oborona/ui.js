@@ -116,7 +116,7 @@ export function showMap(opts) {
       <div class="map-area" id="map-area"><canvas id="map-cv"></canvas><canvas id="map-fx"></canvas>
         <div class="yearsw"><button id="y-prev" ${year > 1 ? "" : "disabled"}>‹</button><b>Год ${year}</b><button id="y-next" ${year < maxYear ? "" : "disabled"}>›</button></div>
         ${nodes}</div>
-      <div class="map-card"><div class="mc-h"><span class="mc-ic">${L.icon}${L.evIcon}</span><div><b>${esc(L.name)}</b><small>Год ${L.year} · ${stars(st.stars)} · ${st.best ? "рекорд: волна " + st.best : "ещё не пройдено"}${st.cleared ? " · ✔" : ""}</small></div></div>
+      <div class="map-card"><div class="mc-h"><span class="mc-ic">${L.icon}${L.evIcon}</span><div><b>${esc(L.name)}</b><small>${stars(st.stars)} · ${st.best ? "рекорд: волна " + st.best : "ещё не пройдено"}${st.cleared ? " · ✔" : ""}</small></div></div>
         <div class="mods">${L.modText.map((t) => `<span>${esc(t)}</span>`).join("")}</div>
         <div class="mc-row"><span>🌊 Волн: <b>${L.waves}</b></span><span>💀 Босс: <b>${D.MON[bossK].name}</b></span></div>
         <div class="mc-mons">${mons}</div>
@@ -128,8 +128,9 @@ export function showMap(opts) {
     // золотая дуга прогресса года
     const done = steps.filter((sp) => stepState(sp.id).cleared).length; cg.lineWidth = 7 * dpr; cg.lineCap = "round"; cg.strokeStyle = "rgba(255,214,110,.95)";
     if (done) { cg.beginPath(); cg.arc(WH.cx, WH.cy, WH.R - 10 * dpr, -Math.PI / 2, -Math.PI / 2 + done / 4 * Math.PI * 2); cg.stroke(); }
-    cg.fillStyle = "#ffe9a8"; cg.textAlign = "center"; cg.font = `400 ${Math.round(WH.r0 * 0.36)}px "Russo One", sans-serif`; cg.fillText(`Год ${year}`, WH.cx, WH.cy + WH.r0 * 0.05);
-    cg.font = `800 ${Math.round(WH.r0 * 0.2)}px Manrope, sans-serif`; cg.fillStyle = "#e9d7a8"; cg.fillText(`${done} / 4 сезона`, WH.cx, WH.cy + WH.r0 * 0.38);
+    // в центре — только прогресс года (сам год один раз, в переключателе сверху)
+    cg.fillStyle = "#ffe9a8"; cg.textAlign = "center"; cg.font = `400 ${Math.round(WH.r0 * 0.42)}px "Russo One", sans-serif`; cg.fillText(`${done}/4`, WH.cx, WH.cy + WH.r0 * 0.1);
+    cg.font = `800 ${Math.round(WH.r0 * 0.17)}px Manrope, sans-serif`; cg.fillStyle = "#cdbb8e"; cg.fillText(done === 4 ? "год пройден" : "сезонов", WH.cx, WH.cy + WH.r0 * 0.4);
     fxc.width = w; fxc.height = h; const fg = fxc.getContext("2d");
     const parts = []; for (let i = 0; i < 46; i++) parts.push({ q: SE.ORDER[i % 4], a: Math.random(), r: Math.random(), ph: Math.random() * 10 });
     cancelAnimationFrame(raf);
