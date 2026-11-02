@@ -294,6 +294,46 @@ function attachWeapon(model, tint) {
   w.rotation.set(...(GRIP[model] || [0, 0, 0]));
   return w;
 }
+// инструменты добычи: у дерева герой сам берёт топор, у камня — кирку (оружие на это время убирается)
+let pickProto = null;
+function makePick() {
+  // кирка собирается по топору: та же длина и та же ось рукояти, головка — изогнутый клюв поперёк, в сторону лезвия топора
+  if (!pickProto) {
+    const axe = cloneWeapon("Axe_Bronze"); axe.updateMatrixWorld(true);
+    const pts = []; axe.traverse((o) => { if (o.isMesh) { const pa = o.geometry.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < pa.count; i++) pts.push(v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).clone()); } });
+    const bb = new THREE.Box3().setFromPoints(pts), sz = bb.getSize(new THREE.Vector3()), ax = sz.x > sz.y && sz.x > sz.z ? "x" : sz.y > sz.z ? "y" : "z";
+    const others = ["x", "y", "z"].filter((k) => k !== ax), L = sz[ax], lo = bb.min[ax], hi = bb.max[ax];
+    const spread = (sel) => { const b2 = new THREE.Box3(); pts.filter(sel).forEach((q) => b2.expandByPoint(q)); return b2.isEmpty() ? 0 : Math.max(...others.map((k) => b2.max[k] - b2.min[k])); };
+    const headHi = spread((q) => q[ax] > hi - L * 0.3) >= spread((q) => q[ax] < lo + L * 0.3);
+    const hb = new THREE.Box3(); pts.filter((q) => headHi ? q[ax] > hi - L * 0.3 : q[ax] < lo + L * 0.3).forEach((q) => hb.expandByPoint(q));
+    const bl = (hb.max[others[0]] - hb.min[others[0]]) >= (hb.max[others[1]] - hb.min[others[1]]) ? others[0] : others[1];
+    const c = bb.getCenter(new THREE.Vector3()), up = new THREE.Vector3(), side = new THREE.Vector3(); up[ax] = headHi ? 1 : -1; side[bl] = 1;
+    const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a32, roughness: 0.8 }), iron = new THREE.MeshStandardMaterial({ color: 0x8d949c, roughness: 0.45, metalness: 0.6 });
+    const g = new THREE.Group(), r = L * 0.035;
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.15, L * 0.98, 8), wood);
+    handle.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up); handle.position.copy(c); g.add(handle);
+    const top = c.clone().addScaledVector(up, L * 0.42);
+    // клюв: два конуса из общей втулки, концы чуть загнуты к рукояти
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(r * 3.2, r * 3.2, r * 3.2), iron); hub.position.copy(top); hub.quaternion.copy(handle.quaternion); g.add(hub);
+    for (const sg of [1, -1]) {
+      const len = L * (sg > 0 ? 0.34 : 0.26), cone = new THREE.Mesh(new THREE.ConeGeometry(r * 1.5, len, 6), iron);
+      const dir = side.clone().multiplyScalar(sg).addScaledVector(up, -0.28).normalize();
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir); cone.position.copy(top).addScaledVector(dir, len * 0.5 + r * 1.2); g.add(cone);
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    pickProto = g;
+  }
+  const w = new THREE.Group(), k = pickProto.clone(); w.add(k);
+  w.rotation.set(...GRIP.Axe_Bronze); w.scale.setScalar(0.9);
+  return w;
+}
+function setTool(v, tool) {
+  v.tool = tool; v.tools = v.tools || {};
+  const hand = v.c.bone("handslotr");
+  if (tool && !v.tools[tool] && hand) { const t = tool === "axe" ? attachWeapon("Axe_Bronze") : makePick(); if (tool === "axe") t.scale.setScalar(0.9); hand.add(t); v.tools[tool] = t; }
+  for (const k in v.tools) v.tools[k].visible = k === tool;
+  if (v.wpn) v.wpn.visible = !tool;
+}
 const _mz = new THREE.Vector3();
 function muzzlePos(v) {   // мировая точка дула (кадр назад обновлена рендером; для надёжности пересчитываем ветку)
   if (!v || !v.wpn || !v.wpn.parent || !v.root.visible) return null;
@@ -326,7 +366,7 @@ function updGear(v) {
     v.wpn = attachWeapon(Wp.model, Wp.tint);
     if (/Axe_Bronze|Sword_Bronze/.test(Wp.model)) v.wpn.scale.setScalar(0.9);
     if (hand) hand.add(v.wpn);
-    v.wkey = p.wpn;
+    v.wkey = p.wpn; if (v.tool) v.wpn.visible = false;
   }
   v.arm = p.arm;
   const am = D.AMULETS[p.amu]; v.orb.visible = !!(am && am.color); if (v.orb.visible) v.orb.material.color.set(am.color).multiplyScalar(2.2);
@@ -752,7 +792,7 @@ function onEvent(f) {
     const GD = D.GATHER[key], ic = { w: "🪵", s: "🪨", c: "🪙" }[GD.res], mine = h.owner === me;
     if (h.view && h.view.gath[key]) h.view.gath[key].pop = 0.6;
     fx.sparkle(g.x, 1.2, g.z, GD.res === "c" ? COL.gold : GD.res === "w" ? COL.wood : COL.stone, k === "gc" ? 16 : 8);
-    if (mine) { fx.text(g.x, 2.6, g.z, `${k === "gd" ? "🛒 " : ""}+${f[3]} ${ic}`, GD.res === "c" ? "#ffd36a" : "#ffffff", k === "gc" ? 22 : 17, 1.2); AU.play(GD.res === "c" ? "coin2" : GD.res === "w" ? "chop" : "mine", { vol: k === "gc" ? 0.8 : 0.45 }); popRes("r-" + GD.res); if (k === "gc") vib("impact", "light"); }
+    if (mine) { if (GD.res === "c" && coinSeen != null) coinSeen += f[3]; fx.text(g.x, 2.6, g.z, `${k === "gd" ? "🛒 " : ""}+${f[3]} ${ic}`, GD.res === "c" ? "#ffd36a" : "#ffffff", k === "gc" ? 22 : 17, 1.2); AU.play(GD.res === "c" ? "coin2" : GD.res === "w" ? "chop" : "mine", { vol: k === "gc" ? 0.8 : 0.45 }); popRes("r-" + GD.res); if (k === "gc") vib("impact", "light"); }
     if (!isHost()) g.pile = Math.max(0, g.pile - f[3]);
   }
   else if (k === "gh") { const h = G.houses[f[1]], key = D.GATHER_KEYS[f[2]], g = h && h.g && h.g[key]; if (g) { fx.chips(g.x, 1, g.z, COL.wood); if (h.view && h.view.gath[key]) h.view.gath[key].shake = 0.3; AU.play("househit", { x: g.x, z: g.z, vol: 0.4, gap: 0.3 }); } }
@@ -1591,6 +1631,8 @@ function updateViews(dt) {
       const upper = aiming ? (magic ? (shooting ? "CastShot_U" : "Cast_U") : Wp.kind === "boomer" ? (shooting ? "Chop_U" : "Idle_U") : Wp.kind === "orbit" ? null : two ? (shooting ? "Shoot2_U" : "Aim2_U") : (shooting ? "Shoot_U" : "Aim_U")) : chop ? "Chop_U" : null;
       playAnim(v, "base", moving ? (upper ? "Run_L" : "Running_A") : (upper ? "Idle_L" : "Idle"));
       playAnim(v, "upper", upper, 0.08);
+      const tool = upper === "Chop_U" && !aiming && G.nodes[p.gn] ? (G.nodes[p.gn].kind === "tree" ? "axe" : "pick") : "";
+      if ((v.tool || "") !== tool) setTool(v, tool);
       if (v.cheer > -0.5 && v.cheer < 0) { const a = v.c.act("Cheer"); if (a) a.fadeOut(0.2); v.cheer = -1; }
     }
     const runA = v.c.act("Running_A"); if (runA) runA.timeScale = p.st ? p.st.move / 5.2 : 1;
@@ -1807,7 +1849,15 @@ let hudDirty = true, hudT = 0, teamDirty = true, itemsKey = "";
 const cache = {};
 function setTxt(id, s) { if (cache[id] !== s) { cache[id] = s; $(id).innerHTML = s; } }
 function setW(el, k) { const s = (clamp(k, 0, 1) * 100).toFixed(1) + "%"; if (el.style.width !== s) el.style.width = s; }
+// осада: монеты за орду (и за убийства башнями) падают сразу в кошелёк — показываем «+N 🪙» над героем, раз в секунду
+let coinSeen = null, coinT = 0;
+function coinPop() {
+  const p = P(); if (!p || !G.sg) { coinSeen = null; return; }
+  const c = p.wallet.c; if (coinSeen == null || G.ph !== "wave" || c < coinSeen) { coinSeen = c; return; }
+  const d = c - coinSeen; if (d > 0 && (G.t - coinT > 1 || d >= 10)) { fx.text(p.x, 2.6, p.z, `+${d} 🪙`, "#ffd36a", d >= 10 ? 21 : 17, 1.1); coinSeen = c; coinT = G.t; }
+}
 function hud() {
+  coinPop();
   const p = P(); if (!p) return;
   const L = LOCD(), tm = Math.max(0, Math.ceil(G.timer));
   if (G.sg) setTxt("wave", G.ph === "build" ? `${G.wave ? "Ночь " + G.wave + " / " + L.waves + " ✔" : "🏰 Подготовка"}<small>${Number.isFinite(tm) && tm < 600 ? `🌙 до ночи ${G.wave + 1}: ${Math.floor(tm / 60)}:${String(tm % 60).padStart(2, "0")}` : "⏳ Готовься к бою"}</small>` : `Ночь ${G.wave} / ${L.waves}<small>${SG.hudText()}</small>`);

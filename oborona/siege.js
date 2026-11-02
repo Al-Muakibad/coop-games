@@ -270,7 +270,7 @@ export function hostStep(dt, wave) {
   hgrid.clear();
   for (const e of g.enemies.values()) { if (!e.hz || e.st === 2) continue; const key = Math.floor(e.x / 1.2) * 4096 + Math.floor(e.z / 1.2); let c = hgrid.get(key); if (!c) hgrid.set(key, (c = [])); c.push(e); }
   const players = g.players.filter((p) => p.alive && p.present);
-  for (const e of [...g.enemies.values()]) if (e.hz) unitStep(e, dt, sg, keep, players);
+  for (const e of [...g.enemies.values()]) if (e.hz) { const ox = e.x, oz = e.z; unitStep(e, dt, sg, keep, players); if (g.enemies.has(e.id)) smoothMove(e, ox, oz, dt); }
   // лестницы: защитники на стене рядом сталкивают их (вместе быстрее)
   for (const L of [...sg.lad]) {
     let n = 0, who = -1; for (const p of players) if (onWall(p.x, p.z) && Math.abs(p.x - L.x) < 1.9) { n++; who = p.idx; }
@@ -401,7 +401,6 @@ function unitStep(e, dt, sg, keep, players) {
       if (e.cd <= 0) { e.cd = 1 / M.rate; damageStruct(i, M.hdmg * sg.dmgMul); }
     }
   }
-  const dr0 = Math.atan2(mx, mz) - e.ry; let dr = dr0; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283; e.ry += dr * Math.min(1, dt * 7);
   e.x = nx; e.z = nz;
   sep(e);
   // стены ущелья
@@ -410,6 +409,17 @@ function unitStep(e, dt, sg, keep, players) {
   // целая стена непроходима (кроме тех, кто уже на ней)
   if (e.st !== 3 && e.z > WZ - WT - 0.05 && e.z < WZ + WT && Math.abs(e.x) < 16.6 && intact(sg, segOf(e.x))) e.z = WZ - WT - 0.05;
 }
+// скорость юнита — сглаженная по факту (толкотня в толпе даёт дрожь в пару сантиметров туда-сюда каждый шаг);
+// поворот — по этой скорости, а не по «желанию» шага, иначе модель дёргается влево-вправо по 10 раз в секунду
+function smoothMove(e, ox, oz, dt) {
+  const vx = (e.x - ox) / dt, vz = (e.z - oz) / dt;
+  if (vx * vx + vz * vz > 100) { e.svx = 0; e.svz = 0; e.spd2 = 0; return; }   // скачок (вылез из затора, лестница) — не скорость
+  const a = Math.min(1, dt * 5);
+  e.svx = (e.svx || 0) + (vx - (e.svx || 0)) * a; e.svz = (e.svz || 0) + (vz - (e.svz || 0)) * a;
+  e.spd2 = Math.hypot(e.svx, e.svz);
+  if (!e.atk && e.st !== 2 && e.spd2 > 0.35) turnTo(e, Math.atan2(e.svx, e.svz), dt * 5);
+}
+function turnTo(e, want, k) { let dr = want - e.ry; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283; e.ry += dr * Math.min(1, k); }
 function sep(e) {
   if (e.ram) return;
   const gx = Math.floor(e.x / 1.2), gz = Math.floor(e.z / 1.2);
@@ -703,7 +713,7 @@ export function clientStep(dt) {
     else { e.x = tx; e.z = tz; }
     e.z = constrain(e, e.x, e.z);
     const mx = e.x - ox, mz = e.z - oz;
-    if (mx * mx + mz * mz > 1e-6) { const want2 = Math.atan2(mx, mz); let dr = want2 - e.ry; while (dr > Math.PI) dr -= 6.283; while (dr < -Math.PI) dr += 6.283; e.ry += dr * Math.min(1, dt * 8); }
+    if (dt > 0) { const a = Math.min(1, dt * 5), vx = mx / dt, vz = mz / dt; if (vx * vx + vz * vz < 100) { e.svx = (e.svx || 0) + (vx - (e.svx || 0)) * a; e.svz = (e.svz || 0) + (vz - (e.svz || 0)) * a; e.spd2 = Math.hypot(e.svx, e.svz); if (!e.atk && e.st !== 2 && e.spd2 > 0.35) turnTo(e, Math.atan2(e.svx, e.svz), dt * 5); } }
     if (e.st === 2) e.ct = Math.min(1, (e.ct || 0) + dt / 2.9);
   }
   NETSTAT.procMs = NETSTAT.procMs * 0.9 + (performance.now() - t0) * 0.1;
@@ -785,7 +795,7 @@ function hordeMat(base, lod) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uT = hr.uT;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 aPosB; attribute vec3 aI; uniform float uT;")
-      .replace("#include <begin_vertex>", lod ? `vec3 transformed = position; transformed.y += abs(sin(uT * aI.y * 0.5 + aI.x)) * 0.06;`
+      .replace("#include <begin_vertex>", lod ? `vec3 transformed = position; transformed.y += abs(sin(aI.x * 0.5)) * 0.06;`
         : `float kk = 0.5 + 0.5 * sin(uT * aI.y + aI.x); vec3 transformed = mix(position, aPosB, kk); transformed.z += aI.z * max(0.0, sin(uT * 9.0 + aI.x)) * 0.28;`);
   };
   m.customProgramCacheKey = () => "horde" + lod;
@@ -845,15 +855,20 @@ export function updateHorde(dt, camX, camZ, t, isHost) {
     const im = isNear ? T.near : T.far, i = isNear ? cnt[0]++ : cnt[1]++;
     if (isNear) nearAll++;
     if (i >= (isNear ? NEAR_CAP : hr.cap)) continue;
-    const y = unitY(e), M = HZ[e.type];
-    _q.setFromEuler(_e.set(e.st === 2 ? -0.35 : 0, e.st === 2 ? Math.PI : e.ry, 0)); _m.compose(_v.set(e.x, y, e.z), _q, _s.setScalar(1)); im.setMatrixAt(i, _m);
+    // хозяин считает мир 30 раз в секунду, а экран рисует 60–120: без сглаживания орда идёт «ступеньками»
+    if (e.rx == null || e.st === 2 || Math.abs(e.rx - e.x) + Math.abs(e.rz - e.z) > 2.5) { e.rx = e.x; e.rz = e.z; } else { const k = 1 - Math.exp(-dt / 0.05); e.rx += (e.x - e.rx) * k; e.rz += (e.z - e.rz) * k; }
+    const y = e.st === 2 ? unitY(e) : heightAt(e.rx, e.rz), M = HZ[e.type];
+    _q.setFromEuler(_e.set(e.st === 2 ? -0.35 : 0, e.st === 2 ? Math.PI : e.ry, 0)); _m.compose(_v.set(e.rx, y, e.rz), _q, _s.setScalar(1)); im.setMatrixAt(i, _m);
     const fl = e.fl > 0 ? (e.fl -= dt * 5, e.fl) : 0, tn = M.tint || [1, 1, 1];
     if (e.burnT > 0) im.instanceColor.setXYZ(i, 1.6 + fl, 0.8 + fl, 0.5 + fl); else im.instanceColor.setXYZ(i, tn[0] + fl * 1.5, tn[1] + fl * 1.5, tn[2] + fl * 1.5);
-    const moving = !e.atk && e.st !== 2;
-    im.userData.aI.setXYZ(i, e.ph, moving ? M.spd * 3.4 : e.st === 2 ? 6 : 0.8, e.atk ? 1 : 0);
+    // шаг — по настоящей скорости: стоит в заторе — не «шагает на месте», толкают — не «плывёт» с поднятыми ногами
+    const sp = e.spd2 ?? M.spd, moving = !e.atk && e.st !== 2 && sp > 0.25;
+    // фаза шага копится здесь: если менять в шейдере скорость при большом uT, фаза прыгает — ноги «щёлкают»
+    e.aph = ((e.aph ?? e.ph) + dt * (moving ? M.spd * 3.4 * clamp(sp / M.spd, 0.55, 1.15) : e.st === 2 ? 6 : 0.8)) % 12.566;
+    im.userData.aI.setXYZ(i, e.aph, 0, e.atk ? 1 : 0);
     if (isNear) { near++; tris += T.tris; } else { far++; tris += T.trisLow || T.tris; }
-    if (nb < hr.cap) { _m.compose(_v.set(e.x, y + 0.03, e.z), _q.identity(), _s.set(M.r * 2.6, 1, M.r * 2.6)); hr.blob.setMatrixAt(nb++, _m); }
-    if (e.type === "hz_ladder" && e.st === 5 && nl < 64) { _q.setFromEuler(_e.set(Math.PI / 2 - 0.15, e.ry, 0)); _m.compose(_v.set(e.x - Math.sin(e.ry) * 1.6, y + 1.1, e.z - Math.cos(e.ry) * 1.6), _q, _s.setScalar(0.9)); hr.ladderIM.setMatrixAt(nl++, _m); }
+    if (nb < hr.cap) { _m.compose(_v.set(e.rx, y + 0.03, e.rz), _q.identity(), _s.set(M.r * 2.6, 1, M.r * 2.6)); hr.blob.setMatrixAt(nb++, _m); }
+    if (e.type === "hz_ladder" && e.st === 5 && nl < 64) { _q.setFromEuler(_e.set(Math.PI / 2 - 0.15, e.ry, 0)); _m.compose(_v.set(e.rx - Math.sin(e.ry) * 1.6, y + 1.1, e.rz - Math.cos(e.ry) * 1.6), _q, _s.setScalar(0.9)); hr.ladderIM.setMatrixAt(nl++, _m); }
   }
   for (const [k, T] of Object.entries(hr.types)) for (const [im, n] of [[T.near, counts[k][0]], [T.far, counts[k][1]]]) { im.count = n; if (n) { im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true; im.userData.aI.needsUpdate = true; } }
   // приставленные лестницы
