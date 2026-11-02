@@ -31,6 +31,7 @@ function profile(g, skip) {
   const edge = (a, b) => { const n = Math.max(1, Math.ceil(Math.abs(b.y - a.y) * 20)); for (let k = 0; k <= n; k++) { const t = k / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t, i = Math.max(0, Math.min(159, Math.floor(y * 10))); P[i] = Math.max(P[i], Math.hypot(x, z)); } };
   const walk = (o) => {
     if (skip && skip.has(o)) return;
+    if (o.userData && o.userData.deco) return;   // знамёна висят снаружи — силуэт корпуса по ним не меряем (иначе кольца «улетали» вширь)
     if (o.isMesh && o.visible) {
       _pm.multiplyMatrices(_pi, o.matrixWorld); const pa = o.geometry.attributes.position, ix = o.geometry.index, n = ix ? ix.count : pa.count, V = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       for (let i = 0; i + 2 < n; i += 3) { for (let j = 0; j < 3; j++) { V[j].fromBufferAttribute(pa, ix ? ix.getX(i + j) : i + j).applyMatrix4(_pm); if (V[j].y > top) { top = V[j].y; at.copy(V[j]); } } edge(V[0], V[1]); edge(V[1], V[2]); edge(V[2], V[0]); }
@@ -70,7 +71,7 @@ export function buildTower(type, lv, hue) {
   const g = new THREE.Group(), out = { g, top: new THREE.Vector3(0, 3, 0), aim: null, glow: [], fx: [] };
   const kk = (name, s, hh, sat) => { const o = cloneWorld(name); const H2 = hh != null ? hh : hue; if (H2 != null) o.traverse((c) => { if (c.isMesh) c.material = hueMaterial(c.material, H2, sat); }); o.scale.setScalar(s); o.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } }); g.add(o); return o; };
   // настенные знамёна KayKit: древко торчит наружу (+x модели), полотнище висит под ним — крепим к стене по профилю башни, не внутрь
-  const banners = (n, y, a0) => { const pf = profile(g), r = pf.r(y - 0.75, y + 0.05) - 0.03; for (let i = 0; i < n; i++) { const b = cloneProp(i % 2 ? "Banner_2" : "Banner_1"); b.scale.setScalar(0.55); const a = (a0 || 0) + i / n * Math.PI * 2; b.position.set(Math.cos(a) * r, y, Math.sin(a) * r); b.rotation.y = -a; g.add(b); } };
+  const banners = (n, y, a0) => { const pf = profile(g), r = pf.r(y - 0.75, y + 0.05) - 0.03; for (let i = 0; i < n; i++) { const b = cloneProp(i % 2 ? "Banner_2" : "Banner_1"); b.scale.setScalar(0.55); const a = (a0 || 0) + i / n * Math.PI * 2; b.position.set(Math.cos(a) * r, y, Math.sin(a) * r); b.rotation.y = -a; b.userData.deco = 1; g.add(b); } };
   const goldTop = (y, s) => { const o = mesh(new THREE.ConeGeometry(0.12 * s, 0.7 * s, 8), M.gold, 0, y + 0.35 * s, 0); g.add(o); const b = mesh(new THREE.SphereGeometry(0.16 * s, 12, 8), M.gold, 0, y, 0); g.add(b); };
   if (type === "arrow") {
     const big = lv >= 3; kk(big ? "building_tower_B_blue" : "building_tower_A_blue", big ? 1.75 + 0.08 * (lv - 3) : 1.75 + 0.1 * (lv - 1));
