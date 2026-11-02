@@ -208,11 +208,14 @@ function buildField() {
 export const fieldInfo = () => ({ dist: fDist, dx: fDx, dz: fDz, GX, GZ, XMIN, ZMIN });
 
 // ================= ВОЛНЫ (НОЧИ) =================
-export function planWave(w, np, heroLvl) {
+export function planWave(w, np, heroLvl, pw) {
   const sg = G().sg, slv = sg.slv;
   const n = Math.round((34 + 21 * w + 2.4 * w * w) * (0.72 + 0.28 * np) * (1.15 + 0.22 * (slv - 1)));
   sg.left = n; sg.total = n; sg.spawnT = 2.5;
-  sg.hpMul = (1 + 0.1 * (w - 1)) * (1 + 0.28 * (slv - 1)) * (1 + 0.12 * (np - 1)) * (1 + 0.012 * Math.max(0, heroLvl - 1));
+  // сила героев (во сколько раз прокачанный бьёт сильнее «голого»): орда крепче, но мягче, чем растёт урон — прокачка ощущается
+  const hp = clamp(pw || 1, 1, 8);
+  sg.pw = hp;
+  sg.hpMul = (1 + 0.1 * (w - 1)) * (1 + 0.28 * (slv - 1)) * (1 + 0.12 * (np - 1)) * (pw ? Math.pow(hp, 0.5) : 1 + 0.012 * Math.max(0, heroLvl - 1));
   sg.dmgMul = (1 + 0.08 * (w - 1)) * (1 + 0.15 * (slv - 1));
   sg.ladLeft = w >= 2 ? Math.round(1 + w * 0.7 + np) : 0;
   sg.ramAt = w >= 3 ? (w >= 6 ? [0.3, 0.65] : [0.45]).map((k) => Math.round(n * (1 - k))) : [];

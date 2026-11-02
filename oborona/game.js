@@ -820,10 +820,18 @@ function outpostPower() {
   let lv = 0; for (const h of hs) lv += (G.players[h.owner].lvl || 1) - 1;   // и герои: уровень и перки тоже копятся навсегда
   return (sum + 0.25 * lv) / hs.length;
 }
+// осада: насколько герои сильнее «голого» героя с тем же оружием (перки за ночь, улучшения, амулет, броня).
+// Орда толстеет вместе с героями — иначе к середине осады один прокачанный герой выносит всё сам.
+function offense(st) { return st.dmg * st.rate * (1 + 0.7 * Math.max(0, st.n - 1)) * (1 + 0.6 * st.pierce) * (1 + st.crit) * (st.splash ? 1 + Math.min(0.8, st.splash * 0.4) : 1) * (1 + 0.25 * st.jumps) * (1 + 0.3 * st.ghost) * (st.burn || st.poison ? 1.15 : 1) * (st.storm ? 1.15 : 1); }
+function heroPower(pr) {
+  if (!pr.length) return 1;
+  let sum = 0; for (const p of pr) { const st = p.st || pstats(p), base = D.stats({ wpn: p.wpn }); sum += offense(st) / Math.max(1e-6, offense(base)); }
+  return sum / pr.length;
+}
 const powerMul = () => 1 + 0.035 * Math.max(0, outpostPower() - 3);
 function startWave() {
   G.wave++; G.ph = "wave"; G.timer = 0;
-  if (G.sg) { G.queue = []; const pr = G.players.filter((p) => p.present); SG.planWave(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length)); }
+  if (G.sg) { G.queue = []; const pr = G.players.filter((p) => p.present); SG.planWave(G.wave, activePlayers(), pr.reduce((a, p) => a + p.lvl, 0) / Math.max(1, pr.length), heroPower(pr)); }
   else G.queue = D.makeWave(G.loc, G.wave, activePlayers() * (1 + 0.012 * Math.max(0, outpostPower() - 3)), Math.random);
   // босс выходит в середине волны, а не первым
   const bi = G.queue.findIndex((k) => D.MON[k].boss); if (bi >= 0) { const b = G.queue.splice(bi, 1)[0]; G.queue.splice(Math.floor(G.queue.length * 0.35), 0, b); }
