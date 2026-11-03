@@ -944,6 +944,7 @@ export function attachHorde(root) {
   if (hr.blob) root.add(hr.blob); if (hr.ladderIM) root.add(hr.ladderIM);
 }
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
+const _qY = new THREE.Quaternion(), _qX = new THREE.Quaternion(), _qR = new THREE.Quaternion(), _ax = new THREE.Vector3(1, 0, 0), _ay = new THREE.Vector3(0, 1, 0);
 export const stats = { near: 0, far: 0, culled: 0, tris: 0 };
 export const hordeInfo = () => Object.fromEntries(Object.entries(hr.types).map(([k, t]) => [k, { full: t.full, near: t.tris, far: t.trisLow, ms: t.ms }]));
 export function updateHorde(dt, camX, camZ, t, isHost) {
@@ -976,10 +977,12 @@ export function updateHorde(dt, camX, camZ, t, isHost) {
     if (isNear) { near++; tris += T.tris; } else { far++; tris += T.trisLow || T.tris; }
     if (nb < hr.cap) { _m.compose(_v.set(e.rx, y + 0.03, e.rz), _q.identity(), _s.set(M.r * 2.6, 1, M.r * 2.6)); hr.blob.setMatrixAt(nb++, _m); }
     if (e.type === "hz_ladder" && e.st === 5 && nl < 64) {
-      // лестница на плече: середина — над несущим, чуть сбоку (сверху видно и скелета, и лестницу), передний конец чуть выше
-      // (порядок YXZ: сначала разворот по ходу, потом наклон — иначе при повороте лестница «уезжала» вбок)
-      const L = 4.2 * 0.85, fx = Math.sin(e.ry), fz = Math.cos(e.ry), sx = fz * 0.32, sz = -fx * 0.32;
-      _q.setFromEuler(_e.set(Math.PI / 2 - 0.1, e.ry, 0, "YXZ")); _m.compose(_v.set(e.rx - fx * L * 0.5 + sx, y + 0.78, e.rz - fz * L * 0.5 + sz), _q, _s.setScalar(0.85)); hr.ladderIM.setMatrixAt(nl++, _m); _e.order = "XYZ";
+      // лестницу несут под мышкой, на ребре, сбоку от тела: верхняя тетива ниже плеча — не «протыкает» большую голову скелета
+      // (поворот: вокруг своей длины на ребро → наклон вдоль хода → разворот по ходу)
+      const L = 4.2 * 0.85, fx = Math.sin(e.ry), fz = Math.cos(e.ry), sx = fz * 0.44, sz = -fx * 0.44, tilt = 0.06;
+      _qY.setFromAxisAngle(_ay, e.ry); _qX.setFromAxisAngle(_ax, Math.PI / 2 - tilt); _qR.setFromAxisAngle(_ay, Math.PI / 2);
+      _q.copy(_qY).multiply(_qX).multiply(_qR);
+      _m.compose(_v.set(e.rx - fx * L * 0.5 + sx, y + 0.46 - L * 0.5 * Math.sin(tilt), e.rz - fz * L * 0.5 + sz), _q, _s.setScalar(0.85)); hr.ladderIM.setMatrixAt(nl++, _m);
     }
   }
   for (const [k, T] of Object.entries(hr.types)) for (const [im, n] of [[T.near, counts[k][0]], [T.far, counts[k][1]]]) { im.count = n; if (n) { im.instanceMatrix.needsUpdate = true; im.instanceColor.needsUpdate = true; im.userData.aI.needsUpdate = true; } }

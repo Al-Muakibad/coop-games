@@ -1790,15 +1790,20 @@ function updateCamera(dt) {
 // ---------- 2D-слой ----------
 const _p = new THREE.Vector3();
 function scr(x, y, z) { _p.set(x, y, z).project(camera); return { x: (_p.x + 1) / 2 * W, y: (1 - _p.y) / 2 * H, on: _p.z < 1 && Math.abs(_p.x) < 1.1 && Math.abs(_p.y) < 1.1 }; }
+const HZ_BARS = 160, HZ_BAR_H = { hz_skel: 1.4, hz_ladder: 1.45, hz_archer: 1.45, hz_brute: 2.15, hz_rat: 0.75 };
 function bar(x, y, w, h, k, col, bg) { octx.fillStyle = bg || "rgba(0,0,0,.55)"; octx.fillRect(x - w / 2 - 1, y - 1, w + 2, h + 2); octx.fillStyle = col; octx.fillRect(x - w / 2, y, w * clamp(k, 0, 1), h); }
 function drawOverlay() {
   octx.clearRect(0, 0, W, H);
   if (phase !== "play") return;
   octx.textAlign = "center"; octx.textBaseline = "middle"; octx.lineJoin = "round";
   if (G.sg) SG.overlay(octx, scr, bar, me);
+  let hzBars = 0;
   for (const e of G.enemies.values()) {
     const M = D.MON[e.type]; if (M.boss) continue;
-    if (e.hz) { if (e.type !== "hz_brute" || !(e.hpPct < 99 || (isHost() && e.hp < e.max))) continue; const s = scr(e.x, SG.unitY(e) + 1.7, e.z); if (s.on) bar(s.x, s.y, 30, 4, isHost() ? e.hp / e.max : e.hpPct / 100, "#ff4d4d"); continue; }
+    if (e.hz) {   // орда: полоса у каждого раненого (не только у костоломов), над головой своего роста; не больше HZ_BARS за кадр
+      const k = isHost() ? e.hp / e.max : (e.hpPct ?? 100) / 100; if (k >= 0.999 || e.ram || hzBars >= HZ_BARS) continue;
+      const hgt = HZ_BAR_H[e.type] || 1.5, s = scr(e.rx ?? e.x, SG.unitY(e) + hgt, e.rz ?? e.z); if (!s.on) continue;
+      hzBars++; bar(s.x, s.y, e.type === "hz_brute" ? 30 : e.type === "hz_rat" ? 16 : 22, e.type === "hz_brute" ? 4 : 3, k, e.burnT > 0 ? "#ff9a3c" : "#ff4d4d"); continue; }
     const k = isHost() ? e.hp / e.max : (e.predHp != null ? Math.min(e.predHp, e.hpPct) : e.hpPct) / 100;
     const s = scr(e.x, (M.q ? M.qs * (e.el ? 1.25 : 1) + 0.3 : 1.75 * monScale(M, e) / 0.7) + (M.fly || 0), e.z); if (!s.on) continue;
     if (e.el) { octx.font = "14px sans-serif"; octx.fillText("👑", s.x, s.y - 10); }
