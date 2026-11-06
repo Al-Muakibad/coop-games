@@ -1,0 +1,6 @@
+Звуки «Чёрной дыры» (stonehit, househit, collapse, heavy, chop, mine, boom2, hit) взяты из папки ../../oborona/audio.
+Все с OpenGameArt.org, лицензия CC0 1.0 (общественное достояние, http://creativecommons.org/publicdomain/zero/1.0/):
+- «75 CC0 breaking / falling / hit sfx» — https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+- «80 CC0 RPG SFX», «100 CC0 SFX», «100 CC0 SFX #2» — https://opengameart.org/content/80-cc0-rpg-sfx
+- «150 Combat Sound Effects» (CC0) — https://opengameart.org/content/150-combat-sound-effects
+Остальное (глухие удары, хруст, шорох, гул) синтезируется из шума прямо в игре (sound.js).

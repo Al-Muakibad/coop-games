@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Шаткая башня</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="en.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<!-- физика: planck.js запоминает Math.sin/cos/atan2 при загрузке — подсовываем детерминированные, потом возвращаем родные -->
+<script src="dmath.js"></script>
+<script>DMath.swap();</script>
+<script src="https://cdn.jsdelivr.net/npm/planck@1.4.2/dist/planck.min.js"></script>
+<script>DMath.restore();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { background: #2a1846; touch-action: none; }
+  .rf { font-family: "Russo One", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-weight: 400; letter-spacing: .2px; }
+  #hud { position: fixed; top: 0; left: 0; right: 0; z-index: 3; padding: calc(8px + env(safe-area-inset-top)) 56px 0 8px; pointer-events: none; color: #fff; }
+  #players { display: flex; gap: 5px; }
+  .pc { flex: 1; min-width: 0; position: relative; background: rgba(18, 10, 38, .62); border: 2px solid rgba(255,255,255,.14); border-radius: 13px; padding: 4px 7px 5px 9px; transition: transform .2s, border-color .2s, background .2s; }
+  .pc::before { content: ""; position: absolute; left: 3px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--pc); }
+  .pc.on { border-color: var(--pc); background: rgba(18, 10, 38, .72); transform: translateY(1px) scale(1.03); box-shadow: 0 0 14px -2px var(--pc); }
+  .pc.out { opacity: .38; }
+  .pc .nm { font-weight: 900; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pc .lv { font-size: 11px; line-height: 14px; letter-spacing: 1px; white-space: nowrap; }
+  .pc .lv b { font-weight: 800; color: #cdbdf5; letter-spacing: 0; margin-left: 4px; font-size: 11px; }
+  .pc .tm { position: absolute; left: 8px; right: 8px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--pc); transform-origin: left; opacity: .9; }
+  #snd { position: fixed; z-index: 9; top: calc(10px + env(safe-area-inset-top)); right: 9px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(18,10,38,.5); color: #fff; font-size: 18px; line-height: 40px; padding: 0; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; padding: 0 12px calc(12px + env(safe-area-inset-bottom)); color: #fff; }
+  #status { text-align: center; font-weight: 800; font-size: 14px; line-height: 1.25; min-height: 19px; margin-bottom: 8px; text-shadow: 0 1px 3px rgba(0,0,0,.6), 0 0 12px rgba(0,0,0,.35); pointer-events: none; }
+  #ctl { display: flex; gap: 10px; align-items: center; justify-content: center; }
+  .rb { width: 64px; height: 64px; flex: 0 0 64px; border-radius: 50%; border: 0; padding: 0; color: #2b1d4a; font-size: 30px; font-weight: 900; line-height: 64px;
+    background: radial-gradient(circle at 35% 28%, #fff 0, #f1eafe 40%, #cbbcf0 100%); box-shadow: 0 5px 0 #6c58a6, 0 9px 18px rgba(0,0,0,.35), inset 0 -3px 6px rgba(80,50,140,.25); touch-action: none; }
+  .rb:active, .rb.dn { transform: translateY(4px); box-shadow: 0 1px 0 #6c58a6, 0 4px 10px rgba(0,0,0,.3); }
+  #drop { flex: 1; max-width: 220px; height: 64px; border-radius: 32px; border: 0; color: #fff; font-size: 21px; line-height: 64px;
+    background: linear-gradient(180deg, #ffb347 0%, #ff7a2f 55%, #f0561c 100%); box-shadow: 0 5px 0 #b33a0c, 0 10px 22px rgba(240,86,28,.45), inset 0 2px 0 rgba(255,255,255,.45); text-shadow: 0 2px 0 rgba(150,40,0,.45); touch-action: none; }
+  #drop:active { transform: translateY(4px); box-shadow: 0 1px 0 #b33a0c, 0 4px 12px rgba(240,86,28,.35); }
+  #ctl.off .rb, #ctl.off #drop { filter: grayscale(.85) brightness(.75); opacity: .55; pointer-events: none; }
+  #banner { position: fixed; left: 0; right: 0; top: 19%; z-index: 5; text-align: center; color: #fff; font-size: 34px; line-height: 1.1; padding: 0 18px; pointer-events: none;
+    text-shadow: 0 3px 0 rgba(60,20,90,.9), 0 6px 18px rgba(0,0,0,.45); opacity: 0; transform: scale(.85); transition: opacity .2s, transform .25s cubic-bezier(.3,1.6,.5,1); }
+  #banner.on { opacity: 1; transform: scale(1); }
+  #banner small { display: block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-weight: 800; font-size: 16px; margin-top: 8px; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  .chips { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 8px 0 0; align-items: center; }
+  .chips b { font-size: 13px; color: var(--muted); }
+  .chip { border: 2px solid var(--ink); border-radius: 999px; padding: 5px 11px; background: #fff; font: inherit; font-weight: 800; font-size: 13px; color: var(--ink); }
+  .chip.on { background: #ffd34d; }
+  .screen { background: rgba(26, 12, 48, .38); }
+  .card { max-height: calc(100vh - 30px); overflow: auto; }
+  #screen-menu .card { padding-top: 16px; }
+  #screen-menu h1 { font-family: "Russo One", -apple-system, sans-serif; font-weight: 400; font-size: 32px; }
+  #round .card h2, #screen-end h2, #handoff h2 { font-family: "Russo One", -apple-system, sans-serif; font-weight: 400; }
+  #round { background: transparent; align-items: flex-end; padding-bottom: calc(26px + env(safe-area-inset-bottom)); pointer-events: none; }
+  #round .card { pointer-events: auto; padding: 14px 16px 12px; }
+  #round .lives { font-size: 14px; color: var(--muted); margin: 2px 0 2px; line-height: 1.6; }
+  #round .row { display: flex; gap: 8px; } #round .row .btn { flex: 1; margin-top: 8px; padding: 12px 6px; font-size: 16px; }
+  .best { margin-top: 8px; }
+  #hand-name { font-size: 34px; margin: 6px 0 2px; }
+</style>
+</head>
+<body>
+<canvas id="bg" class="full"></canvas>
+<canvas id="game" class="full"></canvas>
+<div id="hud" class="hidden"><div id="players"></div></div>
+<button id="snd" aria-label="Звук">🔊</button>
+<div id="bar" class="hidden">
+  <div id="status"></div>
+  <div id="ctl">
+    <button class="rb" id="rl" aria-label="Повернуть влево">↺</button>
+    <button id="drop" class="rf">⬇ Бросить</button>
+    <button class="rb" id="rr" aria-label="Повернуть вправо">↻</button>
+  </div>
+</div>
+<div id="banner" class="rf"></div>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="logo">🗼</div>
+    <h1>Шаткая башня</h1>
+    <p class="sub">Строим одну башню на всех по очереди. Кому достался кривой брусок — тому и страшно. Уронил хоть один — проиграл раунд.</p>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу, без ожидания</small></button>
+      <div class="chips" id="c-bots"><b>Ботов:</b><button class="chip on" data-v="1">1</button><button class="chip" data-v="2">2</button><button class="chip" data-v="3">3</button></div>
+      <div class="chips" id="c-lvl"><button class="chip" data-v="0">Лёгкий</button><button class="chip on" data-v="1">Средний</button><button class="chip" data-v="2">Мастер</button></div>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в чат, до 4 человек, боты добивают места</small></button>
+      <button class="btn" id="m-local">📱 На одном телефоне<small>Передавайте телефон по очереди</small></button>
+      <div class="chips" id="c-local"><b>Игроков:</b><button class="chip on" data-v="2">2</button><button class="chip" data-v="3">3</button><button class="chip" data-v="4">4</button></div>
+    </div>
+    <p class="rules">Двигай брусок пальцем, крути кнопками ↺ ↻ (или двумя пальцами) и жми «Бросить». Башня качается по-настоящему. Если во время твоего хода хоть что-то упало с площадки — минус жизнь. Последний с жизнями — победил.</p>
+    <div class="best" id="best-menu"></div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+
+<div id="handoff" class="screen hidden">
+  <div class="card">
+    <div class="logo">📱</div>
+    <h2>Передай телефон</h2>
+    <div id="hand-name" class="rf"></div>
+    <p class="sub" id="hand-sub"></p>
+    <button class="btn primary" id="hand-go">Я готов</button>
+  </div>
+</div>
+
+<div id="round" class="screen hidden">
+  <div class="card">
+    <h2 id="round-title"></h2>
+    <div class="lives" id="round-lives"></div>
+    <div class="row" id="round-buttons"></div>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div class="best" id="end-best"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/ads.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

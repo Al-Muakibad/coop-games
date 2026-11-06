@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Чёрная дыра</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="en.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  html, body { background: #bfe8ff; touch-action: none; }
+  #gl, #ov { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ov { pointer-events: none; z-index: 2; }
+  #sa { position: fixed; top: 0; left: 0; width: 0; height: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); visibility: hidden; pointer-events: none; }
+  .screen { background: linear-gradient(180deg, rgba(20, 30, 60, 0) 30%, rgba(20, 30, 60, .35)); }
+  #screen-menu { align-items: flex-end; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  #screen-menu .card { padding: 14px 16px 10px; }
+  .titlerow { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  #screen-menu h1 { margin: 2px 0 4px; }
+  #screen-menu .sub { font-size: 14px; margin-bottom: 6px; }
+  #screen-menu .btn { padding: 11px 14px; margin-top: 8px; }
+  .card { max-width: 370px; }
+  h1 { font-family: "Russo One", -apple-system, sans-serif; font-weight: 400; letter-spacing: 0; font-size: 34px; }
+  .logo { font-size: 50px; }
+  .holelogo { flex: 0 0 52px; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 50% 55%, #000 0 52%, #1d1f3a 62%, #6c5ce7 66%, #a78bfa 70%, transparent 72%); position: relative; animation: spin 6s linear infinite; }
+  .holelogo::after { content: "🚗"; position: absolute; left: 50%; top: 38%; font-size: 17px; transform: translate(-50%, -50%) rotate(-25deg); animation: fall 2.4s ease-in infinite; }
+  @keyframes fall { 0% { transform: translate(-90%, -140%) rotate(-25deg) scale(1); opacity: 1; } 55% { transform: translate(-50%, -40%) rotate(40deg) scale(.8); opacity: 1; } 100% { transform: translate(-50%, -10%) rotate(120deg) scale(.1); opacity: 0; } }
+  @keyframes spin { to { filter: hue-rotate(360deg); } }
+  .modes .btn { text-align: left; } .modes .btn small { display: block; font-weight: 600; font-size: 13px; opacity: .8; margin-top: 2px; }
+  body:not(.ready) .modes .btn { opacity: .5; pointer-events: none; }
+  body:not(.ready) #loading { display: block; }
+  #loading { display: none; font-weight: 800; color: var(--muted); margin: 6px 0; }
+  #best { font-weight: 800; color: #6b5a48; font-size: 14px; min-height: 18px; margin: 2px 0 4px; }
+  #snd { position: fixed; z-index: 30; top: calc(10px + env(safe-area-inset-top)); right: 10px; width: 42px; height: 42px; border-radius: 50%; border: 0; background: rgba(0,0,0,.35); color: #fff; font-size: 20px; line-height: 42px; padding: 0; }
+  #end-sub .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; font-size: 14px; color: var(--ink); }
+  .newbest { margin-top: 8px; font-weight: 900; color: #d95a12; font-size: 16px; }
+  .bestl { margin-top: 8px; font-weight: 700; color: var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
+<div id="sa"></div>
+<button id="snd" aria-label="Звук">🔊</button>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="titlerow"><div class="holelogo"></div><h1>Чёрная дыра</h1></div>
+    <p class="sub">Глотай город: людей, машины, а потом и дома. Чем больше съел — тем больше дыра, а большая дыра глотает маленькую. Через 2 минуты побеждает самая большая.</p>
+    <div id="best"></div>
+    <div id="challenge" class="challenge hidden"></div>
+    <div id="loading">Загружаем город…</div>
+    <div class="modes">
+      <button class="btn primary" id="m-bots">🤖 Против ботов<small>Сразу в бой: ты и 4 бота</small></button>
+      <button class="btn" id="m-party">👥 С друзьями онлайн<small>Одна ссылка в общий чат — до 6 игроков</small></button>
+      <button class="btn" id="m-local">📱 Вдвоём на одном телефоне<small>Экран пополам, садитесь друг напротив друга</small></button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+<script src="../shared/tg.js"></script>
+<script src="../shared/ads.js"></script>
+<script src="../shared/net.js"></script>
+<script src="../shared/party.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script src="sound.js"></script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
