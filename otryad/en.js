@@ -1,0 +1,50 @@
+/* Английский словарь «Отряда» (см. shared/i18n.js) */
+window.I18N && I18N.add({
+  "Отряд": "Squad", "Отряде": "Squad", "«Отряде»": "Squad",
+  "Собирай толпу через ворота с числами, обходи ловушки и сноси красную армию.": "Grow your crowd through number gates, dodge the traps and crush the red army.",
+  "Загружаем…": "Loading…", "Звук": "Sound", "Пауза": "Pause",
+  "Забег": "Run", "Пушка": "Cannon", "Веди толпу к замку": "Lead the crowd to the castle", "Стреляй бойцами в ворота": "Fire soldiers through gates",
+  "Уровень": "Level", "Уровни": "Levels", "🗺 Уровни": "🗺 Levels", "⬆️ Сила": "⬆️ Power", "🎨 Облик": "🎨 Looks", "Облик": "Looks",
+  "Другие игры": "Other games", "Назад": "Back", "В меню": "Menu",
+  "🏃 Забег": "🏃 Run", "💣 Пушка": "💣 Cannon",
+  "👹 — великан, 🏰 — крепость, ⏱ — на время, 🔀 — развилка": "👹 giant, 🏰 castle, ⏱ timed, 🔀 fork",
+  "👹 — великан. Звёзды — сколько прочности пушки осталось.": "👹 giant. Stars show how much cannon durability was left.",
+  // магазин
+  "Сила отряда": "Squad power", "⬆️ Сила отряда": "⬆️ Squad power", "Макс.": "Max",
+  "Новобранцы": "Recruits", "Сила удара": "Strike power", "Броня": "Armor", "Доход": "Income",
+  "Скорострельность": "Fire rate", "Бойцов за выстрел": "Soldiers per shot", "Сила ворот": "Gate power", "Прочность пушки": "Cannon durability",
+  "сейчас": "now", "бойца на старте": "soldiers at start", "урона по красным": "damage to the reds", "монет за уровень": "coins per level",
+  "Меньше потерь в схватке": "Fewer losses in fights", "выстрелов и остывания": "fire rate and cooling", "бойца в каждом залпе": "soldiers per shot",
+  "прочности": "durability", "Запас «+N» больше, «×N» иногда даёт лишнего": "Bigger «+N» pools, «×N» sometimes adds an extra soldier",
+  // облик
+  "Цвет отряда": "Squad colour", "Шапки": "Hats",
+  "Синие": "Blue", "Бирюза": "Teal", "Зелёные": "Green", "Фиолетовые": "Purple", "Оранжевые": "Orange", "Розовые": "Pink", "Ниндзя": "Ninja", "Золотые": "Gold",
+  "Без шапки": "No hat", "Шлем": "Helmet", "Кепка": "Cap", "Рога": "Horns", "Колпак": "Party hat", "Цилиндр": "Top hat", "Корона": "Crown",
+  // игра
+  "Коснись и веди пальцем": "Touch and drag", "Держи палец — огонь!": "Hold to fire!",
+  "Веди пальцем влево-вправо": "Drag left and right", "👆 Веди пальцем влево-вправо": "👆 Drag left and right",
+  "Синие ворота — плюс, жми в ту, где больше!": "Blue gates add — pick the one that gives more!",
+  "Красных бей числом: нужно больше бойцов, чем у них!": "Beat the reds with numbers: you need more soldiers than they have!",
+  "Веди пальцем — целься, держи — стреляй": "Drag to aim, hold to fire", "👆 Веди пальцем — целься, держи — стреляй": "👆 Drag to aim, hold to fire",
+  "Стреляй сквозь «×2» — бойцов станет вдвое больше!": "Shoot through «×2» to double your soldiers!",
+  "Перегрев! Отпусти палец — ствол остынет": "Overheated! Let go so the barrel cools down",
+  "Перегрев!": "Overheated!", "Нагрев": "Heat",
+  "В атаку!": "Charge!", "Великан!": "Giant!", "Штурм крепости!": "Storm the castle!", "Штурм крепости": "Castle siege",
+  "Уровень с великаном": "Giant level", "Успей до моста!": "Reach the bridge in time!",
+  "Мост подняли — не успели!": "The bridge went up — too late!", "Отряд разбит": "Squad defeated",
+  "Волна": "Wave", "из": "of", "Последняя волна!": "Final wave!", "Идёт великан!": "A giant is coming!", "Великан повержен!": "Giant defeated!",
+  "Казармы! Разбей башни": "Barracks! Smash the towers", "Пушку сломали!": "The cannon is wrecked!",
+  // итоги
+  "Победа!": "Victory!", "Поражение": "Defeat", "Лучший отряд": "Biggest squad", "Ступенька": "Step", "Пройдено": "Progress",
+  "Сбито врагов": "Enemies down", "Бойцов в бою": "Soldiers fielded", "Монеты": "Coins",
+  "▶ Дальше: уровень": "▶ Next: level", "🔁 Ещё раз": "🔁 Try again", "📨 Вызов другу": "📨 Challenge a friend",
+  "▶ Продолжить": "▶ Resume", "🔁 Заново": "🔁 Restart",
+  "Дальше — уровень с великаном 👹": "Next up: a giant level 👹",
+  "Ищи голубые дорожки-ускорители и обходи грязь.": "Use the blue speed strips and avoid the mud.",
+  "Выбирай ворота с ×, обходи ловушки, а монеты вложи в «Силу».": "Pick × gates, dodge traps and spend coins on Power.",
+  "Целься в «×» — ворота двигаются, бери упреждение. Не перегревай ствол. Улучшения — в «Силе».": "Aim for «×» — gates move, so lead your shots. Don't overheat. Upgrades are in Power.",
+  // вызов
+  "прошёл": "has cleared", "уровней в «Отряде». Догонишь?": "levels in Squad. Can you catch up?",
+  "Мой отряд прошёл уже": "My squad has cleared", "уровней в «Отряде»": "levels in Squad", "Сможешь дальше?": "Can you go further?",
+  "Друг": "Friend"
+});

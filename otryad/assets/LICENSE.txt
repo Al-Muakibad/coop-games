@@ -1,0 +1,13 @@
+Все графические ассеты «Отряда» — CC0 1.0 (общественное достояние): http://creativecommons.org/publicdomain/zero/1.0/
+Источник — папка ../../oborona/assets (Аванпост), там же полный список авторов (LICENSE.txt).
+
+units.bin, knight.webp, barbarian.webp, impostor.png — запечены из моделей KayKit (Kay Lousberg, www.kaylousberg.com, CC0):
+  KayKit Character Pack: Adventurers 1.0 — Knight (наш отряд), Barbarian (красные и великан); анимации Running_A, Cheer, 2H_Melee_Attack_Chop.
+  Запекание: два кадра анимации в вершинах (как орда в Аванпосте), упрощённые LOD и спрайты для дальних (инструмент — otryad/_probe/bake.html, в игру не грузится).
+env.glb — подборка моделей (без изменений формы; текстуры уменьшены до 256 px и пересжаты в WebP, без карт нормалей):
+  Quaternius — Stylized Nature MegaKit (деревья, кусты, трава, цветы, камни, грибы) — https://quaternius.itch.io/stylized-nature-megakit
+  KayKit Medieval Hexagon Pack 1.0 (заборы, флаги, горы, замок, башня, шатёр, бочки, облака) — https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+  Quaternius — Fantasy Props MegaKit (знамёна, бочка, ящик, факел, щит) — https://quaternius.itch.io/fantasy-props-megakit
+tex/ — Poly Haven (https://polyhaven.com, CC0): уменьшенные карты цвета и нормалей в webp, скопированы из ../../oborona/assets/tex
+  (stone, sandpave, snowpath, mudleaf, volctile, mosaic, rocks, sandblock, darkrock, planks, grass, sand, snow2, leaves, burnt, forest);
+  исходные наборы Poly Haven перечислены в ../../oborona/assets/LICENSE.txt.

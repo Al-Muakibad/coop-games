@@ -19,6 +19,7 @@
 | Шпион (компания 3–8, или один телефон) | `shpion/` | t.me/hrupkiy_gruz_bot?startapp=shpion |
 | Чёрная дыра (hole.io: до 6, боты, вдвоём на одном телефоне) | `dyra/` | t.me/hrupkiy_gruz_bot?startapp=dyra |
 | Шаткая башня (физика, 2–4, боты, онлайн, один телефон) | `shatkaya/` | t.me/hrupkiy_gruz_bot?startapp=shatkaya |
+| Отряд (толпа через ворота + режим «Пушка», 55 уровней) | `otryad/` | t.me/hrupkiy_gruz_bot?startapp=otryad |
 
 Корневой `index.html` — меню игр и маршрутизация по `startapp=<игра>[-c<очки>x<имя>]`.
 Общий код: `shared/tg.js` (Telegram, рекорды, вызов другу), `shared/ui.css`.

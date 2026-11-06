@@ -13,7 +13,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona", "dyra", "shatkaya"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona", "dyra", "shatkaya", "otryad"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -304,6 +304,12 @@
 
   <section data-sec="solo" class="hidden">
   <p class="secnote">Играй сам и кидай друзьям вызов на свой рекорд.</p>
+  <a class="game is-new" style="--c:#5aa2ff" href="./otryad/">
+    <div class="icon">🏃</div>
+    <div class="info"><b>Отряд</b><span>Веди толпу через ворота с числами и сноси красную армию. Режим «Пушка» — стреляй бойцами.</span>
+      <i class="tag">🙋 соло</i> <i class="tag">🗺 55 уровней</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
   <a class="game is-new" style="--c:#86efac" href="./futbol/">
     <div class="icon">🚗</div>
     <div class="info"><b>Футбол машинками</b><span>Гоняй мяч машинкой с ускорением и заносом. 1 на 1 или 2 на 2, боты.</span>
