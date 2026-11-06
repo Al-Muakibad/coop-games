@@ -1,0 +1,23 @@
+Звуки и музыка игры «Отряд» — записанные (не синтезированные) CC0-файлы.
+Лицензия Creative Commons Zero (CC0 1.0, общественное достояние): http://creativecommons.org/publicdomain/zero/1.0/
+Файлы взяты из папки ../../oborona/audio (там они уже обрезаны, выровнены по громкости и сжаты в mp3).
+Первоисточник — OpenGameArt.org:
+- Kenney — «Interface Sounds», «RPG Sound Pack (50 RPG sound effects)» — https://opengameart.org/content/interface-sounds, https://opengameart.org/content/50-rpg-sound-effects
+    click, select, confirm, error, open, close, buy
+- «80 CC0 RPG SFX» — https://opengameart.org/content/80-cc0-rpg-sfx
+- «100 CC0 SFX» и «100 CC0 SFX #2» — https://opengameart.org/content/100-cc0-sfx, https://opengameart.org/content/100-cc0-sfx-2
+- «75 CC0 breaking / falling / hit sfx» — https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+    stonehit, househit, collapse, heavy, chop
+- «150 Combat Sound Effects» (CC0) — https://opengameart.org/content/150-combat-sound-effects
+    hit, hit2, bone, blade, xbow, arrow, die, die2
+- «16 Monster Growls» — https://opengameart.org/content/16-monster-growls   (roar, roar2)
+- «12 Coin Sound Effects» — https://opengameart.org/content/12-coin-sound-effects   (coin, coin2)
+- «Swishes Sound Pack» — https://opengameart.org/content/swishes-sound-pack   (whoosh)
+- «Fantasy Sound Effects (Tinysized SFX)» — https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx   (perk, upgrade, levelup, bell)
+- «25 CC0 bang / firework SFX» — https://opengameart.org/content/25-cc0-bang-firework-sfx   (cannon, boom, boom2)
+- gong — из «80 CC0 RPG SFX»
+
+Музыка (CC0, OpenGameArt.org):
+- m_battle2 — «Medieval: Battle», RandomMind — https://opengameart.org/content/medieval-battle
+- m_win — «Medieval: Victory Theme», RandomMind — https://opengameart.org/content/medieval-victory-theme
+- m_lose — «Medieval: Defeat Theme», RandomMind — https://opengameart.org/content/medieval-defeat-theme

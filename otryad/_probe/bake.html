@@ -1,0 +1,137 @@
+<!doctype html><html><body style="margin:0;background:#888"><canvas id="c" width="256" height="256"></canvas>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }</script>
+<script type="module">
+// Разовый «запекатель» для «Отряда»: из CC0-моделей Аванпоста (KayKit) делает два кадра бега, LOD и спрайты-импосторы.
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
+import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+const L = new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
+const load = (n) => new Promise((r, j) => L.load("../../oborona/assets/" + n + ".glb", r, null, j));
+const [knight, barb, anims, nature, world, props] = await Promise.all(["knight", "barbarian", "anims", "nature", "world", "props"].map(load));
+const clips = {}; anims.animations.forEach((a) => (clips[a.name] = a));
+const OUT = { units: {}, files: {} };
+
+function bake(gl, keepNames, clipName, times, height, weapon) {
+  const obj = SkeletonUtils.clone(gl.scene);
+  obj.traverse((o) => { if (o.isMesh && !keepNames.some((k) => o.name === k)) o.visible = false; });
+  if (weapon) { const src = gl.scene.getObjectByName(weapon); const h = obj.getObjectByName("handslotr"); if (src && h) { const w = src.clone(); w.visible = true; w.position.set(0, 0, 0); w.rotation.set(0, 0, 0); h.add(w); } }
+  obj.traverse((o) => { if (o.isMesh && o.parent && o.parent.name === "handslotr" && o.name !== weapon) o.visible = o.name === weapon; });
+  const mixer = new THREE.AnimationMixer(obj), act = mixer.clipAction(clips[clipName]); act.play();
+  const dur = clips[clipName].duration;
+  // масштаб по росту в первом кадре
+  act.time = dur * times[0]; mixer.update(0); obj.updateMatrixWorld(true);
+  const box = new THREE.Box3(); obj.traverse((o) => { if (o.isMesh && o.visible) box.expandByObject(o, true); });
+  const k = height / (box.max.y - box.min.y);
+  const frames = [], heads = [];
+  for (const t of times) {
+    act.time = dur * t; mixer.update(0); obj.updateMatrixWorld(true);
+    const list = [];
+    obj.traverse((m) => {
+      if (!m.isMesh || !m.visible) return;
+      let vis = true; for (let p = m; p; p = p.parent) if (p.visible === false) vis = false; if (!vis) return;
+      const src = m.geometry, n = src.attributes.position.count, P = new Float32Array(n * 3), v = new THREE.Vector3();
+      for (let i = 0; i < n; i++) { v.fromBufferAttribute(src.attributes.position, i); if (m.isSkinnedMesh) m.applyBoneTransform(i, v); v.applyMatrix4(m.matrixWorld); P[i * 3] = v.x * k; P[i * 3 + 1] = (v.y - box.min.y) * k; P[i * 3 + 2] = v.z * k; }
+      list.push({ P, src, name: m.name, map: m.material.map });
+    });
+    frames.push(list);
+    const hb = obj.getObjectByName("head"); const hp = new THREE.Vector3(); hb.getWorldPosition(hp);
+    heads.push([hp.x * k, (hp.y - box.min.y) * k, hp.z * k]);
+  }
+  // склейка частей
+  const merge = (fA, fB) => {
+    let nv = 0, ni = 0; fA.forEach((it) => { nv += it.P.length / 3; ni += it.src.index ? it.src.index.count : it.P.length / 3; });
+    const P = new Float32Array(nv * 3), B = new Float32Array(nv * 3), U = new Float32Array(nv * 2), I = new Uint32Array(ni); let ov = 0, oi = 0;
+    fA.forEach((it, j) => { const c = it.P.length / 3; P.set(it.P, ov * 3); B.set(fB[j].P, ov * 3); const uv = it.src.attributes.uv; for (let i = 0; i < c; i++) { U[(ov + i) * 2] = uv.getX(i); U[(ov + i) * 2 + 1] = uv.getY(i); } if (it.src.index) for (const x of it.src.index.array) I[oi++] = x + ov; else for (let i = 0; i < c; i++) I[oi++] = ov + i; ov += c; });
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(P, 3)); g.setAttribute("aPosB", new THREE.BufferAttribute(B, 3)); g.setAttribute("uv", new THREE.BufferAttribute(U, 2)); g.setIndex(new THREE.BufferAttribute(I, 1));
+    return g;
+  };
+  const full = merge(frames[0], frames[1]);
+  return { full, heads, map: frames[0][0].map };
+}
+function simplifyAnim(geo, keep) {
+  const tmp = new THREE.BufferGeometry(); tmp.setAttribute("position", geo.attributes.position.clone()); tmp.setIndex(geo.index.clone());
+  const mv = mergeVertices(tmp, 1e-4);
+  const low = new SimplifyModifier().modify(mv, Math.floor(mv.attributes.position.count * (1 - keep)));
+  const P = geo.attributes.position.array, B = geo.attributes.aPosB.array, U = geo.attributes.uv.array, n = P.length / 3;
+  const key = (x, y, z) => Math.round(x * 4000) + "," + Math.round(y * 4000) + "," + Math.round(z * 4000), map = new Map();
+  for (let i = 0; i < n; i++) map.set(key(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]), i);
+  const LP = low.attributes.position.array, m = LP.length / 3, LB = new Float32Array(m * 3), LU = new Float32Array(m * 2);
+  for (let j = 0; j < m; j++) { const i = map.get(key(LP[j * 3], LP[j * 3 + 1], LP[j * 3 + 2])); if (i != null) { LB.set(B.subarray(i * 3, i * 3 + 3), j * 3); LU.set(U.subarray(i * 2, i * 2 + 2), j * 2); } else { LB.set(LP.subarray(j * 3, j * 3 + 3), j * 3); } }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(LP), 3)); g.setAttribute("aPosB", new THREE.BufferAttribute(LB, 3)); g.setAttribute("uv", new THREE.BufferAttribute(LU, 2));
+  g.setIndex(low.index ? new THREE.BufferAttribute(new Uint32Array(low.index.array), 1) : null);
+  return g;
+}
+function pack(g) {
+  // в двоичный буфер: позиции и кадр B — Float32, uv — Float32, индексы — Uint16
+  const P = g.attributes.position.array, B = g.attributes.aPosB.array, U = g.attributes.uv.array, I = g.index.array;
+  return { nv: P.length / 3, ni: I.length, P: Array.from(P, (x) => +x.toFixed(4)), B: Array.from(B, (x) => +x.toFixed(4)), U: Array.from(U, (x) => +x.toFixed(4)), I: Array.from(I) };
+}
+function texData(map, size) {
+  const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d");
+  g.drawImage(map.image, 0, 0, size, size); return c.toDataURL("image/webp", 0.9);
+}
+const KN = ["Knight_ArmLeft", "Knight_ArmRight", "Knight_Body", "Knight_Head", "Knight_LegLeft", "Knight_LegRight", "1H_Sword", "Knight_Helmet"];
+const BA = ["Barbarian_ArmLeft", "Barbarian_ArmRight", "Barbarian_Body", "Barbarian_Head", "Barbarian_LegLeft", "Barbarian_LegRight", "1H_Axe"];
+const BB = ["Barbarian_ArmLeft", "Barbarian_ArmRight", "Barbarian_Body", "Barbarian_Head", "Barbarian_LegLeft", "Barbarian_LegRight", "2H_Axe", "Barbarian_Hat"];
+const jobs = {
+  blue: bake(knight, KN, "Running_A", [0.12, 0.62], 1.0, "1H_Sword"),
+  red: bake(knight, KN, "Running_A", [0.12, 0.62], 1.0, "1H_Sword"),
+  boss: bake(barb, BB, "2H_Melee_Attack_Chop", [0.25, 0.55], 1.0, "2H_Axe"),
+  cheer: bake(knight, KN, "Cheer", [0.3, 0.7], 1.0, "1H_Sword")
+};
+for (const [k, j] of Object.entries(jobs)) {
+  const tris = j.full.index.count / 3;
+  const L = { full: tris };
+  const u = { heads: j.heads, lod: {} };
+  if (k === "boss") u.lod.near = pack(j.full);
+  else {
+    const near = simplifyAnim(j.full, k === "cheer" ? 0.2 : 0.42), far = simplifyAnim(j.full, 0.11);
+    u.lod.near = pack(near); u.lod.far = pack(far); L.near = near.index.count / 3; L.far = far.index.count / 3;
+    if (k === "cheer") delete u.lod.near, u.lod.near = pack(near);
+  }
+  u.tris = L; u.tex = k === "boss" ? "barbarian" : "knight";
+  OUT.units[k] = u;
+}
+OUT.files.knight = texData(jobs.blue.map, 512); OUT.files.barbarian = texData(jobs.red.map, 512);
+
+// --- импосторы: рендер дальней модели в спрайт (2 кадра × вид сзади/спереди) ---
+{
+  const R = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), alpha: true, antialias: true, preserveDrawingBuffer: true });
+  R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping; R.setSize(256, 256, false);
+  const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.4)); const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(-1, 3, 2); sc.add(sun);
+  const cam = new THREE.OrthographicCamera(-0.5, 0.5, 0.62, -0.62, 0.1, 20);
+  const atlas = document.createElement("canvas"); atlas.width = 512; atlas.height = 256; const ag = atlas.getContext("2d");
+  let slot = 0;
+  for (const [k, back] of [["blue", true], ["red", false]]) {
+    const g = jobs[k].full, mat = new THREE.MeshLambertMaterial({ map: jobs[k].map });
+    for (const fr of [0, 1]) {
+      const gg = new THREE.BufferGeometry(); gg.setAttribute("position", fr ? g.attributes.aPosB : g.attributes.position); gg.setAttribute("uv", g.attributes.uv); gg.setIndex(g.index); gg.computeVertexNormals();
+      const m = new THREE.Mesh(gg, mat); sc.add(m);
+      // камера чуть сверху: игрок видит своих со спины, красных — спереди
+      const z = back ? -4 : 4; cam.position.set(0, 1.6, z); cam.lookAt(0, 0.5, 0);
+      R.setClearColor(0x000000, 0); R.clear(); R.render(sc, cam);
+      ag.drawImage(R.domElement, (slot % 4) * 128, 0, 128, 256); slot++;
+      sc.remove(m);
+    }
+  }
+  OUT.files.impostor = atlas.toDataURL("image/png");
+}
+
+// --- окружение: выбранные модели в один GLB ---
+const pick = { nature: ["CommonTree_1", "CommonTree_3", "Pine_2", "Pine_5", "DeadTree_1", "TwistedTree_1", "Bush_Common", "Bush_Common_Flowers", "Fern_1", "Grass_Common_Tall", "Flower_3_Group", "Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3", "Pebble_Round_1", "Mushroom_Common"],
+  world: ["fence_wood_straight", "fence_stone_straight", "flag_blue", "rock_single_A", "rock_single_C", "rock_single_E", "mountain_A_grass_trees", "mountain_C_grass", "hills_A_trees", "building_castle_blue", "building_tower_A_blue", "tent", "barrel", "crate_A_big", "wall_straight", "cloud_big"],
+  props: ["Banner_1", "Banner_2", "Barrel", "Crate_Wooden", "Torch_Metal", "Shield_Wooden"] };
+const src = { nature, world, props }, root = new THREE.Scene();
+const sizes = {};
+for (const [f, names] of Object.entries(pick)) for (const n of names) { const o = src[f].scene.getObjectByName(n); if (!o) { sizes[n] = "MISSING"; continue; } const c = o.clone(); c.position.set(0, 0, 0); c.name = n; root.add(c); const b = new THREE.Box3().setFromObject(c); sizes[n] = [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z].map((x) => +x.toFixed(2)); }
+OUT.sizes = sizes;
+// поменьше: без карт нормалей, текстуры 256 px в webp
+root.traverse((o) => { if (!o.isMesh) return; for (const m of [].concat(o.material)) { for (const k of ["normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap"]) m[k] = null; if (m.map) m.map.userData.mimeType = "image/webp"; } });
+const glb = await new GLTFExporter().parseAsync(root, { binary: true, maxTextureSize: 256 });
+OUT.files.env = "data:application/octet-stream;base64," + btoa(Array.from(new Uint8Array(glb), (b) => String.fromCharCode(b)).join(""));
+window.BAKE = OUT;
+</script></body></html>

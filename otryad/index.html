@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Отряд</title>
+<script>window.SFX_NO_MUSIC = true; window.SFX_OFF = true;</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="en.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  :root { --accent: #2f7bff; --accent-dark: #1b55c4; --gold: #ffc83a; --red: #e5393b; --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom); }
+  html, body { background: #9fd6ff; touch-action: none; }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+  .lbl { position: absolute; left: 0; top: 0; white-space: nowrap; font-family: "Russo One", Impact, sans-serif; will-change: transform; }
+  .cnt { padding: 3px 11px 2px; border-radius: 12px; font-size: 19px; color: #fff; border: 2px solid rgba(255,255,255,.85); box-shadow: 0 3px 0 rgba(0,0,0,.25); }
+  .cnt.blue { background: var(--accent); } .cnt.red { background: var(--red); font-size: 16px; } .cnt.gold { background: #e2a400; }
+  .cnt.pop { animation: cpop .32s ease-out; }
+  @keyframes cpop { 0% { scale: 1; } 35% { scale: 1.45; } 100% { scale: 1; } }
+  .hpbar { width: 120px; height: 16px; border-radius: 9px; background: rgba(30,10,10,.6); border: 2px solid #fff; overflow: hidden; position: absolute; }
+  .hpbar i { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(#ff6a5a, #d42a2a); transition: width .15s; }
+  .hpbar b { position: absolute; inset: 0; text-align: center; font: 12px/13px "Russo One", sans-serif; color: #fff; }
+  .hpbar.small { width: 64px; height: 12px; } .hpbar.small b { font-size: 9px; line-height: 9px; }
+
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #hud .top { position: absolute; left: 10px; right: 10px; top: calc(10px + var(--sat)); display: flex; align-items: center; gap: 8px; }
+  .pill { background: rgba(20,30,60,.55); color: #fff; border-radius: 14px; padding: 6px 11px; font: 15px "Russo One", sans-serif; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); white-space: nowrap; }
+  #pause { pointer-events: auto; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(20,30,60,.55); color: #fff; font-size: 17px; padding: 0; }
+  #h-prog { flex: 1; height: 12px; border-radius: 7px; background: rgba(20,30,60,.45); overflow: hidden; border: 2px solid rgba(255,255,255,.7); }
+  #h-prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #5ac8ff, #2f7bff); }
+  #h-coins::before { content: "🪙 "; }
+  #h-timer { position: absolute; left: 50%; top: calc(58px + var(--sat)); transform: translateX(-50%); font-size: 22px; }
+  #h-timer.low { background: rgba(200,30,30,.75); animation: blink .5s infinite alternate; }
+  @keyframes blink { to { opacity: .6; } }
+  #h-count { position: absolute; left: 50%; top: calc(56px + var(--sat)); transform: translateX(-50%); font: 30px "Russo One", sans-serif; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,.3), 0 0 12px rgba(0,60,160,.5); }
+  #h-count.pop { animation: cpop .3s ease-out; }
+  #floats { position: absolute; left: 50%; top: 34%; }
+  .fl { position: absolute; transform: translateX(-50%); font: 34px "Russo One", sans-serif; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,.35); animation: flup 1s ease-out forwards; white-space: nowrap; }
+  .fl.good { color: #7cf0ff; } .fl.bad { color: #ff6a6a; } .fl.gold { color: #ffd84a; font-size: 40px; }
+  @keyframes flup { 0% { opacity: 0; translate: 0 10px; scale: .6; } 15% { opacity: 1; scale: 1.2; } 100% { opacity: 0; translate: 0 -70px; scale: 1; } }
+  #toast { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); font: 30px "Russo One", sans-serif; color: #fff; text-shadow: 0 3px 0 rgba(0,0,0,.35); white-space: nowrap; opacity: 0; }
+  #toast.on { animation: toast 1.6s ease-out; }
+  @keyframes toast { 0% { opacity: 0; scale: .5; } 12% { opacity: 1; scale: 1.15; } 22% { scale: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+  #hint { position: absolute; left: 16px; right: 16px; bottom: calc(110px + var(--sab)); text-align: center; font: 19px "Russo One", sans-serif; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.4); display: none; }
+  #hint.on { display: block; animation: hintin .3s ease-out; }
+  #hint .hand { display: block; font-size: 40px; margin-bottom: 6px; animation: hand 1.2s ease-in-out infinite; }
+  @keyframes hand { 0%,100% { translate: -40px 0; } 50% { translate: 40px 0; } }
+  @keyframes hintin { from { opacity: 0; translate: 0 10px; } }
+  #gunbars { position: absolute; left: 50%; bottom: calc(14px + var(--sab)); transform: translateX(-50%); width: min(300px, 76vw); display: none; }
+  .bar { height: 14px; border-radius: 8px; background: rgba(20,30,60,.55); border: 2px solid rgba(255,255,255,.8); overflow: hidden; margin-top: 6px; position: relative; }
+  .bar i { display: block; height: 100%; width: 0; transition: width .08s; }
+  .bar b { position: absolute; inset: 0; font: 10px/11px "Russo One", sans-serif; color: #fff; text-align: center; }
+  #b-hp i { background: linear-gradient(#7dff8a, #22b04a); }
+  #b-heat i { background: linear-gradient(90deg, #ffd34a, #ff4a1a); }
+  #b-heat.lock { animation: blink .25s infinite alternate; border-color: #ff4a4a; }
+  #hurt { position: fixed; inset: 0; pointer-events: none; z-index: 4; box-shadow: inset 0 0 90px 30px rgba(255,0,0,.55); opacity: 0; transition: opacity .35s; }
+  #hurt.on { opacity: 1; transition: none; }
+  #tapgo { position: absolute; left: 0; right: 0; bottom: calc(150px + var(--sab)); text-align: center; font: 22px "Russo One", sans-serif; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.4); animation: blink .7s infinite alternate; display: none; }
+
+  /* Меню */
+  .screen { background: linear-gradient(180deg, rgba(10,20,50,0) 25%, rgba(10,20,50,.45)); }
+  #screen-menu { align-items: flex-end; padding-bottom: calc(14px + var(--sab)); }
+  .card { max-width: 380px; padding: 14px 16px 12px; }
+  h1 { font-family: "Russo One", -apple-system, sans-serif; font-weight: 400; letter-spacing: .5px; font-size: 38px; margin: 0 0 2px; }
+  h2 { font-family: "Russo One", -apple-system, sans-serif; font-weight: 400; font-size: 27px; }
+  .titlerow { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .logo3 { font-size: 30px; letter-spacing: -10px; margin-right: 8px; }
+  #screen-menu .sub { font-size: 14px; margin-bottom: 4px; }
+  .coins { display: inline-block; font: 17px "Russo One", sans-serif; color: #8a5a00; background: #fff0c2; border: 2px solid var(--ink); border-radius: 12px; padding: 3px 10px; margin: 2px 0 4px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .mode { position: relative; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); padding: 10px 8px 9px; text-align: center; font-family: inherit; color: #fff; cursor: pointer; }
+  .mode:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+  .mode.run { background: linear-gradient(160deg, #3d8bff, #1d55d8); } .mode.gun { background: linear-gradient(160deg, #ff9b3a, #e0531a); }
+  .mode .ic { font-size: 30px; line-height: 1; } .mode b { display: block; font: 19px "Russo One", sans-serif; margin-top: 3px; }
+  .mode small { display: block; font-size: 12.5px; font-weight: 700; opacity: .92; margin-top: 2px; }
+  .mode .lv { display: inline-block; margin-top: 6px; background: rgba(0,0,0,.22); border-radius: 9px; padding: 2px 8px; font: 13px "Russo One", sans-serif; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin-top: 8px; }
+  .row2 .btn { margin: 0; padding: 10px 4px; font-size: 14px; }
+  .btn.blue { background: var(--accent); color: #fff; }
+  #screen-menu .ghost { margin-top: 4px; padding: 8px; }
+  #snd { position: fixed; z-index: 30; top: calc(10px + var(--sat)); right: 10px; width: 42px; height: 42px; border-radius: 50%; border: 0; background: rgba(0,0,0,.35); color: #fff; font-size: 20px; line-height: 42px; padding: 0; }
+  body:not(.ready) .modes, body:not(.ready) .row2 { opacity: .5; pointer-events: none; }
+  #loading { font-weight: 800; color: var(--muted); margin: 6px 0; display: none; } body:not(.ready) #loading { display: block; }
+  /* списки */
+  .panel { max-height: min(74vh, 640px); display: flex; flex-direction: column; }
+  .scroll { overflow-y: auto; touch-action: pan-y; margin: 0 -6px; padding: 2px 6px; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
+  .tabs2 { display: flex; gap: 6px; margin: 4px 0 8px; }
+  .tabs2 button { flex: 1; padding: 8px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; font: 15px "Russo One", sans-serif; color: var(--ink); }
+  .tabs2 button.on { background: var(--accent); color: #fff; }
+  .up { display: flex; align-items: center; gap: 10px; text-align: left; padding: 9px 4px; border-bottom: 2px dashed rgba(43,29,20,.15); }
+  .up .ic { font-size: 28px; width: 38px; text-align: center; }
+  .up .tx { flex: 1; min-width: 0; } .up .tx b { display: block; font-size: 15.5px; } .up .tx span { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+  .dots { margin-top: 3px; letter-spacing: 1px; font-size: 10px; color: var(--accent); }
+  .up .buy { flex: 0 0 auto; width: auto; margin: 0; padding: 8px 10px; font-size: 14px; min-width: 76px; }
+  .buy[disabled] { opacity: .45; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+  .lvb { aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 12px; background: #fff; font: 17px "Russo One", sans-serif; color: var(--ink); padding: 0; position: relative; box-shadow: 0 3px 0 var(--ink); }
+  .lvb small { position: absolute; left: 0; right: 0; bottom: 2px; font: 9px sans-serif; letter-spacing: -1px; color: #e2a400; }
+  .lvb .sp { position: absolute; top: -7px; right: -6px; font-size: 14px; }
+  .lvb.done { background: #dff0ff; } .lvb.cur { background: var(--accent); color: #fff; } .lvb.lock { opacity: .4; }
+  .sw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 12px; }
+  .swb { border: 3px solid var(--ink); border-radius: 14px; background: #fff; padding: 8px 2px 6px; font: 11.5px "Russo One", sans-serif; color: var(--ink); position: relative; box-shadow: 0 3px 0 var(--ink); }
+  .swb .c { width: 28px; height: 28px; border-radius: 50%; margin: 0 auto 4px; border: 2px solid var(--ink); }
+  .swb .e { font-size: 24px; display: block; line-height: 30px; }
+  .swb.on { background: #fff0c2; outline: 3px solid var(--accent); }
+  .swb .pr { display: block; color: #a06a00; font-size: 11px; margin-top: 2px; }
+  h3 { margin: 6px 0 2px; font-size: 16px; text-align: left; }
+  #end-sub .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; font-size: 15px; color: var(--ink); }
+  .stars { font-size: 40px; letter-spacing: 4px; margin: 2px 0; } .stars .off { opacity: .2; filter: grayscale(1); }
+  .mult { font: 44px "Russo One", sans-serif; color: #e2a400; line-height: 1; margin: 4px 0; }
+  .newbest { margin-top: 6px; font-weight: 900; color: var(--accent-dark); }
+  .tip { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+<div id="hurt"></div>
+<div id="hud" class="hidden">
+  <div class="top">
+    <button id="pause" aria-label="Пауза">⏸</button>
+    <span class="pill" id="h-lv">Уровень 1</span>
+    <div id="h-prog"><i></i></div>
+    <span class="pill" id="h-wave" style="display:none"></span>
+    <span class="pill" id="h-coins">0</span>
+  </div>
+  <div id="h-count"></div>
+  <div class="pill" id="h-timer" style="display:none"></div>
+  <div id="floats"></div>
+  <div id="toast"></div>
+  <div id="hint"></div>
+  <div id="tapgo"></div>
+  <div id="gunbars"><div class="bar" id="b-hp"><i></i><b></b></div><div class="bar" id="b-heat"><i></i><b>Нагрев</b></div></div>
+</div>
+<button id="snd" aria-label="Звук">🔊</button>
+
+<div id="screen-menu" class="screen">
+  <div class="card">
+    <div class="titlerow"><h1>Отряд</h1></div>
+    <p class="sub">Собирай толпу через ворота с числами, обходи ловушки и сноси красную армию.</p>
+    <div class="coins" id="m-coins">0</div>
+    <div id="challenge" class="challenge hidden"></div>
+    <div id="loading">Загружаем…</div>
+    <div class="modes">
+      <button class="mode run" id="m-run"><span class="ic">🏃</span><b>Забег</b><small>Веди толпу к замку</small><span class="lv" id="m-run-lv">Уровень 1</span></button>
+      <button class="mode gun" id="m-gun"><span class="ic">💣</span><b>Пушка</b><small>Стреляй бойцами в ворота</small><span class="lv" id="m-gun-lv">Уровень 1</span></button>
+    </div>
+    <div class="row2">
+      <button class="btn" id="m-levels">🗺 Уровни</button>
+      <button class="btn" id="m-shop">⬆️ Сила</button>
+      <button class="btn" id="m-look">🎨 Облик</button>
+    </div>
+    <button class="btn ghost" id="m-menu">Другие игры</button>
+  </div>
+</div>
+
+<div id="screen-levels" class="screen hidden">
+  <div class="card panel">
+    <h2>Уровни</h2>
+    <div class="tabs2" id="lv-tabs"><button data-m="run" class="on">🏃 Забег</button><button data-m="gun">💣 Пушка</button></div>
+    <div class="scroll"><div class="grid" id="lv-grid"></div></div>
+    <p class="tip" id="lv-tip">👹 — великан, 🏰 — крепость, ⏱ — на время, 🔀 — развилка</p>
+    <button class="btn" data-back>Назад</button>
+  </div>
+</div>
+
+<div id="screen-shop" class="screen hidden">
+  <div class="card panel">
+    <h2>Сила отряда</h2>
+    <div class="coins" id="s-coins">0</div>
+    <div class="tabs2" id="shop-tabs"><button data-m="run" class="on">🏃 Забег</button><button data-m="gun">💣 Пушка</button></div>
+    <div class="scroll" id="shop-list"></div>
+    <button class="btn" data-back>Назад</button>
+  </div>
+</div>
+
+<div id="screen-look" class="screen hidden">
+  <div class="card panel">
+    <h2>Облик</h2>
+    <div class="coins" id="l-coins">0</div>
+    <div class="scroll">
+      <h3>Цвет отряда</h3><div class="sw" id="look-col"></div>
+      <h3>Шапки</h3><div class="sw" id="look-hat"></div>
+    </div>
+    <button class="btn" data-back>Назад</button>
+  </div>
+</div>
+
+<div id="screen-pause" class="screen hidden">
+  <div class="card">
+    <h2>Пауза</h2>
+    <button class="btn primary" id="p-resume">▶ Продолжить</button>
+    <button class="btn" id="p-restart">🔁 Заново</button>
+    <button class="btn" id="p-menu">В меню</button>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <div id="end-big"></div>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+
+<script src="../shared/tg.js"></script>
+<script src="../shared/ads.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
