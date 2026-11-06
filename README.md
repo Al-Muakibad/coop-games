@@ -17,6 +17,8 @@
 | Перестрелка (арена, до 6, боты, команды) | `strelka/` | t.me/hrupkiy_gruz_bot?startapp=strelka |
 | Дурак (2–4, с ботами или онлайн) | `durak/` | t.me/hrupkiy_gruz_bot?startapp=durak |
 | Шпион (компания 3–8, или один телефон) | `shpion/` | t.me/hrupkiy_gruz_bot?startapp=shpion |
+| Чёрная дыра (hole.io: до 6, боты, вдвоём на одном телефоне) | `dyra/` | t.me/hrupkiy_gruz_bot?startapp=dyra |
+| Шаткая башня (физика, 2–4, боты, онлайн, один телефон) | `shatkaya/` | t.me/hrupkiy_gruz_bot?startapp=shatkaya |
 
 Корневой `index.html` — меню игр и маршрутизация по `startapp=<игра>[-c<очки>x<имя>]`.
 Общий код: `shared/tg.js` (Telegram, рекорды, вызов другу), `shared/ui.css`.

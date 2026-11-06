@@ -13,7 +13,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona", "dyra", "shatkaya"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -187,6 +187,12 @@
       <i class="tag">🃏 до 4</i> <i class="tag">🤖 боты</i></div>
     <span class="go" aria-hidden="true">▶</span>
   </a>
+  <a class="game is-new" style="--c:#ffb347" href="./shatkaya/">
+    <div class="icon">🗼</div>
+    <div class="info"><b>Шаткая башня</b><span>Строим одну башню по очереди. Уронил — проиграл.</span>
+      <i class="tag">⚔️ до 4</i> <i class="tag">🤖 боты</i> <i class="tag">📱 или на одном</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
   <a class="game is-new" style="--c:#f9a8c4" href="./chervi/">
     <div class="icon">🪱</div>
     <div class="info"><b>Червячки</b><span>Команды червяков по очереди: базука, граната, динамит. Земля рушится, ветер дует.</span>
@@ -263,6 +269,12 @@
       <i class="tag">🐍 до 6</i> <i class="tag">🤖 боты</i></div>
     <span class="go" aria-hidden="true">▶</span>
   </a>
+  <a class="game is-new" style="--c:#a5b4fc" href="./dyra/">
+    <div class="icon">🕳️</div>
+    <div class="info"><b>Чёрная дыра</b><span>Глотай город: от людей до небоскрёбов.</span>
+      <i class="tag">🕳️ до 6</i> <i class="tag">🤖 боты</i> <i class="tag">📱 вдвоём</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
   <a class="game is-new" style="--c:#fda4af" href="./tolpa/">
     <div class="icon">🏃</div>
     <div class="info"><b>Толпа</b><span>Собирай прохожих и переманивай толпы поменьше. У кого больше людей?</span>
@@ -314,6 +326,18 @@
     <div class="icon">💣</div>
     <div class="info"><b>Рикошет</b><span>Танки в лабиринте: снаряды отскакивают от стен — бей из-за угла.</span>
       <i class="tag">💣 до 4</i> <i class="tag">🤖 боты</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
+  <a class="game is-new" style="--c:#a5b4fc" href="./dyra/">
+    <div class="icon">🕳️</div>
+    <div class="info"><b>Чёрная дыра</b><span>Глотай город: от людей до небоскрёбов.</span>
+      <i class="tag">🕳️ до 6</i> <i class="tag">🤖 боты</i> <i class="tag">📱 вдвоём</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
+  <a class="game is-new" style="--c:#ffb347" href="./shatkaya/">
+    <div class="icon">🗼</div>
+    <div class="info"><b>Шаткая башня</b><span>Строим одну башню по очереди. Уронил — проиграл.</span>
+      <i class="tag">⚔️ до 4</i> <i class="tag">🤖 боты</i> <i class="tag">📱 или на одном</i></div>
     <span class="go" aria-hidden="true">▶</span>
   </a>
   <a class="game is-new" style="--c:#7fd1a3" href="./durak/">

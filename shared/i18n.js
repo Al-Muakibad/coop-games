@@ -89,7 +89,7 @@
   function set(l) { try { localStorage.setItem("kg_lang", l); } catch (_) {} location.reload(); }
 
   // Игры, переведённые полностью (в меню у остальных на английском стоит пометка RU)
-  const FULL = ["sniper", "chervi", "durak", "shpion"];
+  const FULL = ["sniper", "chervi", "durak", "shpion", "dyra", "shatkaya"];
   window.I18N = { lang, t, add, set, FULL };
   window.L = t;
 
@@ -148,7 +148,9 @@
     "Морской бой": "Battleship", "Артиллерия": "Artillery", "Змейка": "Snake", "Танчики": "Tanks", "Захват": "Conquest",
     "Толпа": "Crowd", "Объясни слово": "Explain the Word", "Червячки": "Worms", "Шпион": "Spyfall", "Дурак": "Durak",
     "Перестрелка": "Shootout", "Змеиная арена": "Snake Arena", "Футбол машинками": "Car Soccer", "Гонки": "Racing",
-    "Рикошет": "Ricochet", "Бильярд": "Pool",
+    "Рикошет": "Ricochet", "Бильярд": "Pool", "Чёрная дыра": "Black Hole", "Шаткая башня": "Wobbly Tower",
+    "Глотай город: от людей до небоскрёбов.": "Swallow the city: from people to skyscrapers.", "📱 вдвоём": "📱 2 on 1 phone",
+    "Строим одну башню по очереди. Уронил — проиграл.": "One tower, everyone takes turns. Drop it — you lose.", "🕳️ до 6": "🕳️ up to 6",
     "60 секунд, кочки и шаткая гора коробок.": "60 seconds, bumps and a wobbly pile of boxes.",
     "Один тап — один этаж. Промахнулся — срезало.": "One tap, one floor. Miss and it gets sliced.",
     "Кто быстрее нажмёт — 5 видов раундов на реакцию.": "Who taps first? 5 kinds of reaction rounds.",
