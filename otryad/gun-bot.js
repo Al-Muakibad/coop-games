@@ -1,23 +1,28 @@
 // Боты для режима «Пушка» (автотесты баланса и демо в меню).
-// skilled — целится в лучшие ворота с учётом их движения и не перегревает ствол;
-// human — как skilled, но с промахами (разброс прицела) и задержкой реакции, как у живого игрока;
-// random — крутит ствол наугад и жмёт без остановки.
+// v2: пушка ездит по рельсу, бойцы летят прямо. Бот выбирает, КУДА встать.
+// skilled — встаёт под лучшие ворота с учётом их движения, отстреливает ящики, не перегревает ствол, чемпиона бережёт на великанов;
+// human — как skilled, но с промахами по месту и задержкой реакции, как у живого игрока;
+// random — ездит наугад и жмёт без остановки, чемпиона выпускает сразу.
 import { CFG } from "./gun-sim.js";
 
-// во что попадёт боец, вылетевший под углом a (без наводки), и чего это стоит
-export function pathValue(sim, a) {
-  const C = CFG.cannon, S = CFG.soldier, hw = CFG.field.hw - S.r;
-  let x = Math.sin(a) * C.muzzle, z = Math.cos(a) * C.muzzle, vx = Math.sin(a) * S.speed, vz = Math.cos(a) * S.speed, t = 0, val = 1;
-  for (const r of sim.rows) {
-    const dt = (r.z - z) / vz; t += dt; x += vx * dt; z = r.z;
-    // отскок от бортов
-    for (let k = 0; k < 3; k++) { if (x > hw) { x = 2 * hw - x; vx = -vx; } else if (x < -hw) { x = -2 * hw - x; vx = -vx; } }
-    const pos = sim.rowPosAt(r, t);
+// во что попадёт боец, вылетевший с места x, и чего это стоит (0 — сгорит в «−»/щите или уйдёт в ящик)
+export function pathValue(sim, x) {
+  const C = CFG.cannon, S = CFG.soldier;
+  let z = C.muzzle, t = 0, val = 1, crate = 0;
+  const events = [];
+  for (const c of sim.crates) if (c.wait <= 0 && c.hp > 0 && Math.abs(x - c.x) < c.r + S.r) events.push({ z: c.z, c });
+  for (const r of sim.rows) events.push({ z: r.z, r });
+  events.sort((a, b) => a.z - b.z);
+  for (const e of events) {
+    const dt = (e.z - z) / S.speed; t += dt; z = e.z;
+    if (e.c) { crate = 1; return { val: 0, crate, x, t, c: e.c }; }
+    const r = e.r, pos = sim.rowPosAt(r, t);
     for (const g of r.gates) {
       const gx = pos + g.off;
       if (Math.abs(x - gx) > g.w / 2 - 0.15) continue;
       if (g.k === "x") val *= g.N;
       else if (g.k === "+") val += g.pool >= 2 ? CFG.gate.plusPer * Math.min(1, g.pool / 12) : 0;
+      else if (g.k === "M") val *= 1.15;       // громила ценнее пятерых только против щитов — почти нейтрально
       else if (g.k === "-") { if (g.pool >= 1) return { val: 0, x, t }; }
       else if (g.k === "#") { if (!g.broken) return { val: 0, x, t }; }
       break;
@@ -25,17 +30,19 @@ export function pathValue(sim, a) {
   }
   return { val, x, t };
 }
+// ценность награды из ящика (в «бойцах за выстрел»)
+const GIVE_V = { rapid: 4, barrel: 6, champ: 5, gate: 5, brutes: 4, heal: 3 };
 
 export function makeBot(kind, seed) {
-  let s = seed || 7, nextT = 0, aimT = 0;
+  let s = seed || 7, nextT = 0, moveT = 0;
   const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
   return function control(sim, dt) {
     const C = CFG.cannon;
     if (kind === "random") {
-      aimT -= dt;
-      if (aimT <= 0) { aimT = 0.4 + rnd() * 0.6; sim.aimTarget = (rnd() * 2 - 1) * C.aimMax; }
-      sim.aim += Math.max(-dt * 2.5, Math.min(dt * 2.5, sim.aimTarget - sim.aim));
+      moveT -= dt;
+      if (moveT <= 0) { moveT = 0.4 + rnd() * 0.8; sim.tx = (rnd() * 2 - 1) * C.rail; }
       sim.firing = true;
+      if (sim.charged) sim.launchChamp();
       return;
     }
     // skilled / human
@@ -44,19 +51,24 @@ export function makeBot(kind, seed) {
     if (nextT <= 0) {
       nextT = human ? 0.3 + rnd() * 0.25 : 0.08;
       const th = sim.threat();
-      let best = sim.aim, bs = -1;
-      for (let a = -C.aimMax; a <= C.aimMax + 1e-6; a += 0.025) {
-        const p = pathValue(sim, a);
+      let best = sim.x, bs = -1;
+      for (let x = -C.rail; x <= C.rail + 1e-6; x += 0.25) {
+        const p = pathValue(sim, x);
         let sc = p.val;
-        if (th) { const ex = Math.sin(a) * (th.z || 30); sc *= 1 + 0.25 * Math.max(0, 1 - Math.abs(ex - th.x) / 6); }
-        sc -= Math.abs(a - sim.aim) * 0.05;      // не дёргать ствол без нужды
-        if (sc > bs) { bs = sc; best = a; }
+        if (p.c) { const left = p.c.hp / Math.max(1, sim.rate * sim.barrelsNow); sc = (GIVE_V[p.c.gives[p.c.gi % p.c.gives.length]] || 3) * (left < 6 ? 1.2 : 0.7); }
+        if (th) { sc *= 1 + 0.3 * Math.max(0, 1 - Math.abs(x - th.x) / 5) * (th.z < 14 ? 2 : 1); }
+        sc -= Math.abs(x - sim.x) * 0.04;        // не дёргаться без нужды
+        if (sc > bs) { bs = sc; best = x; }
       }
-      sim.aimTarget = best + (human ? (rnd() * 2 - 1) * 0.09 : 0); sim.bestVal = bs;
+      sim.tx = best + (human ? (rnd() * 2 - 1) * 0.7 : 0); sim.bestVal = bs;
+      // чемпион: на великана/босса/толпу у пушки, или когда врагов много
+      if (sim.charged) {
+        const big = sim.enemies.some((e) => e.type === "giant" || e.type === "boss" || e.type === "tower") || sim.towers.length;
+        const near = sim.enemies.filter((e) => e.z < 16).length;
+        if (big || near > 12 || (human && rnd() < 0.3)) { sim.tx = th ? Math.max(-C.rail, Math.min(C.rail, th.x)) : sim.tx; sim.launchChamp(); }
+      }
     }
-    // ствол поворачивается с ограниченной скоростью — как палец
-    sim.aim += Math.max(-dt * 3, Math.min(dt * 3, sim.aimTarget - sim.aim));
     const danger = sim.enemies.some((e) => e.z < 8);
-    sim.firing = !sim.locked && (sim.heat < 86 || danger) && (sim.enemies.length > 0 || sim.towers.length > 0 || sim.wave < sim.lv.waves.length);
+    sim.firing = !sim.locked && (sim.heat < 86 || danger || sim.rapidT > 0) && (sim.enemies.length > 0 || sim.towers.length > 0 || sim.wave < sim.lv.waves.length);
   };
 }

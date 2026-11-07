@@ -149,7 +149,7 @@
     "Толпа": "Crowd", "Объясни слово": "Explain the Word", "Червячки": "Worms", "Шпион": "Spyfall", "Дурак": "Durak",
     "Перестрелка": "Shootout", "Змеиная арена": "Snake Arena", "Футбол машинками": "Car Soccer", "Гонки": "Racing",
     "Рикошет": "Ricochet", "Бильярд": "Pool", "Чёрная дыра": "Black Hole", "Шаткая башня": "Wobbly Tower", "Отряд": "Squad", "🗺 55 уровней": "🗺 55 levels",
-    "Веди толпу через ворота с числами и сноси красную армию. Режим «Пушка» — стреляй бойцами.": "Lead your crowd through number gates and crush the red army. Cannon mode: fire your soldiers.",
+    "Веди толпу, выбирай оружие и эпоху, стреляй по воротам — и сноси красную армию. «Пушка» ездит по рельсу и выпускает чемпионов.": "Lead your crowd, pick weapons and eras, shoot the gates and crush the red army. The cannon rides a rail and launches champions.",
     "Глотай город: от людей до небоскрёбов.": "Swallow the city: from people to skyscrapers.", "📱 вдвоём": "📱 2 on 1 phone",
     "Строим одну башню по очереди. Уронил — проиграл.": "One tower, everyone takes turns. Drop it — you lose.", "🕳️ до 6": "🕳️ up to 6",
     "60 секунд, кочки и шаткая гора коробок.": "60 seconds, bumps and a wobbly pile of boxes.",

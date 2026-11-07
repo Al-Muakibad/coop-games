@@ -36,7 +36,7 @@ export const BIOME_ORDER = ["meadow", "desert", "snow", "autumn", "volcano", "ni
 
 // ---------- ассеты ----------
 export const A = { units: {}, tex: {}, env: {}, ready: false, wind: { value: 0 } };
-const V = "?v=1";
+const V = "?v=2";
 const texL = new THREE.TextureLoader(), texC = {};
 export function tex(name, kind, rep) {
   const key = name + kind + (rep || ""); if (texC[key]) return texC[key];
@@ -88,17 +88,20 @@ function parseUnits(buf) {
     }
     A.units[k] = out;
   }
+  // v2: строки атласа импосторов по видам бойцов
+  A.impRows = head.impRows || ["blue"];
+  if (!A.units.red) A.units.red = A.units.blue;
 }
 export async function loadAssets(onProgress) {
   const p = (x) => { onProgress && onProgress(x); };
   const loadTex = (u, flip) => new Promise((res) => texL.load(u + V, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.flipY = flip; res(t); }, null, () => res(null)));
-  const [bin, env, kt, bt, it] = await Promise.all([
+  const [bin, env, kt, bt, it, rt] = await Promise.all([
     fetch("assets/units.bin" + V).then((r) => r.arrayBuffer()),
     new Promise((res, rej) => new GLTFLoader().load("assets/env.glb" + V, res, (e) => e.total && p(0.3 + 0.6 * e.loaded / e.total), rej)),
-    loadTex("assets/knight.webp", false), loadTex("assets/barbarian.webp", false), loadTex("assets/impostor.png", true)
+    loadTex("assets/knight.webp", false), loadTex("assets/barbarian.webp", false), loadTex("assets/impostor.webp", true), loadTex("assets/rogue.webp", false)
   ]);
   parseUnits(bin);
-  A.tex.knight = kt; A.tex.barbarian = bt; A.tex.impostor = it;
+  A.tex.knight = kt; A.tex.barbarian = bt; A.tex.impostor = it; A.tex.rogue = rt;
   for (const ch of [...env.scene.children]) {
     ch.traverse((o) => {
       if (!o.isMesh) return;
@@ -298,10 +301,11 @@ function unitGeo(kind, lod, hat) {
   geoC[key] = g; return g;
 }
 // импостор: плоский спрайт лицом к камере (кадр бега 0/1, вид сзади для своих и спереди для красных)
-function impostorMat(eng, color, front) {
+function impostorMat(eng, color, front, kind) {
+  const rows = A.impRows.length, row = Math.max(0, A.impRows.indexOf(kind === "red" ? "blue" : kind));
   const m = new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: A.tex.impostor }, uT: { value: 0 }, uCol: { value: front ? 1 : 0 }, uTeam: { value: new THREE.Color(color) }, uRim: { value: 0 }, uMetal: { value: 1.35 } }]),
-    vertexShader: `attribute vec3 aAnim; uniform float uT; uniform float uCol; varying vec2 vUv;
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: A.tex.impostor }, uT: { value: 0 }, uCol: { value: front ? 1 : 0 }, uRow: { value: rows - 1 - row }, uRows: { value: rows }, uTeam: { value: new THREE.Color(color) }, uRim: { value: 0 }, uMetal: { value: 1.35 } }]),
+    vertexShader: `attribute vec3 aAnim; uniform float uT; uniform float uCol; uniform float uRow; uniform float uRows; varying vec2 vUv;
       #include <fog_pars_vertex>
       void main(){
         vec4 c = modelViewMatrix * instanceMatrix * vec4(0., 0., 0., 1.);
@@ -309,7 +313,7 @@ function impostorMat(eng, color, front) {
         vec4 mvPosition = c + vec4(position.x * s, position.y * s, 0., 0.);
         gl_Position = projectionMatrix * mvPosition;
         float fr = step(0.0, sin(uT * (10.5 + aAnim.z * 7.0) + aAnim.x)) * step(0.01, aAnim.y);
-        vUv = vec2((uv.x + uCol * 2.0 + fr) / 4.0, uv.y);
+        vUv = vec2((uv.x + uCol * 2.0 + fr) / 4.0, (uv.y * 0.995 + 0.0025 + uRow) / uRows);
         #include <fog_vertex>
       }`,
     fragmentShader: `uniform sampler2D map; varying vec2 vUv;
@@ -340,19 +344,21 @@ function makeIM(geo, mat, n) {
 
 // Толпа: те же массивы, что раньше (x, y, z, yaw, s, ph, run, atk), commit(n) раскладывает по уровням детализации
 export class Units {
-  constructor(eng, cap, color, hat, kind) {
+  constructor(eng, cap, color, hat, kind, opt) {
+    opt = opt || {};
     this.eng = eng; this.cap = cap;
     this.kind = kind || (color === RED ? "red" : "blue");
+    const front = opt.front != null ? opt.front : this.kind === "red";
     const direct = this.kind === "boss";
     const mat = unitMaterial(eng, this.kind, color, direct), hm = hatMaterial(eng);
     this.matU = mat;
     const mats = hat && hat !== "none" ? [mat, hm] : mat;
     this.mesh = new THREE.Group();
-    this.near = makeIM(unitGeo(this.kind, "near", hat), mats, Math.min(cap, direct ? cap : LOD.nearCap));
+    this.near = makeIM(unitGeo(this.kind, "near", hat), mats, Math.min(cap, direct ? cap : opt.nearCap || LOD.nearCap));
     this.mesh.add(this.near);
     if (!direct) {
       this.far = makeIM(unitGeo(this.kind, "far", hat), mats, cap); this.mesh.add(this.far);
-      if (this.kind !== "cheer") { this.impM = impostorMat(eng, color, this.kind === "red"); this.imp = makeIM(IMP_GEO, this.impM, cap); this.mesh.add(this.imp); }
+      if (this.kind !== "cheer") { this.impM = impostorMat(eng, color, front, this.kind); this.imp = makeIM(IMP_GEO, this.impM, cap); this.mesh.add(this.imp); }
     }
     this.blob = new THREE.InstancedMesh(BLOB_GEO, BLOB_MAT, cap); this.blob.frustumCulled = false; this.blob.renderOrder = 1; this.blob.count = 0; this.blob.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.add(this.blob);
@@ -360,7 +366,7 @@ export class Units {
     this.yaw = new Float32Array(cap); this.s = new Float32Array(cap).fill(1);
     this.ph = new Float32Array(cap); this.run = new Float32Array(cap).fill(1); this.atk = new Float32Array(cap);
     for (let i = 0; i < cap; i++) this.ph[i] = Math.random() * 6.28;
-    this.lodScale = 1; this.noBlob = false;
+    this.lodScale = 1; this.noBlob = false; this.capK = opt.capK || 1;
     this.stats = { near: 0, far: 0, imp: 0 };
   }
   setColor(color) { this.matU.userData.uTeam.value.set(color); if (this.impM) this.impM.uniforms.uTeam.value.set(color); }
@@ -373,7 +379,7 @@ export class Units {
     const ncap = N.instanceMatrix.count;
     // бюджет по качеству: если бойцов много, пороги дальности сжимаются (ближайшие — подробно, остальные — спрайтами)
     if (F && I) {
-      const [cn, cf] = LOD.caps[this.eng.quality] || LOD.caps[1];
+      let [cn, cf] = LOD.caps[this.eng.quality] || LOD.caps[1]; cn = Math.max(4, Math.round(cn * this.capK)); cf = Math.max(8, Math.round(cf * this.capK));
       const d2 = this._d2 || (this._d2 = new Float32Array(this.cap)), srt = this._srt || (this._srt = new Float32Array(this.cap));
       for (let i = 0; i < n; i++) { const dx = this.x[i] - cx, dy = this.y[i] - cy, dz = this.z[i] - cz; d2[i] = dx * dx + dy * dy + dz * dz; }
       if (n > cn) { srt.set(d2.subarray(0, n)); const v = srt.subarray(0, n).sort(); nr2 = Math.min(nr2, v[cn - 1]); if (n > cn + cf) fr2 = Math.min(fr2, v[cn + cf - 1]); }
@@ -401,6 +407,46 @@ export class Units {
   }
   move(i, j) { this.x[i] = this.x[j]; this.y[i] = this.y[j]; this.z[i] = this.z[j]; this.yaw[i] = this.yaw[j]; this.s[i] = this.s[j]; this.ph[i] = this.ph[j]; this.run[i] = this.run[j]; this.atk[i] = this.atk[j]; }
   dispose() { this.mesh.traverse((o) => { if (o.isInstancedMesh && o.geometry !== IMP_GEO) o.geometry.dispose(); }); if (this.impM) this.impM.dispose(); }
+}
+
+
+// v2. Толпа из бойцов разных видов: логические массивы как у Units + вид ty[i]; commit раскладывает по моделям.
+// looks[t] = { kind, hat, color, capK } — какой моделью рисовать вид t (подмодели создаются по требованию)
+export class Crowd {
+  constructor(eng, cap, color, hat, front, looks) {
+    this.eng = eng; this.cap = cap; this.color = color; this.hat = hat || "none"; this.front = !!front;
+    this.looks = looks.map((l) => Object.assign({}, l));
+    this.mesh = new THREE.Group(); this.subs = {}; this.lodScale = 1;
+    this.x = new Float32Array(cap); this.y = new Float32Array(cap); this.z = new Float32Array(cap);
+    this.yaw = new Float32Array(cap); this.s = new Float32Array(cap).fill(1);
+    this.ph = new Float32Array(cap); this.run = new Float32Array(cap).fill(1); this.atk = new Float32Array(cap); this.ty = new Uint8Array(cap);
+    for (let i = 0; i < cap; i++) this.ph[i] = Math.random() * 6.28;
+    this.stats = { near: 0, far: 0, imp: 0 }; this.cnt = {};
+  }
+  sub(t) {
+    const L = this.looks[t] || this.looks[0], hat = L.hat != null ? L.hat : this.hat, col = L.color != null ? L.color : this.color;
+    const key = L.kind + "|" + hat + "|" + col;
+    let u = this.subs[key];
+    if (!u) { u = this.subs[key] = new Units(this.eng, L.cap || this.cap, col, hat, L.kind, { front: this.front, capK: L.capK || 1, nearCap: L.nearCap }); this.mesh.add(u.mesh); }
+    u.lodScale = this.lodScale * (L.lod || 1);
+    return u;
+  }
+  setLook(t, o) { Object.assign(this.looks[t], o); }
+  setColor(c) { this.color = c; }
+  move(i, j) { this.x[i] = this.x[j]; this.y[i] = this.y[j]; this.z[i] = this.z[j]; this.yaw[i] = this.yaw[j]; this.s[i] = this.s[j]; this.ph[i] = this.ph[j]; this.run[i] = this.run[j]; this.atk[i] = this.atk[j]; this.ty[i] = this.ty[j]; }
+  commit(n) {
+    n = Math.min(n, this.cap);
+    const used = new Map();
+    for (let i = 0; i < n; i++) {
+      const u = this.sub(this.ty[i]); let k = used.get(u) || 0; if (k >= u.cap) continue;
+      u.x[k] = this.x[i]; u.y[k] = this.y[i]; u.z[k] = this.z[i]; u.yaw[k] = this.yaw[i]; u.s[k] = this.s[i]; u.ph[k] = this.ph[i]; u.run[k] = this.run[i]; u.atk[k] = this.atk[i];
+      used.set(u, k + 1);
+    }
+    let a = 0, b = 0, c = 0;
+    for (const key in this.subs) { const u = this.subs[key]; u.commit(used.get(u) || 0); a += u.stats.near; b += u.stats.far; c += u.stats.imp; }
+    this.stats.near = a; this.stats.far = b; this.stats.imp = c;
+  }
+  dispose() { for (const k in this.subs) this.subs[k].dispose(); this.subs = {}; }
 }
 
 // Отлетающие и падающие бойцы — настоящие модели (кувыркаются)
@@ -501,14 +547,17 @@ export function textTex(text, fg, bg, w, h) {
   redrawText(t, text, fg, bg);
   return t;
 }
-export function redrawText(t, text, fg, bg) {
+export function redrawText(t, text, fg, bg, sub) {
   const { c, g } = t.userData;
   g.clearRect(0, 0, c.width, c.height);
   if (bg) { g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height); }
-  g.font = `900 ${Math.round(c.height * 0.62)}px "Russo One", Impact, Arial Black, sans-serif`;
-  g.textAlign = "center"; g.textBaseline = "middle";
-  g.lineJoin = "round"; g.lineWidth = c.height * 0.13; g.strokeStyle = "rgba(10,20,50,.85)"; g.strokeText(text, c.width / 2, c.height / 2 + c.height * 0.04);
-  g.fillStyle = fg || "#fff"; g.fillText(text, c.width / 2, c.height / 2 + c.height * 0.04);
+  // вторая строка (подпись мельче): «+10» / «лучников»
+  if (sub === undefined && typeof text === "string" && text.indexOf("\n") > 0) { const k = text.indexOf("\n"); sub = text.slice(k + 1); text = text.slice(0, k); }
+  const fit = (str, px, maxW) => { let f = px; g.font = `900 ${f}px "Russo One", Impact, Arial Black, sans-serif`; while (f > 10 && g.measureText(str).width > maxW) { f -= 2; g.font = `900 ${f}px "Russo One", Impact, Arial Black, sans-serif`; } return f; };
+  g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round"; g.strokeStyle = "rgba(10,20,50,.85)";
+  const big = fit(text, Math.round(c.height * (sub ? 0.5 : 0.62)), c.width * 0.94), y = sub ? c.height * 0.36 : c.height / 2 + c.height * 0.04;
+  g.lineWidth = big * 0.2; g.strokeText(text, c.width / 2, y); g.fillStyle = fg || "#fff"; g.fillText(text, c.width / 2, y);
+  if (sub) { const f2 = fit(sub, Math.round(c.height * 0.27), c.width * 0.96); g.lineWidth = f2 * 0.24; g.strokeText(sub, c.width / 2, c.height * 0.8); g.fillText(sub, c.width / 2, c.height * 0.8); }
   t.needsUpdate = true;
 }
 export function glowLabel(text, w, h, glow) {
@@ -628,9 +677,10 @@ export function disposeGroup(g) {
 }
 
 // ---------- детальная пушка (бронза, лафет из досок, колёса со спицами) ----------
-export function makeCannonModel() {
+export function makeCannonModel(opt) {
+  opt = opt || {};
   const g = new THREE.Group();
-  const bronze = pmat("bronze", { color: 0xd9a441, metalness: 0.85, roughness: 0.32, envMapIntensity: 1.0 });
+  const bronze = opt.gold ? pmat("goldc", { color: 0xffc23a, metalness: 0.95, roughness: 0.22, envMapIntensity: 1.3, emissive: 0x3a2400, emissiveIntensity: 0.3 }) : pmat("bronze", { color: 0xd9a441, metalness: 0.85, roughness: 0.32, envMapIntensity: 1.0 });
   const iron = pmat("iron", { color: 0x3a3d44, metalness: 0.7, roughness: 0.45 });
   const wood = pbr("planks", { roughness: 0.8 });
   // лафет
@@ -652,6 +702,9 @@ export function makeCannonModel() {
   const barrel = new THREE.Mesh(lathe, bronze); barrel.rotation.x = -Math.PI / 2;
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), bronze); knob.position.set(0, 0, 1.45);
   const pitch = new THREE.Group(); pitch.position.set(0, 1.45, 0); pitch.add(barrel, knob);
+  // многоствольная: дополнительные стволы по бокам (видны по числу barrels)
+  const extra = [];
+  for (const sx of [-1, 1, -2, 2]) { const b2 = new THREE.Mesh(lathe, bronze); b2.rotation.x = -Math.PI / 2; b2.scale.setScalar(0.62); b2.position.set(sx * 0.55, sx * sx > 1 ? -0.05 : 0.18, -0.1); b2.visible = false; pitch.add(b2); extra.push(b2); }
   const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.5, 8), iron); axle.rotation.z = Math.PI / 2; pitch.add(axle);
   g.add(pitch);
   // ядра рядом
@@ -659,7 +712,8 @@ export function makeCannonModel() {
   [[0.95, 0.17, 1.4], [1.28, 0.17, 1.4], [1.11, 0.17, 1.7], [1.11, 0.45, 1.5]].forEach((p, i) => balls.setMatrixAt(i, _m4.makeTranslation(p[0], p[1], p[2])));
   g.add(balls);
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  g.userData = { pitch, barrel, wheels };
+  g.userData = { pitch, barrel, wheels, extra };
+  g.userData.setBarrels = (n) => extra.forEach((b, i) => (b.visible = i < n - 1));
   return g;
 }
 // знамя на шесте с колышущимся полотнищем (из Аванпоста)
@@ -686,7 +740,7 @@ for (const k in bannerGeo) bannerGeo[k].userData = { keep: 1 };
 export function makeGate(W, text, kind, H) {
   H = H || 2.6;
   const g = new THREE.Group();
-  const col = kind === "bad" ? 0xff3b4a : kind === "plus" ? 0x2bd46e : 0x2f9bff;
+  const col = kind === "bad" ? 0xff3b4a : kind === "plus" ? 0x2bd46e : kind === "gold" ? 0xffb21a : kind === "evo" ? 0xb455ff : kind === "unit" ? 0x19c9c0 : 0x2f9bff;
   const stone = pbr("stone", { roughness: 0.8 }), gold = pmat("gold", { color: 0xffc83a, metalness: 0.85, roughness: 0.3 });
   const beamM = pmat("beam" + col, { color: col, metalness: 0.5, roughness: 0.35, emissive: col, emissiveIntensity: 0.25 });
   for (const s of [-1, 1]) {
@@ -695,12 +749,19 @@ export function makeGate(W, text, kind, H) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.26, 0.46), stone); b.position.set(x, 0.13, 0); g.add(b);
     const c = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 8), gold); c.position.set(x, H + 0.38, 0); g.add(c);
   }
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(W, 0.24, 0.28), beamM); beam.position.y = H + 0.12; g.add(beam);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(W, 0.24, 0.28), beamM); beam.position.y = H + 0.12; beam.userData.role = "beam"; g.add(beam);
   const pm = new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: 0.34, emissive: col, emissiveIntensity: 0.45, roughness: 0.1, metalness: 0, side: THREE.DoubleSide, depthWrite: false });
   const pl = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.3, H - 0.1), pm); pl.position.y = H / 2 + 0.02; pl.renderOrder = 2; g.add(pl);
   const lab = glowLabel(text, Math.min(2.6, W - 0.35), Math.min(1.3, (W - 0.35) / 2)); lab.position.set(0, H * 0.58, 0.04); g.add(lab);
   g.traverse((o) => { if (o.isMesh && o !== pl && o !== lab) { o.castShadow = true; o.receiveShadow = true; } });
-  return { g, pm, lab, tex: lab.userData.tex };
+  return { g, pm, lab, tex: lab.userData.tex, beamM, col };
+}
+// перекраска створки (ворота «−», которые отстреляли до «+»)
+export function setGateKind(G, kind) {
+  const col = kind === "bad" ? 0xff3b4a : kind === "plus" ? 0x2bd46e : kind === "gold" ? 0xffb21a : 0x2f9bff;
+  if (G.col === col) return; G.col = col;
+  G.pm.color.set(col); G.pm.emissive.set(col); G.beamM = pmat("beam" + col, { color: col, metalness: 0.5, roughness: 0.35, emissive: col, emissiveIntensity: 0.25 });
+  G.g.traverse((o) => { if (o.isMesh && o.material && o.material.name !== "x" && /^beam/.test(o.userData.role || "")) o.material = G.beamM; });
 }
 // синие части моделей KayKit (крыши замка) — в красный: сдвиг оттенка, как hueMaterial в Аванпосте
 const hueC = {};

@@ -2,7 +2,7 @@
 import { S } from "./save.js";
 
 const SFX = ["click", "select", "confirm", "error", "coin", "coin2", "buy", "upgrade", "levelup", "perk", "hit", "hit2", "bone", "die", "die2",
-  "blade", "whoosh", "chop", "heavy", "stonehit", "househit", "cannon", "boom", "boom2", "gong", "roar", "roar2", "collapse", "arrow", "bell", "xbow", "open", "close"];
+  "blade", "whoosh", "chop", "heavy", "stonehit", "househit", "cannon", "boom", "boom2", "gong", "roar", "roar2", "collapse", "arrow", "bell", "xbow", "open", "close", "hurt", "magic", "heal", "potion"];
 let ac = null, sfxG = null, musG = null;
 const buf = {}, loading = {}, last = {};
 let unlocked = false;

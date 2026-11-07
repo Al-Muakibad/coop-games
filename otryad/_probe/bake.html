@@ -8,23 +8,52 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeVertices, mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 const L = new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
 const load = (n) => new Promise((r, j) => L.load("../../oborona/assets/" + n + ".glb", r, null, j));
-const [knight, barb, anims, nature, world, props] = await Promise.all(["knight", "barbarian", "anims", "nature", "world", "props"].map(load));
+const NOENV = /noenv/.test(location.search);
+const [knight, barb, anims, rogue, merchant] = await Promise.all(["knight", "barbarian", "anims", "rogue", "merchant"].map(load));
+const [nature, world, props] = NOENV ? [null, null, null] : await Promise.all(["nature", "world", "props"].map(load));
 const clips = {}; anims.animations.forEach((a) => (clips[a.name] = a));
 const OUT = { units: {}, files: {} };
 
-function bake(gl, keepNames, clipName, times, height, weapon) {
+// цвет из палитры KayKit: ищем в текстуре пиксель, ближайший к нужному, и берём его uv
+function paletteUV(map, rgb) {
+  const c = document.createElement("canvas"), W = map.image.width, H = map.image.height; c.width = W; c.height = H;
+  const g = c.getContext("2d"); g.drawImage(map.image, 0, 0); const d = g.getImageData(0, 0, W, H).data;
+  let best = 1e9, bx = 0, by = 0;
+  for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const i = (y * W + x) * 4; if (d[i + 3] < 250) continue; const e = (d[i] - rgb[0]) ** 2 + (d[i + 1] - rgb[1]) ** 2 + (d[i + 2] - rgb[2]) ** 2; if (e < best) { best = e; bx = x; by = y; } }
+  return [(bx + 0.5) / W, 1 - (by + 0.5) / H];
+}
+// копьё: древко и наконечник вдоль длинной оси меча, цвета — из палитры рыцаря
+function makeSpear(gl) {
+  const sw = gl.scene.getObjectByName("1H_Sword"); const bb = new THREE.Box3().setFromBufferAttribute(sw.geometry.attributes.position);
+  const sz = new THREE.Vector3(); bb.getSize(sz); const ax = sz.x > sz.y && sz.x > sz.z ? "x" : sz.y > sz.z ? "y" : "z";
+  const L = sz[ax], map = sw.material.map, wood = paletteUV(map, [120, 78, 44]), steel = paletteUV(map, [205, 210, 218]);
+  const uvAll = (g, uv) => { const a = g.attributes.uv; for (let i = 0; i < a.count; i++) a.setXY(i, uv[0], uv[1]); return g; };
+  const shaft = uvAll(new THREE.CylinderGeometry(L * 0.035, L * 0.035, L * 2.3, 6), wood).translate(0, L * 0.55, 0);
+  const tip = uvAll(new THREE.ConeGeometry(L * 0.09, L * 0.42, 6), steel).translate(0, L * 0.55 + L * 1.15 + L * 0.2, 0);
+  const ring = uvAll(new THREE.CylinderGeometry(L * 0.06, L * 0.06, L * 0.08, 6), steel).translate(0, L * 0.55 + L * 1.1, 0);
+  const geo = mergeGeometries([shaft.toNonIndexed(), tip.toNonIndexed(), ring.toNonIndexed()].map((g) => { g.deleteAttribute("normal"); return g; }));
+  if (ax === "x") geo.rotateZ(-Math.PI / 2); else if (ax === "z") geo.rotateX(Math.PI / 2);
+  // начало как у меча (рукоять в ладони)
+  const off = bb.min[ax] + L * 0.18; if (ax === "x") geo.translate(off + L * 0.2, 0, 0); else if (ax === "y") geo.translate(0, off - L * 0.2, 0); else geo.translate(0, 0, off + L * 0.2);
+  geo.setIndex([...Array(geo.attributes.position.count).keys()]);
+  const m = new THREE.Mesh(geo, sw.material); m.name = "Spear"; m.position.copy(sw.position); m.quaternion.copy(sw.quaternion); m.scale.copy(sw.scale);
+  return m;
+}
+function bake(gl, keepNames, clipName, times, height, weapon, opt) {
+  opt = opt || {};
   const obj = SkeletonUtils.clone(gl.scene);
   obj.traverse((o) => { if (o.isMesh && !keepNames.some((k) => o.name === k)) o.visible = false; });
   if (weapon) { const src = gl.scene.getObjectByName(weapon); const h = obj.getObjectByName("handslotr"); if (src && h) { const w = src.clone(); w.visible = true; w.position.set(0, 0, 0); w.rotation.set(0, 0, 0); h.add(w); } }
   obj.traverse((o) => { if (o.isMesh && o.parent && o.parent.name === "handslotr" && o.name !== weapon) o.visible = o.name === weapon; });
+  if (opt.spear) { const h = obj.getObjectByName("handslotr"); const sw = h && h.children.find((c) => c.name === "1H_Sword"); const sp = makeSpear(gl); if (sw) { sp.position.copy(sw.position); sp.quaternion.copy(sw.quaternion); sp.scale.copy(sw.scale); sw.visible = false; } h.add(sp); }
   const mixer = new THREE.AnimationMixer(obj), act = mixer.clipAction(clips[clipName]); act.play();
   const dur = clips[clipName].duration;
   // масштаб по росту в первом кадре
   act.time = dur * times[0]; mixer.update(0); obj.updateMatrixWorld(true);
-  const box = new THREE.Box3(); obj.traverse((o) => { if (o.isMesh && o.visible) box.expandByObject(o, true); });
+  const box = new THREE.Box3(); obj.traverse((o) => { if (o.isMesh && o.visible && (!opt.bodyBox || /_(Body|Head|Head_Hooded|LegLeft|LegRight|Helmet|Hat)$/.test(o.name))) box.expandByObject(o, true); });
   const k = height / (box.max.y - box.min.y);
   const frames = [], heads = [];
   for (const t of times) {
@@ -77,12 +106,30 @@ function texData(map, size) {
 const KN = ["Knight_ArmLeft", "Knight_ArmRight", "Knight_Body", "Knight_Head", "Knight_LegLeft", "Knight_LegRight", "1H_Sword", "Knight_Helmet"];
 const BA = ["Barbarian_ArmLeft", "Barbarian_ArmRight", "Barbarian_Body", "Barbarian_Head", "Barbarian_LegLeft", "Barbarian_LegRight", "1H_Axe"];
 const BB = ["Barbarian_ArmLeft", "Barbarian_ArmRight", "Barbarian_Body", "Barbarian_Head", "Barbarian_LegLeft", "Barbarian_LegRight", "2H_Axe", "Barbarian_Hat"];
+const KS = ["Knight_ArmLeft", "Knight_ArmRight", "Knight_Body", "Knight_Head", "Knight_LegLeft", "Knight_LegRight", "1H_Sword", "Rectangle_Shield", "Knight_Helmet"];
+const KP = ["Knight_ArmLeft", "Knight_ArmRight", "Knight_Body", "Knight_Head", "Knight_LegLeft", "Knight_LegRight", "1H_Sword", "Knight_Helmet"];
+const K2 = ["Knight_ArmLeft", "Knight_ArmRight", "Knight_Body", "Knight_Head", "Knight_LegLeft", "Knight_LegRight", "2H_Sword", "Knight_Helmet", "Knight_Cape"];
+const RA = ["Rogue_ArmLeft", "Rogue_ArmRight", "Rogue_Body", "Rogue_Head", "Rogue_LegLeft", "Rogue_LegRight", "2H_Crossbow", "Rogue_Cape"];
+const RK = ["Rogue_ArmLeft", "Rogue_ArmRight", "Rogue_Body", "Rogue_Head", "Rogue_LegLeft", "Rogue_LegRight", "Knife", "Knife_Offhand"];
+const MH = ["Rogue_ArmLeft", "Rogue_ArmRight", "Rogue_Body", "Rogue_Head_Hooded", "Rogue_LegLeft", "Rogue_LegRight", "Throwable"];
+const BX = ["Barbarian_ArmLeft", "Barbarian_ArmRight", "Barbarian_Body", "Barbarian_Head", "Barbarian_LegLeft", "Barbarian_LegRight", "1H_Axe", "Barbarian_Round_Shield"];
+const B = { bodyBox: 1 };
 const jobs = {
   blue: bake(knight, KN, "Running_A", [0.12, 0.62], 1.0, "1H_Sword"),
   red: bake(knight, KN, "Running_A", [0.12, 0.62], 1.0, "1H_Sword"),
   boss: bake(barb, BB, "2H_Melee_Attack_Chop", [0.25, 0.55], 1.0, "2H_Axe"),
-  cheer: bake(knight, KN, "Cheer", [0.3, 0.7], 1.0, "1H_Sword")
+  cheer: bake(knight, KN, "Cheer", [0.3, 0.7], 1.0, "1H_Sword"),
+  // v2: разные бойцы и оружие (одна и та же модель служит обеим командам — цвет ткани задаёт шейдер)
+  shield: bake(knight, KS, "Running_A", [0.12, 0.62], 1.0, "1H_Sword", B),
+  spear: bake(knight, KP, "Running_A", [0.12, 0.62], 1.0, "1H_Sword", { bodyBox: 1, spear: 1 }),
+  knight2: bake(knight, K2, "Running_A", [0.12, 0.62], 1.0, "2H_Sword", B),
+  archer: bake(rogue, RA, "Running_A", [0.12, 0.62], 1.0, "2H_Crossbow", B),
+  scout: bake(rogue, RK, "Running_C", [0.12, 0.62], 1.0, "Knife", B),
+  militia: bake(merchant, MH, "Running_A", [0.12, 0.62], 1.0, "Throwable", B),
+  brute: bake(barb, BB, "Running_A", [0.12, 0.62], 1.0, "2H_Axe", B),
+  axe: bake(barb, BX, "Running_A", [0.12, 0.62], 1.0, "1H_Axe", B)
 };
+const TEXOF = { boss: "barbarian", brute: "barbarian", axe: "barbarian", archer: "rogue", scout: "rogue", militia: "rogue" };
 for (const [k, j] of Object.entries(jobs)) {
   const tris = j.full.index.count / 3;
   const L = { full: tris };
@@ -93,10 +140,10 @@ for (const [k, j] of Object.entries(jobs)) {
     u.lod.near = pack(near); u.lod.far = pack(far); L.near = near.index.count / 3; L.far = far.index.count / 3;
     if (k === "cheer") delete u.lod.near, u.lod.near = pack(near);
   }
-  u.tris = L; u.tex = k === "boss" ? "barbarian" : "knight";
+  u.tris = L; u.tex = TEXOF[k] || "knight";
   OUT.units[k] = u;
 }
-OUT.files.knight = texData(jobs.blue.map, 512); OUT.files.barbarian = texData(jobs.red.map, 512);
+OUT.files.knight = texData(jobs.blue.map, 512); OUT.files.barbarian = texData(jobs.boss.map, 512); OUT.files.rogue = texData(jobs.archer.map, 512);
 
 // --- импосторы: рендер дальней модели в спрайт (2 кадра × вид сзади/спереди) ---
 {
@@ -104,23 +151,28 @@ OUT.files.knight = texData(jobs.blue.map, 512); OUT.files.barbarian = texData(jo
   R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping; R.setSize(256, 256, false);
   const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.4)); const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(-1, 3, 2); sc.add(sun);
   const cam = new THREE.OrthographicCamera(-0.5, 0.5, 0.62, -0.62, 0.1, 20);
-  const atlas = document.createElement("canvas"); atlas.width = 512; atlas.height = 256; const ag = atlas.getContext("2d");
-  let slot = 0;
-  for (const [k, back] of [["blue", true], ["red", false]]) {
-    const g = jobs[k].full, mat = new THREE.MeshLambertMaterial({ map: jobs[k].map });
-    for (const fr of [0, 1]) {
-      const gg = new THREE.BufferGeometry(); gg.setAttribute("position", fr ? g.attributes.aPosB : g.attributes.position); gg.setAttribute("uv", g.attributes.uv); gg.setIndex(g.index); gg.computeVertexNormals();
-      const m = new THREE.Mesh(gg, mat); sc.add(m);
-      // камера чуть сверху: игрок видит своих со спины, красных — спереди
-      const z = back ? -4 : 4; cam.position.set(0, 1.6, z); cam.lookAt(0, 0.5, 0);
-      R.setClearColor(0x000000, 0); R.clear(); R.render(sc, cam);
-      ag.drawImage(R.domElement, (slot % 4) * 128, 0, 128, 256); slot++;
-      sc.remove(m);
+  const IMPK = ["blue", "shield", "spear", "knight2", "archer", "scout", "militia", "brute", "axe"];
+  const atlas = document.createElement("canvas"); atlas.width = 512; atlas.height = 256 * IMPK.length; const ag = atlas.getContext("2d");
+  IMPK.forEach((k, row) => {
+    let slot = 0;
+    for (const back of [true, false]) {
+      const g = jobs[k].full, mat = new THREE.MeshLambertMaterial({ map: jobs[k].map });
+      for (const fr of [0, 1]) {
+        const gg = new THREE.BufferGeometry(); gg.setAttribute("position", fr ? g.attributes.aPosB : g.attributes.position); gg.setAttribute("uv", g.attributes.uv); gg.setIndex(g.index); gg.computeVertexNormals();
+        const m = new THREE.Mesh(gg, mat); sc.add(m);
+        // камера чуть сверху: игрок видит своих со спины, красных — спереди
+        const z = back ? -4 : 4; cam.position.set(0, 1.6, z); cam.lookAt(0, 0.5, 0);
+        R.setClearColor(0x000000, 0); R.clear(); R.render(sc, cam);
+        ag.drawImage(R.domElement, slot * 128, row * 256, 128, 256); slot++;
+        sc.remove(m);
+      }
     }
-  }
-  OUT.files.impostor = atlas.toDataURL("image/png");
+  });
+  OUT.impRows = IMPK;
+  OUT.files.impostor = atlas.toDataURL("image/webp", 0.92);
 }
 
+if (NOENV) { window.BAKE = OUT; throw "noenv"; }
 // --- окружение: выбранные модели в один GLB ---
 const pick = { nature: ["CommonTree_1", "CommonTree_3", "Pine_2", "Pine_5", "DeadTree_1", "TwistedTree_1", "Bush_Common", "Bush_Common_Flowers", "Fern_1", "Grass_Common_Tall", "Flower_3_Group", "Rock_Medium_1", "Rock_Medium_2", "Rock_Medium_3", "Pebble_Round_1", "Mushroom_Common"],
   world: ["fence_wood_straight", "fence_stone_straight", "flag_blue", "rock_single_A", "rock_single_C", "rock_single_E", "mountain_A_grass_trees", "mountain_C_grass", "hills_A_trees", "building_castle_blue", "building_tower_A_blue", "tent", "barrel", "crate_A_big", "wall_straight", "cloud_big"],

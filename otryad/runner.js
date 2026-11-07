@@ -1,15 +1,20 @@
 // «Отряд» — режим «Забег»: толпа бежит вперёд, палец рулит влево-вправо, ворота меняют число,
 // ловушки косят бойцов, в конце — армия, великан или крепость, потом лестница множителей.
-import { THREE, Units, Debris, Particles, Labels, textTex, glowLabel, blobShadow, buildScenery, fenceLine, placeModels, makeGate, makeCannonModel, makeBanner, cloneModel, hueMaterial, pbr, boxUV, disposeGroup, clamp, lerp, rng, BIOMES, RED as RED0, COL } from "./core.js";
-import { RUN_CFG, levelDef, finalStrength, applyGate } from "./levels.js";
+import { THREE, Units, Crowd, Debris, Particles, Labels, textTex, glowLabel, redrawText, blobShadow, buildScenery, fenceLine, placeModels, makeGate, setGateKind, makeCannonModel, makeBanner, cloneModel, hueMaterial, pbr, boxUV, disposeGroup, clamp, lerp, rng, BIOMES, RED as RED0, COL } from "./core.js";
+import { RUN_CFG, RUN_NEWS, levelDef, finalStrength, applyGate, TYPES, UNIT, UNIT_GEN, TIERS, WEAPONS, EMIX, mixPow, newComp, compCount, compPower, cloneComp, removeBodies, parseGate, applyGateComp, gateText, gateValueGood, grownGate, weaponMul, volleyPow, shotRate } from "./levels.js";
 import { play } from "./audio.js";
 
 const T = window.TG;
 const GA = Math.PI * (3 - Math.sqrt(5));
 const SPC = 0.215;                 // плотность строя
 const BLUE_DBG = 0x2f7bff, RED = 0xe5393b;
-const fmtGate = (v) => (v[0] === "x" ? "×" : v[0] === "/" ? "÷" : v[0] === "-" ? "−" : "+") + v.slice(1);
-const good = (v) => v[0] === "+" || v[0] === "x";
+// виды бойцов в толпе (индекс = ty в Crowd): 0 обычные, 1 бегуны, 2 громилы, 3 лучники, 4 щитоносцы, 5 чемпион
+const TY = { basic: 0, scout: 1, brute: 2, archer: 3, shield: 4, champ: 5 };
+const TSCALE = [1, 0.9, 2.0, 1, 1.05, 2.6];          // рост вида
+const BIGTY = { 2: 1, 5: 1 };                          // громил и чемпиона рисуем 1:1 (не сэмплом)
+const E_TY = { basic: 0, G: 1, A: 2, S: 3 }, E_SCALE = [1, 2.2, 1, 1.1];
+const GATE_KIND = (g) => g.k === "u" || g.k === "c" ? "unit" : g.k === "e" ? "evo" : !gateValueGood(g) ? "bad" : g.grow ? "gold" : g.k === "x" ? "mult" : "plus";
+export const REWARD_TXT = (r) => r[0] === "w" ? WEAPONS[r.slice(2)].name : gateText(parseGate(r)).replace("\n", " ").replace("ЭПОХА ↑", "Эпоха ↑");
 
 // общие материалы (не пересоздаются между уровнями)
 const MAT = {};
@@ -46,25 +51,38 @@ export class Runner {
     this.n = n; this.up = up; this.look = look;
     this.def = levelDef(n);
     const fs = finalStrength(this.def);
-    this.enemyTotal = fs.enemy; this.est = fs.est;
+    this.enemyTotal = fs.enemy; this.enemyPow = fs.enemyPow; this.est = fs.est;
     eng.setBiome(this.def.biome);
     this.B = BIOMES[this.def.biome];
     this.world = new THREE.Group(); eng.scene.add(this.world);
     this.atk = 1 + RUN_CFG.atkK * (up.atk || 0); this.hpm = 1 + RUN_CFG.hpK * (up.hp || 0);
-    this.count = RUN_CFG.startUnits + RUN_CFG.startPerUp * (up.start || 0);
-    this.np = 0;
-    this.P = new Units(eng, this.cap, look.color, look.hat, "blue"); this.world.add(this.P.mesh);
-    this.E = new Units(eng, this.cap, RED, "none", "red"); this.world.add(this.E.mesh);
+    this.cards = up.cards || {}; this.mastery = up.mastery || 0;
+    this.comp = newComp(RUN_CFG.startUnits + RUN_CFG.startPerUp * (up.start || 0), this.cards, this.def.tier);
+    this.count = compCount(this.comp);
+    this.weapon = null; this.np = 0; this.repT = new Float32Array(6).fill(1);
+    // наши: обычные (облик — эпоха или оружие), бегуны, громилы, лучники, щитоносцы, чемпион (золотой)
+    this.P = new Crowd(eng, this.cap, look.color, look.hat, false, [
+      { kind: TIERS[this.comp.tier].kind }, { kind: "scout", hat: "none", cap: 400, capK: 0.6 }, { kind: "brute", hat: "none", cap: 160, capK: 0.5 },
+      { kind: "archer", hat: "none", cap: 400, capK: 0.6 }, { kind: "shield", hat: "none", cap: 400, capK: 0.6 }, { kind: "knight2", hat: "crown", color: 0xffc62b, cap: 4, capK: 0.2, nearCap: 4, lod: 3 }]);
+    this.world.add(this.P.mesh);
+    // красные: пехота, великаны, лучники, щиты
+    this.E = new Crowd(eng, this.cap, RED, "none", true, [{ kind: "blue" }, { kind: "brute", cap: 200, capK: 0.5, lod: 2 }, { kind: "archer", cap: 400, capK: 0.6 }, { kind: "shield", cap: 400, capK: 0.6 }]);
+    this.world.add(this.E.mesh);
     this.Park = new Units(eng, 700, look.color, look.hat, "cheer"); this.world.add(this.Park.mesh);
     for (let i = 0; i < 700; i++) { this.Park.run[i] = 1; this.Park.atk[i] = -0.6; this.Park.yaw[i] = Math.PI; }
     this.debris.setTeam(look.color);
-    this.ne = 0; this.groups = []; this.items = []; this.road = []; this.pits = []; this.shots = [];
+    this.ne = 0; this.groups = []; this.items = []; this.road = []; this.pits = []; this.shots = []; this.bul = []; this.fireAcc = 0; this.arrows = []; this.arrowAcc = 0; this.newsShown = false;
     this.d = 0; this.cx = 0; this.want = 0; this.sx = 1; this.sd = 1; this.t = 0; this.phase = "intro";
     this.spdMul = 1; this.boostT = 0; this.clashG = null; this.cannon = null; this.fed = 0;
     this.kills = 0; this.lostTotal = 0; this.maxCount = this.count; this.tutStep = this.def.tut ? 1 : 0; this.dragT = 0;
     this.result = null; this.mult = 0; this.stats = { gates: [] }; this.topT = 0; this.hitAcc = 0; this.hapT = 0; this.sndT = 0;
     this.build();
     this.lbl = this.labels.add("cnt blue", "0"); this.lbl.pop();
+    // трассеры выстрелов толпы и стрелы красных
+    this.bulM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.15, 6, 4).scale(1, 1, 3.2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe27a).multiplyScalar(2.2), toneMapped: false }), 160); this.bulM.frustumCulled = false; this.bulM.count = 0; this.world.add(this.bulM);
+    this.arrM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 4).rotateX(Math.PI / 2), mat("arrow", 0x5a3a20), 80); this.arrM.frustumCulled = false; this.arrM.count = 0; this.world.add(this.arrM);
+    this.hud.weapon && this.hud.weapon(null);
+    this.updateLook();
     this.syncUnits(true);
     for (let i = 0; i < this.np; i++) { this.ud[i] = this.form[i * 2 + 1] + this.d; this.P.x[i] = this.form[i * 2]; }
     this.timeLeft = this.def.tm ? Math.round(this.len / RUN_CFG.speed * 1.02) : 0;
@@ -80,6 +98,7 @@ export class Runner {
     this.labels.clear();
     this.debris.clear(); this.parts.clear();
     if (this.P) this.P.dispose(); if (this.E) this.E.dispose(); if (this.Park) this.Park.dispose();
+    for (const it of this.items) if (it.prev) it.prev.forEach((u) => u.dispose());
     disposeGroup(this.world); this.world = null;
   }
   // ---------- дорога ----------
@@ -143,7 +162,7 @@ export class Runner {
   }
   placeBeat(b, d, lc, lhw) {
     const it = Object.assign({}, b, { d, lc, lhw });
-    const L = { gate: 4, squad: 12, blade: 10, blade2: 14, saw: 0, pit: 9, log: 26, crush: 4, bridge: 0, spikes: 7, axe: 0, cannon: 18, speed: 12 };
+    const L = { gate: 4, squad: 12, blade: 10, blade2: 14, saw: 0, pit: 9, log: 26, crush: 4, bridge: 0, spikes: 7, axe: 0, cannon: 18, speed: 12, weapon: 5, barrel: 4 };
     let len = L[b.t] || 6;
     if (b.t === "saw") len = b.n * 5;
     if (b.t === "axe") len = b.n * 4.5;
@@ -222,10 +241,15 @@ export class Runner {
         it.amp = it.move ? Math.max(0, hw - it.tot / 2 - 0.2) : 0;
         it.off = 0; it.ph = Math.random() * 6;
         for (let k = 0; k < n; k++) {
-          const v = it.v[k], gd = good(v), x = -it.tot / 2 + W * (k + 0.5);
+          const v = it.v[k], g0 = parseGate(v), x = -it.tot / 2 + W * (k + 0.5);
           const pg = new THREE.Group(); pg.position.x = x; g.add(pg);
-          const G = makeGate(W, fmtGate(v), gd ? (v[0] === "x" ? "mult" : "plus") : "bad"); pg.add(G.g);
-          it.panels.push({ v, x, pg, pm: G.pm, lab: G.lab, gd });
+          const txt = gateText(g0) + (g0.grow ? (g0.k === "x" ? "↑" : "") : "");
+          const G = makeGate(W, txt, GATE_KIND(g0)); pg.add(G.g);
+          if (g0.grow) { // значок прицела: в эти ворота можно стрелять
+            const tgt = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.4, 20), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe27a).multiplyScalar(1.8), toneMapped: false, side: THREE.DoubleSide })); tgt.position.set(0, 3.25, 0.05); pg.add(tgt);
+            const dot = new THREE.Mesh(new THREE.CircleGeometry(0.1, 12), tgt.material); dot.position.copy(tgt.position); pg.add(dot);
+          }
+          it.panels.push({ v, g0, g: g0, hits: 0, x, pg, G, pm: G.pm, lab: G.lab, tex: G.tex, txt, gd: gateValueGood(g0) });
         }
       } else if (it.t === "blade" || it.t === "blade2") {
         const two = it.t === "blade2";
@@ -288,6 +312,28 @@ export class Runner {
           const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.1, 12, 1, false, 0, Math.PI), steel); blade.rotation.z = Math.PI / 2; blade.rotation.y = Math.PI / 2; blade.position.y = -4.4; arm.add(blade);
           it.ax.push({ arm, pd: it.d + 2 + k * 4.5, ph: k * 1.3, A: 1.05, x: 0 });
         }
+      } else if (it.t === "weapon") {
+        // две стойки с оружием: на балке стоит боец с этим оружием (настоящая модель), снизу — чем полезно
+        const n = 2, W = hw * 2 / n; it.panels = []; it.W = W; it.tot = W * n; it.off = 0; it.prev = [];
+        for (let k = 0; k < n; k++) {
+          const w = it.v[k], WD = WEAPONS[w], x = -it.tot / 2 + W * (k + 0.5);
+          const pg = new THREE.Group(); pg.position.x = x; g.add(pg);
+          const G = makeGate(W, WD.name.toUpperCase() + "\n" + WD.desc, "gold"); pg.add(G.g);
+          const U = new Units(this.eng, 1, this.look.color, "none", WD.kind); U.near.castShadow = true;
+          U.x[0] = x + (it.lc || 0); U.y[0] = 2.86; U.z[0] = -it.d; U.yaw[0] = Math.PI; U.s[0] = 1.5; U.run[0] = 0; U.atk[0] = 0; U.lodScale = 3; U.commit(1);
+          this.world.add(U.mesh); it.prev.push(U);
+          const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.18, 14), mat("gold", 0xffc83a, { metalness: 0.85, roughness: 0.3 })); ped.position.set(0, 2.78, 0); pg.add(ped);
+          it.panels.push({ w, x, pg, pm: G.pm, lab: G.lab, gd: true, wp: 1 });
+        }
+      } else if (it.t === "barrel") {
+        // бочка с числом: толпа стреляет — число тает, на нуле — награда
+        const bx = clamp(it.x, -0.8, 0.8) * (hw - 1.4);
+        const bg = new THREE.Group(); bg.position.set(bx, 0, 0); g.add(bg);
+        const br = cloneModel("Barrel"); br.scale.setScalar(2.2); bg.add(br);
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.07, 6, 24).rotateX(Math.PI / 2), mat("gold", 0xffc83a, { metalness: 0.85, roughness: 0.3 })); hoop.position.y = 0.9; bg.add(hoop);
+        it.bx = bx + (it.lc || 0); it.bg = bg; it.max = it.hp;
+        it.lb = this.labels.add("crate", ""); it.lb.el.innerHTML = "<b></b><small></small>"; it.lb.x = it.bx; it.lb.y = 3.1; it.lb.z = -it.d;
+        it.lb.el.firstChild.textContent = it.hp; it.lb.el.lastChild.textContent = REWARD_TXT(it.r);
       } else if (it.t === "cannon") {
         const side = (it.d | 0) % 2 ? 1 : -1, px = side * hw * 0.5;
         const pad = new THREE.Mesh(new THREE.BoxGeometry(hw - 0.4, 0.05, 13), new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.45 })); pad.position.set(px, 0.03, -6.5); g.add(pad);
@@ -307,7 +353,7 @@ export class Runner {
           it.zones.push({ x: zx + (it.lc || 0), hw: (hw - 0.3) / 2, d0: it.d + 1, d1: it.d + 11, boost });
         });
       } else if (it.t === "squad") {
-        it.grp = this.addGroup(it.n, (it.lc || 0), it.d + 6, "squad");
+        it.grp = this.addGroup(it.n, (it.lc || 0), it.d + 6, "squad", { mix: it.mix || {} });
       } else if (it.t === "drawbridge") {
         const gate = new THREE.Group(); g.add(gate);
         for (const s of [-1, 1]) { const tw = new THREE.Mesh(boxUV(new THREE.BoxGeometry(1.4, 5, 1.4), 1.4, 5, 1.4, 2), pbr("stone")); tw.position.set(s * (RUN_CFG.hw + 0.7), 2.5, 0); gate.add(tw); }
@@ -319,18 +365,25 @@ export class Runner {
     }
   }
   makeCannon() {
-    const g = makeCannonModel();
+    // боевая пушка: большая, золотая, многоствольная
+    const g = makeCannonModel({ gold: true });
+    g.userData.setBarrels(3); g.scale.setScalar(1.45);
     g.userData.barrel = g.userData.pitch;
     g.userData.pitch.rotation.x = 0.35;
     return g;
   }
   addGroup(n, x, d, kind, opts) {
-    const grp = Object.assign({ n, count: n, x, d, kind, idx: [], R: 0, charge: false, done: false, lb: null }, opts || {});
+    const grp = Object.assign({ n, count: n, x, d, kind, idx: [], R: 0, charge: false, done: false, lb: null, mix: {} }, opts || {});
+    grp.pw = mixPow(grp.mix);
     const show = Math.min(n, this.cap - this.ne, kind === "army" ? 900 : 250);
     grp.rep = n / Math.max(1, show);
+    // состав: великаны в середине строя, лучники — сзади, щиты — вперемешку
+    const m = grp.mix, nG = m.G ? Math.max(1, Math.round(show * m.G)) : 0, nA = m.A ? Math.max(1, Math.round(show * m.A)) : 0, nS = m.S ? Math.round(show * m.S) : 0;
     for (let i = 0; i < show; i++) {
       const j = this.ne++;
-      this.E.x[j] = x + this.form[i * 2] * 1.05; this.ed[j] = d - this.form[i * 2 + 1] * 1.05; this.E.y[j] = 0; this.E.yaw[j] = 0; this.E.s[j] = 1; this.E.run[j] = 0; this.E.atk[j] = 0;
+      const ty = i < nG ? 1 : i >= show - nA ? 2 : nS && (i % Math.max(1, Math.round(show / nS))) === 1 ? 3 : 0;
+      const sp = ty === 1 ? 1.6 : 1.05;
+      this.E.x[j] = x + this.form[i * 2] * sp; this.ed[j] = d - this.form[i * 2 + 1] * sp; this.E.y[j] = 0; this.E.yaw[j] = 0; this.E.s[j] = E_SCALE[ty]; this.E.run[j] = 0; this.E.atk[j] = 0; this.E.ty[j] = ty;
       this.eg[j] = this.groups.length; this.edead[j] = 0;
     }
     grp.shown = show; grp.R = SPC * Math.sqrt(show) * 1.05 + 0.3;
@@ -343,11 +396,11 @@ export class Runner {
     const fd = A.d0 + 24;
     this.final = { kind: f, d: fd, started: false, done: false };
     if (f === "army") {
-      this.final.grp = this.addGroup(this.enemyTotal, 0, fd, "army");
+      this.final.grp = this.addGroup(this.enemyTotal, 0, fd, "army", { mix: this.def.mix || {} });
     } else if (f === "boss") {
       const B = new Units(this.eng, 1, RED, this.def.king ? "crown" : "none", "boss"); w.add(B.mesh); B.near.castShadow = true;
       B.x[0] = 0; B.y[0] = 0; B.z[0] = -(fd + 2); B.yaw[0] = 0; B.s[0] = this.def.king ? 5.6 : 4.6; B.run[0] = 0; B.atk[0] = 0; B.commit(1);
-      this.final.boss = B; this.final.hp = this.enemyTotal; this.final.max = this.enemyTotal; this.final.swing = 1.2; this.final.pend = 0; this.final.atk = 0;
+      this.final.boss = B; this.final.hp = this.enemyPow; this.final.max = this.enemyPow; this.final.swing = 1.2; this.final.pend = 0; this.final.atk = 0;
       const lb = this.labels.add("hpbar", ""); lb.el.innerHTML = '<i></i><b></b>'; lb.x = 0; lb.y = B.s[0] * 1.15; lb.z = -(fd + 2); this.final.lb = lb;
       this.final.bd = fd + 2;
     } else {
@@ -363,52 +416,86 @@ export class Runner {
       }
       const door = cs;
       this.final.castle = g; this.final.parts = parts; this.final.door = door; this.final.hp = this.enemyTotal; this.final.max = this.enemyTotal; this.final.arrowT = 1; this.final.tows = tows;
-      const lb = this.labels.add("hpbar", ""); lb.el.innerHTML = '<i></i><b></b>'; lb.x = 0; lb.y = 7; lb.z = -(fd + 6); this.final.lb = lb;
+      const lb = this.labels.add("hpbar", ""); lb.el.innerHTML = '<i></i><b></b>'; lb.x = 0; lb.y = 7; lb.z = -(fd + 6); this.final.lb = lb; this.final.pend = 0;
       this.final.bd = fd + 4.6;
       // защитники перед воротами
-      this.final.grp = this.addGroup(Math.max(4, Math.round(this.enemyTotal * 0.25)), 0, fd, "army");
-      this.final.hp = this.final.max = Math.round(this.enemyTotal * 0.75);
+      this.final.grp = this.addGroup(Math.max(4, Math.round(this.enemyPow * 0.25)), 0, fd, "army", { mix: { S: 0.2 } });
+      this.final.hp = this.final.max = Math.round(this.enemyPow * 0.75);
     }
-    // лестница: подписи ×1…×10
-    const est = Math.max(10, this.est.power - this.enemyTotal);
-    this.stepCost = []; let acc = 0;
-    for (let i = 0; i < 10; i++) { const c = Math.max(1, Math.round(est * 0.068 * (1 + i * 0.12))); this.stepCost.push(c); acc += c; }
+    // лестница: множители монет ×1,2…×5; каждая ступенька дороже предыдущей в 1,3 раза (×5 — редкость)
+    const est = Math.max(10, this.est.power - this.enemyPow), C = RUN_CFG;
+    this.stepCost = [];
+    for (let i = 0; i < 10; i++) this.stepCost.push(Math.max(1, Math.round(est * C.stairK * Math.pow(C.stairGrow, i))));
     for (let i = 0; i < 10; i++) {
-      const m = glowLabel("×" + (i + 1), 2.4, 1.2, 1.25);
+      const m = glowLabel("×" + String(C.stair[i]).replace(".", ","), 2.4, 1.2, 1.25);
       m.rotation.x = -Math.PI / 2 + 0.25; m.position.set(0, 0.55 * (i + 1) + 0.02, -(this.stairsD + i * 2 + 1)); w.add(m);
     }
     const chest = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 1.4), mat("gold", 0xffc83a)); chest.position.set(0, 0.55 * 11 + 0.7, -(this.stairsD + 27)); w.add(chest);
   }
   // ---------- число и рисованные человечки ----------
-  repP() { return this.count > this.np && this.np > 0 ? this.count / this.np : 1; }
+  // ---------- состав и рисованные человечки ----------
+  // обычные/бегуны/лучники/щиты рисуются «сэмплом» (один рисованный = rep бойцов), громилы и чемпион — 1:1
+  repP() { return this.count > this.cap * 0.95 ? this.count / (this.cap * 0.95) : 1; }
+  powNow() { return compPower(this.comp, this.cards); }
+  unitPow(t) { return UNIT[TYPES[t]].pow * (t === 5 ? 1 : TIERS[this.comp.tier].mul) * (1 + 0.1 * (this.cards[TYPES[t]] || 0)); }
+  wantDrawn() {
+    const rep = this.repP(), w = [0, 0, 0, 0, 0, 0];
+    for (let t = 0; t < 6; t++) { const c = Math.max(0, this.comp[TYPES[t]]); w[t] = BIGTY[t] ? Math.min(t === 5 ? 3 : 150, Math.round(c)) : Math.round(c / rep); }
+    let tot = w.reduce((a, b) => a + b, 0);
+    while (tot > this.cap) { w[0] = Math.max(0, w[0] - (tot - this.cap)); tot = w.reduce((a, b) => a + b, 0); if (w[0] === 0) break; }
+    return w;
+  }
   syncUnits(init) {
-    const want = Math.min(this.cap, Math.max(0, Math.round(this.count)));
-    const P = this.P;
-    while (this.np < want) {
-      const i = this.np++;
-      // новые появляются в задней части строя
-      const k = i * 2;
-      P.x[i] = this.cx + this.form[k] * this.sx * 0.5; this.ud[i] = this.d + this.form[k + 1] * this.sd * 0.5; P.y[i] = 0; P.yaw[i] = Math.PI; P.s[i] = init ? 1 : 0.01; P.run[i] = 1; P.atk[i] = 0;
-      this.dead[i] = 0; this.pop[i] = init ? 1 : 0;
+    this.count = Math.max(0, compCount(this.comp));
+    const want = this.wantDrawn(), have = [0, 0, 0, 0, 0, 0], P = this.P;
+    for (let i = 0; i < this.np; i++) if (!this.dead[i]) have[P.ty[i]]++;
+    // лишние — исчезают с облачком, с разных мест строя
+    let rmAny = false;
+    for (let t = 0; t < 6; t++) {
+      let rm = have[t] - want[t];
+      for (let tries = 0; rm > 0 && tries < this.np * 4; tries++) { const i = (Math.random() * this.np) | 0; if (!this.dead[i] && P.ty[i] === t) { this.dead[i] = 2; rm--; rmAny = true; } }
     }
-    if (this.np > want) {
-      // лишние (деление/минус) — исчезают с облачком, с разных мест строя
-      let rm = this.np - want;
-      const r = Math.random;
-      for (let tries = 0; rm > 0 && tries < this.np * 3; tries++) { const i = (r() * this.np) | 0; if (!this.dead[i]) { this.dead[i] = 2; rm--; } }
-      this.compact();
+    if (rmAny) this.compact();
+    for (let t = 0; t < 6; t++) {
+      let add = want[t] - have[t];
+      while (add-- > 0 && this.np < this.cap) {
+        const i = this.np++, k = i * 2;
+        P.x[i] = this.cx + this.form[k] * this.sx * 0.5; this.ud[i] = this.d + this.form[k + 1] * this.sd * 0.5; P.y[i] = 0; P.yaw[i] = Math.PI; P.s[i] = init ? TSCALE[t] : 0.01; P.run[i] = 1; P.atk[i] = 0; P.ty[i] = t;
+        this.dead[i] = 0; this.pop[i] = init ? 1 : 0;
+      }
     }
+    // сколько бойцов за одним рисованным каждого вида
+    const n = [0, 0, 0, 0, 0, 0]; for (let i = 0; i < this.np; i++) n[P.ty[i]]++;
+    for (let t = 0; t < 6; t++) this.repT[t] = n[t] > 0 ? Math.max(0, this.comp[TYPES[t]]) / n[t] : 1;
+  }
+  // убрать бойцов по «силе» (схватка, стрелы, удар великана): гибнут передние рисованные
+  losePower(pw, how, vx, vz) {
+    if (!(pw > 0)) return 0;
+    if (!(this.hitAcc >= 0)) this.hitAcc = 0;
+    this.hitAcc += pw; let killed = 0;
+    for (let guard = 0; guard < 400 && this.np > 0; guard++) {
+      let bi = -1, bd = -1e9;
+      for (let s = 0; s < 6; s++) { const i = (Math.random() * this.np) | 0; if (!this.dead[i] && this.ud[i] > bd) { bd = this.ud[i]; bi = i; } }
+      if (bi < 0) break;
+      const t = this.P.ty[bi], cost = this.unitPow(t) * this.repT[t];
+      if (this.hitAcc < cost) break;
+      this.hitAcc -= cost; this.killP(bi, how ? how : Math.random() < 0.25 ? "fling" : "pop", vx != null ? vx : (Math.random() - 0.5) * 6, vz != null ? vz : 5); killed++;
+    }
+    if (killed) this.compact();
+    if (this.np === 0) { this.hitAcc = 0; for (const t of TYPES) this.comp[t] = 0; this.count = 0; }
+    return killed;
   }
   killP(i, how, vx, vz) {
     if (this.dead[i]) return;
     this.dead[i] = 1;
-    const P = this.P, x = P.x[i], z = -this.ud[i], y = P.y[i];
+    const P = this.P, x = P.x[i], z = -this.ud[i], y = P.y[i], t = P.ty[i];
     const col = this.look.color;
-    if (how === "fall") this.debris.add(x, y, z, (vx || 0) * 0.5, 0.5, (vz || 0), col, P.yaw[i]);
-    else if (how === "fling") this.debris.add(x, y + 0.2, z, vx != null ? vx : (Math.random() - 0.5) * 10, 6 + Math.random() * 5, vz != null ? vz : (Math.random() - 0.5) * 6, col, P.yaw[i], 0);
+    if (how === "fall") this.debris.add(x, y, z, (vx || 0) * 0.5, 0.5, (vz || 0), col, P.yaw[i], null, TSCALE[t]);
+    else if (how === "fling") this.debris.add(x, y + 0.2, z, vx != null ? vx : (Math.random() - 0.5) * 10, 6 + Math.random() * 5, vz != null ? vz : (Math.random() - 0.5) * 6, col, P.yaw[i], 0, TSCALE[t]);
     else if (how === "squash") { this.parts.burst(x, 0.2, z, 3, col, 3, 0.16, 2); if (Math.random() < 0.3) this.parts.dust(x, z, 3, 0.4); }
     else this.parts.burst(x, 0.5, z, 2, col, 3.5, 0.13, 3);
-    this.count -= this.repP();
+    const k = TYPES[t]; this.comp[k] = Math.max(0, this.comp[k] - this.repT[t]);
+    this.count = compCount(this.comp);
     this.lostTotal++;
   }
   compact() {
@@ -419,7 +506,15 @@ export class Runner {
       this.dead[j] = 0; j++;
     }
     this.np = j;
-    if (this.count < 0.5) this.count = 0;
+    if (this.count < 0.5) { this.count = 0; }
+  }
+  // облик обычных: оружие важнее эпохи
+  updateLook() {
+    const kind = this.weapon ? WEAPONS[this.weapon].kind : TIERS[this.comp.tier].kind;
+    this.P.setLook(0, { kind, hat: this.weapon || this.comp.tier !== 1 ? "none" : undefined });
+    if (this.comp.tier !== 1 || this.weapon) this.P.looks[0].hat = this.comp.tier === 1 || this.weapon === "sword" ? this.look.hat : "none";
+    this.lblIcon = this.weapon ? WEAPONS[this.weapon].icon : "";
+    if (this.hud.weapon) this.hud.weapon(this.weapon ? WEAPONS[this.weapon].icon + " " + WEAPONS[this.weapon].name : this.comp.tier !== 1 ? "⬆ " + TIERS[this.comp.tier].name : null);
   }
   killE(j, how) {
     if (this.edead[j]) return;
@@ -472,7 +567,13 @@ export class Runner {
     let L = -seg.hw, Rr = seg.hw;
     for (const p of this.pits) if (p.split && this.d > p.d0 - 1 && this.d < p.d1) { if (this.cx < 0) Rr = Math.min(Rr, p.x0); else L = Math.max(L, p.x1); }
     if (this.phase === "stairs") { L = -3; Rr = 3; }
-    const half = (Rr - L) / 2 - 0.3;
+    // ямы впереди: строй сжимается до ширины той полосы, где сейчас толпа (рулить всё равно надо самому)
+    let fL = L, fR = Rr;
+    for (const p of this.pits) if (!p.split && this.d > p.d0 - 7 && this.d < p.d1 + 1) {
+      if (p.x0 <= -seg.hw + 0.1) fL = Math.max(fL, p.x1); else if (p.x1 >= seg.hw - 0.1) fR = Math.min(fR, p.x0);
+      else if (this.cx < (p.x0 + p.x1) / 2) fR = Math.min(fR, p.x0); else fL = Math.max(fL, p.x1);
+    }
+    const half = (Math.max(1.2, fR - fL)) / 2 - 0.3;
     const sxT = clamp(half / R0, seg.walls ? 0.28 : 0.42, 1);
     this.sx = lerp(this.sx, sxT, Math.min(1, dt * 5)); this.sd = 1 / Math.pow(this.sx, 0.85);
     let want = this.phase === "run" ? this.want : this.phase === "stairs" ? 0 : this.cx;
@@ -487,6 +588,7 @@ export class Runner {
     this.maxCount = Math.max(this.maxCount, this.count);
     // тутор
     if (this.tutStep) this.tutorial();
+    else if (this.phase === "run" && !this.newsShown && this.def.new && RUN_NEWS[this.def.new] && this.t > 0.4 && !this.auto) { this.newsShown = true; this.hud.hint(RUN_NEWS[this.def.new], "new"); setTimeout(() => this.hud.hint(null), 3800); }
   }
   animIdle(dt) {
     for (let i = 0; i < this.np; i++) this.P.run[i] = lerp(this.P.run[i], 0, Math.min(1, dt * 6));
@@ -527,10 +629,19 @@ export class Runner {
       // высота: ступеньки
       if (roadSeg.kind.startsWith("stair")) P.y[i] = lerp(P.y[i], 0.55 * (+roadSeg.kind.slice(5) + 1), 0.4);
       else if (roadSeg.kind === "top") P.y[i] = 0.55 * 11; else P.y[i] = lerp(P.y[i], 0, 0.4);
-      if (this.pop[i] < 1) { this.pop[i] = Math.min(1, this.pop[i] + dt * 5); P.s[i] = 0.2 + 0.8 * this.pop[i] + Math.sin(this.pop[i] * Math.PI) * 0.35; }
+      if (this.pop[i] < 1) { this.pop[i] = Math.min(1, this.pop[i] + dt * 5); P.s[i] = (0.2 + 0.8 * this.pop[i] + Math.sin(this.pop[i] * Math.PI) * 0.35) * TSCALE[P.ty[i]] * (P.ty[i] === 0 && this.comp.tier === 3 ? 1.1 : 1); }
       P.run[i] = 1; P.yaw[i] = Math.PI + (tx - x) * 0.6;
       // ловушки
-      for (let h = 0; h < hazards.length; h++) { const how = hazards[h](x, ud, i); if (how) { this.killP(i, how.k || how, how.vx, how.vz); anyDead = true; break; } }
+      for (let h = 0; h < hazards.length; h++) {
+        const how = hazards[h](x, ud, i);
+        if (how) {
+          // громил, щитоносцев, бегунов и чемпиона ловушки берут реже (щиты-оружие берегут обычных)
+          const t = P.ty[i]; let k = UNIT[TYPES[t]].trap; if (t === 0 && this.weapon === "shield") k *= WEAPONS.shield.trap;
+          if (k >= 1 || Math.random() < k) { this.killP(i, how.k || how, how.vx, how.vz); anyDead = true; }
+          else if (Math.random() < 0.3) this.parts.sparks(x, 1, -ud, 2);
+          break;
+        }
+      }
     }
     if (anyDead) { this.compact(); this.deathFx(); }
   }
@@ -575,7 +686,7 @@ export class Runner {
     for (const it of this.items) {
       if (it.d > d + 90 || (it.d + (it.len || 10) < d - 30 && !it.logs)) continue;
       if (it.panels && it.move && !it.used) { it.off = Math.sin(t * (1.1 + this.n * 0.015) + it.ph) * it.amp; it.panels.forEach((p) => (p.pg.position.x = p.x + it.off)); }
-      if (it.panels && it.used) { it.fade = (it.fade || 0) + dt; const f = it.fade; it.panels.forEach((p, k) => { if (k === it.chosen && f < 0.25) { p.pm.emissiveIntensity = 2.5 - f * 8; p.pg.scale.setScalar(1 + f * 0.6); } else { p.pg.position.y = -Math.max(0, f - (k === it.chosen ? 0.25 : 0)) * 7; p.pg.rotation.x = f * 1.5; } }); if (f > 1.1) { it.g.visible = false; it.panels = null; } }
+      if (it.panels && it.used) { it.fade = (it.fade || 0) + dt; const f = it.fade; it.panels.forEach((p, k) => { if (k === it.chosen && f < 0.25) { p.pm.emissiveIntensity = 2.5 - f * 8; p.pg.scale.setScalar(1 + f * 0.6); } else { p.pg.position.y = -Math.max(0, f - (k === it.chosen ? 0.25 : 0)) * 7; p.pg.rotation.x = f * 1.5; } }); if (f > 1.1) { it.g.visible = false; it.panels = null; if (it.prev) it.prev.forEach((u) => (u.mesh.visible = false)); } else if (it.prev) it.prev.forEach((u, k) => { if (k !== it.chosen) u.y[0] = 2.86 - Math.max(0, f) * 7; }); }
       if (it.blades) for (const b of it.blades) { b.bud = Math.min(5, (b.bud || 0) + dt * (7 + this.n * 0.12)); b.a += b.w * dt; b.bar.rotation.y = b.a; if (Math.abs(b.pd - d) < 10 && this.t - (b.sT || 0) > 0.9) { b.sT = this.t; play("blade", { vol: 0.35, gap: 0.3 }); } }
       if (it.saws) for (const s of it.saws) { s.bud = Math.min(3, (s.bud || 0) + dt * (4 + this.n * 0.08)); s.x = Math.sin(t * s.sp + s.ph) * s.A + (it.lc || 0); s.m.children[0].position.x = s.x - (it.lc || 0); s.disc.rotation.y += dt * 14; s.m.children[1].position.x = 0; }
       if (it.cr) for (const c of it.cr) {
@@ -599,6 +710,16 @@ export class Runner {
     this.updateEnemies(dt);
     this.updateCannon(dt);
     this.updateShots(dt);
+    this.updateShooting(dt);
+    this.updateArrows(dt);
+    for (const it of this.items) if (it.t === "barrel" && it.bg && it.bg.visible) { it.pop = Math.max(0, (it.pop || 0) - dt * 6); it.bg.scale.setScalar(1 + it.pop * 0.06); }
+    for (const it of this.items) if (it.prev && !it.used) it.prev.forEach((u) => { u.yaw[0] += dt * 1.2; u.atk[0] = 0.15 + Math.sin(this.t * 2) * 0.1; u.commit(1); });
+  }
+  updateArrows(dt) {
+    for (let i = this.arrows.length - 1; i >= 0; i--) {
+      const a = this.arrows[i]; a.t += dt;
+      if (a.t >= a.T) { if (a.hit && !a.hit.done) { this.attritionVisual(a.hit); if (a.hit.count <= 0.5) this.groupDone(a.hit); } this.parts.sparks(a.x1, 0.6, -a.d1, 1); this.arrows.splice(i, 1); }
+    }
   }
   updateLogs(it, dt) {
     const hw = it.lhw || RUN_CFG.hw;
@@ -621,31 +742,134 @@ export class Runner {
       if (lg.d < this.d - 25 || lg.d < it.d - 6) { lg.d -= 0; lg.y -= 0; if (lg.d < it.d - 6) { this.parts.burst(lg.x, 0.6, -lg.d, 6, 0x8a5a2b, 4, 0.2, 3); } this.world.remove(lg.m); lg.m.geometry.dispose(); it.logs.splice(i, 1); }
     }
   }
-  // ---------- ворота ----------
+  // ---------- ворота, оружие ----------
   checkGates() {
     for (const it of this.items) {
       if (!it.panels || it.used || it.d > this.d) continue;
       it.used = true;
       if (it.lc && Math.sign(it.lc) !== Math.sign(this.cx || 1)) { it.chosen = -1; continue; }
       // какая створка под центром толпы
-      const lx = this.cx - (it.lc || 0) - (it.off || 0);
+      let lx = this.cx - (it.lc || 0) - (it.off || 0);
+      // толпа шире полосы и прижата к борту, палец тянет дальше — берём крайнюю створку с той стороны
+      if (Math.abs(this.want - this.cx) > 0.4 && Math.sign(this.want - this.cx) === Math.sign(this.cx || 1) && Math.abs(this.cx) > 0.6) lx = clamp(this.want - (it.lc || 0) - (it.off || 0), -it.tot / 2 + 0.1, it.tot / 2 - 0.1);
       let k = Math.floor((lx + it.tot / 2) / it.W);
       if (k < 0 || k >= it.panels.length) { if (it.move) { it.chosen = -1; continue; } k = clamp(k, 0, it.panels.length - 1); }
       it.chosen = k;
-      const v = it.panels[k].v, before = this.count;
-      this.count = Math.max(0, applyGate(Math.round(this.count), v));
-      const gd = good(v), diff = Math.round(this.count - before);
+      const P = it.panels[k];
+      if (it.t === "weapon") { this.takeWeapon(P.w, it); continue; }
+      const g = P.g, before = Math.round(this.count), tierB = this.comp.tier;
+      applyGateComp(this.comp, g);
       this.syncUnits(false);
+      const gd = gateValueGood(g), diff = Math.round(compCount(this.comp) - before);
       this.hud.count(Math.round(this.count), true);
       this.lbl.pop();
-      this.hud.float((diff >= 0 ? "+" : "−") + Math.abs(diff), gd ? "good" : "bad");
-      play(gd ? (v[0] === "x" ? "levelup" : "coin2") : "error", { vol: gd ? 0.7 : 0.8 });
+      if (g.k === "e") { this.updateLook(); this.syncUnits(false); for (let i = 0; i < this.np; i++) this.pop[i] = 0.2; this.hud.float(tierB !== this.comp.tier ? TIERS[this.comp.tier].name + "!" : "Эпоха ↑", "gold"); play("levelup", { vol: 0.9 }); play("magic", { vol: 0.6 }); this.parts.ring(this.cx, -it.d, 0.3, 5, 0.6, 0xb455ff, 0.1); }
+      else if (g.k === "u") { this.hud.float(gateText(g).replace("\n", " "), "good"); play("perk", { vol: 0.7 }); }
+      else if (g.k === "c") { this.hud.float("Громилы +" + this.comp.brute, "good"); play("heavy", { vol: 0.7 }); this.eng.shake(0.3); }
+      else { this.hud.float((diff >= 0 ? "+" : "−") + Math.abs(diff), gd ? "good" : "bad"); play(gd ? (g.k === "x" ? "levelup" : "coin2") : "error", { vol: gd ? 0.7 : 0.8 }); }
       T.haptic("impact", gd ? "medium" : "heavy");
       this.parts.burst(this.cx, 1.3, -it.d, 10, gd ? 0x7cc8ff : 0xff6a6a, 6, 0.16, 4, 10);
       this.parts.sparkle(this.cx, 1.4, -it.d, gd ? 0x9fe0ff : 0xff8a8a, 14); this.parts.ring(this.cx, -it.d, 0.3, 3.2, 0.45, gd ? 0x7cc8ff : 0xff5a5a, 0.1);
       if (!gd) this.eng.shake(0.25);
-      this.stats = this.stats || { gates: [] }; this.stats.gates.push(v);
+      this.stats = this.stats || { gates: [] }; this.stats.gates.push(P.v + (P.hits ? "(" + gateText(g).replace("\n", " ") + ")" : ""));
     }
+    this.updateBarrels();
+  }
+  takeWeapon(w, it) {
+    this.weapon = w; this.updateLook(); this.syncUnits(false);
+    for (let i = 0; i < this.np; i++) if (this.P.ty[i] === 0) this.pop[i] = 0.25;
+    const WD = WEAPONS[w];
+    this.hud.toast(WD.name + "!"); this.hud.float(WD.desc, "gold");
+    play("upgrade", { vol: 0.9 }); play("blade", { vol: 0.5 }); T.haptic("notify", "success");
+    this.parts.sparkle(this.cx, 1.6, -it.d, 0xffd34a, 30); this.parts.ring(this.cx, -it.d, 0.3, 4.5, 0.55, 0xffd34a, 0.1);
+    if (it.prev) it.prev.forEach((u, k) => { if (k === it.chosen) u.mesh.visible = false; });
+    this.stats.gates.push("W:" + w);
+  }
+  // бочки: отстреляли — награда; не успели — толпа врезается
+  updateBarrels() {
+    for (const it of this.items) {
+      if (it.t !== "barrel" || it.done) continue;
+      if (it.hp <= 0) { this.openBarrel(it); continue; }
+      if (it.d < this.d + 0.5) {
+        it.done = true; it.lb.on = false;
+        const R0 = SPC * Math.sqrt(Math.max(1, this.np)) * this.sx + 0.4;
+        if (Math.abs(this.cx - it.bx) < R0 + 1.1) {
+          const loss = Math.min(this.count * 0.25, it.hp * 0.5);
+          if (loss >= 1) { this.losePower(loss * this.unitPow(0), "fling", null, 2); this.deathFx(); this.hud.float("−" + Math.round(loss), "bad"); }
+          play("househit", { vol: 0.8 }); this.eng.shake(0.3);
+        }
+        this.parts.burst(it.bx, 1.2, -it.d, 14, 0x8a5a2e, 6, 0.22, 5); it.bg.visible = false;
+      }
+    }
+  }
+  openBarrel(it) {
+    it.done = true; it.lb.on = false; it.bg.visible = false;
+    play("collapse", { vol: 0.6, rate: 1.3 }); play("perk", { vol: 0.8 }); T.haptic("notify", "success"); this.eng.shake(0.3);
+    this.parts.burst(it.bx, 1.4, -it.d, 24, 0x9a6a3a, 7, 0.24, 6); this.parts.sparkle(it.bx, 2, -it.d, 0xffd34a, 28);
+    if (it.r[0] === "w") { this.takeWeapon(it.r.slice(2), it); return; }
+    const g = parseGate(it.r), tb = this.comp.tier;
+    applyGateComp(this.comp, g); if (g.k === "e" && tb !== this.comp.tier) this.updateLook();
+    this.syncUnits(false); this.hud.count(Math.round(this.count), true); this.lbl.pop();
+    this.hud.toast(REWARD_TXT(it.r) + "!");
+    this.stats.gates.push("B:" + it.r);
+  }
+  // ---------- стрельба толпы: по воротам «↑» и бочкам ----------
+  shootTargets() {
+    const out = [];
+    for (const it of this.items) {
+      if (it.d < this.d + 1 || it.d > this.d + 46) continue;
+      if (it.t === "barrel" && !it.done && it.hp > 0) out.push({ it, x0: it.bx - 1.1, x1: it.bx + 1.1, d: it.d });
+      else if (it.t === "gate" && !it.used && it.panels) for (const p of it.panels) if (p.g0.grow) { const x = (it.lc || 0) + (it.off || 0) + p.x; out.push({ it, p, x0: x - it.W / 2 + 0.1, x1: x + it.W / 2 - 0.1, d: it.d }); }
+    }
+    return out;
+  }
+  updateShooting(dt) {
+    if (this.phase === "run" && this.np > 0) {
+      const tg = this.shootTargets();
+      if (tg.length) {
+        this.fireAcc += shotRate(this.count, this.comp.archer, this.up.shots) * dt;
+        while (this.fireAcc >= 1) {
+          this.fireAcc -= 1;
+          // стреляют передние: x — у случайного из первых рядов
+          let bi = 0, bd = -1e9; for (let s = 0; s < 4; s++) { const i = (Math.random() * this.np) | 0; if (this.ud[i] > bd) { bd = this.ud[i]; bi = i; } }
+          const x = this.P.x[bi], d0 = this.ud[bi] + 0.5;
+          let hit = null; for (const t of tg) if (x >= t.x0 && x <= t.x1 && (!hit || t.d < hit.d)) hit = t;
+          if (this.bul.length < 160) this.bul.push({ x, d: d0, y: 1.0, hit, end: hit ? hit.d : d0 + 40 });
+          if (this.t - (this.shT || 0) > 0.09) { this.shT = this.t; play("xbow", { vol: 0.22, gap: 0.08, rate: 1.4 }); }
+        }
+      } else this.fireAcc = 0;
+    }
+    const sp = RUN_CFG.shot.speed;
+    for (let i = this.bul.length - 1; i >= 0; i--) {
+      const b = this.bul[i]; b.d += sp * dt;
+      if (b.d >= b.end) {
+        this.bul[i] = this.bul[this.bul.length - 1]; this.bul.pop();
+        if (b.hit) this.onShotHit(b.hit, b.x);
+      }
+    }
+  }
+  onShotHit(h, x) {
+    const it = h.it;
+    if (it.t === "barrel") {
+      if (it.done || it.hp <= 0) return;
+      it.hp -= 1; it.pop = 1; it.lb.el.firstChild.textContent = Math.max(0, it.hp);
+      if (Math.random() < 0.5) this.parts.burst(x, 1.4, -it.d + 0.8, 2, 0xc89a5a, 3, 0.12, 2);
+      if (this.t - (this.bhT || 0) > 0.07) { this.bhT = this.t; play("househit", { vol: 0.25, gap: 0.06, rate: 1.5 }); }
+      if (it.hp <= 0) this.openBarrel(it);
+      return;
+    }
+    if (it.used) return;
+    const p = h.p; p.hits++; p.pop = 1;
+    p.g = grownGate(p.g0, p.hits, p.g0.N);
+    const txt = gateText(p.g) + (p.g.k === "x" ? (p.g.N < RUN_CFG.grow.xMax ? "↑" : "") : "");
+    if (txt !== p.txt) {
+      const wasGood = p.gd; p.txt = txt; p.gd = gateValueGood(p.g);
+      redrawText(p.tex, txt, "#fff", null);
+      if (p.gd !== wasGood || (p.g.k === "x" && p.g.N !== p.lastN)) { setGateKind(p.G, p.gd ? (p.g0.k === "x" ? "gold" : "plus") : "bad"); if (p.gd && !wasGood) { play("levelup", { vol: 0.6 }); this.parts.sparkle(x, 2.2, -it.d, 0x7dff9a, 16); } }
+      if (p.g.k === "x" && p.g.N !== p.lastN) { p.lastN = p.g.N; play("levelup", { vol: 0.5, rate: 1 + p.g.N * 0.1 }); this.parts.sparkle(x, 2.2, -it.d, 0xffd34a, 16); }
+    }
+    if (Math.random() < 0.6) this.parts.burst(x, 1.5, -it.d + 0.2, 2, 0xffe27a, 3, 0.1, 2, 4);
+    if (this.t - (this.ghT || 0) > 0.06) { this.ghT = this.t; play("coin", { vol: 0.18, gap: 0.05, rate: 1.3 + Math.min(0.8, p.hits * 0.01) }); }
   }
   // ---------- враги: засады и армия ----------
   updateEnemies(dt) {
@@ -654,6 +878,7 @@ export class Runner {
     // столкновение засады с толпой
     if (this.phase === "run") {
       if (!this.clashG) for (const g of this.groups) if (g.kind === "squad" && !g.done && g.count > 0 && g.d - g.R * 0.7 < pf + 0.3 && Math.abs(g.x - this.cx) < 5.5) { this.clashG = g; g.fight = true; play("gong", { vol: 0.5 }); this.eng.shake(0.3); }
+      for (const g of this.groups) if (g.kind === "squad" && !g.done) this.ranged(g, dt);
       if (this.clashG) { const g = this.clashG; g.d = lerp(g.d, pf + g.R * 0.7, Math.min(1, dt * 5)); g.x = lerp(g.x, this.cx, Math.min(1, dt * 2)); this.attrition(g, dt, 1); }
       // засады в другой полосе развилки — просто остаются позади
       for (const g of this.groups) if (g.kind === "squad" && !g.done && g.d < this.d - 18) this.groupDone(g, true);
@@ -671,42 +896,19 @@ export class Runner {
     }
     for (const g of this.groups) if (!g.done) { g.R = SPC * Math.sqrt(Math.max(1, g.rank)) * 1.05 + 0.3; g.lb.x = g.x; g.lb.z = -g.d; g.lb.y = 1.9 + g.R * 0.15; }
   }
-  // размен 1:1 между толпой и группой
+  // размен «сила на силу» между толпой и группой (оружие, щиты, улучшения меняют курс)
+  defMul() { const sh = this.count > 0 ? this.comp.shield / this.count : 0; return (this.weapon === "shield" ? WEAPONS.shield.def : 1) * (1 - sh * (1 - UNIT.shield.def)); }
   attrition(g, dt, mode) {
-    const cp = this.count, ce = g.count;
-    if (ce <= 0) { this.groupDone(g); return; }
-    if (cp <= 0) return;
-    const rate = (7 + 0.42 * Math.min(cp, ce)) * dt;
-    const lossE = Math.min(ce, rate * this.atk), lossP = Math.min(cp, rate / this.hpm * (g.str || 1));
-    g.count -= lossE;
-    // наши потери: передние бойцы, убираем по одному рисованному
-    this.hitAcc += lossP;
-    const rp = this.repP();
-    let killed = 0;
-    while (this.hitAcc >= rp && this.np > 0) {
-      this.hitAcc -= rp;
-      // ищем переднего среди нескольких случайных
-      let bi = -1, bd = -1e9;
-      for (let s = 0; s < 6; s++) { const i = (Math.random() * this.np) | 0; if (!this.dead[i] && this.ud[i] > bd) { bd = this.ud[i]; bi = i; } }
-      if (bi < 0) break;
-      this.killP(bi, Math.random() < 0.25 ? "fling" : "pop", (Math.random() - 0.5) * 6, 5);
-      killed++;
-    }
-    if (this.count < 1) this.count = 0;
-    if (killed) this.compact();
-    // их потери — передние красные этой группы
-    const showWant = Math.ceil(g.count / g.rep);
-    let alive = 0; for (let j = 0; j < this.ne; j++) if (this.eg[j] === this.groups.indexOf(g) && !this.edead[j]) alive++;
-    let rm = alive - showWant, gi = this.groups.indexOf(g);
-    while (rm > 0) {
-      let bj = -1, bd = 1e9;
-      for (let s = 0; s < 8; s++) { const j = (Math.random() * this.ne) | 0; if (this.eg[j] === gi && !this.edead[j] && this.ed[j] < bd) { bd = this.ed[j]; bj = j; } }
-      if (bj < 0) { for (let j = 0; j < this.ne; j++) if (this.eg[j] === gi && !this.edead[j]) { bj = j; break; } }
-      if (bj < 0) break;
-      this.killE(bj, Math.random() < 0.3 ? "fling" : "pop"); rm--; this.kills++;
-    }
-    this.compactE();
-    g.lb.set(Math.max(0, Math.ceil(g.count)));
+    const cpP = this.powNow(), ceP = g.count * g.pw;
+    if (g.count <= 0) { this.groupDone(g); return; }
+    if (cpP <= 0) return;
+    const rate = (7 + 0.42 * Math.min(cpP, ceP)) * dt;
+    const wm = weaponMul(this.weapon, { kind: "army", mix: g.mix }, this.mastery);
+    const lossE = Math.min(ceP, rate * this.atk * wm), lossP = Math.min(cpP, rate / this.hpm * this.defMul() * (g.str || 1));
+    g.count -= lossE / g.pw;
+    this.losePower(lossP);
+    if (this.count < 1 && this.np === 0) this.count = 0;
+    this.attritionVisual(g, true);
     this.hud.count(Math.round(this.count));
     if (this.t - this.sndT > 0.07) { this.sndT = this.t; play(["hit", "hit2", "bone"][(Math.random() * 3) | 0], { vol: 0.55, gap: 0.05 }); }
     if (this.t - this.hapT > 0.1) { this.hapT = this.t; T.haptic("impact", mode === 2 ? "medium" : "light"); this.eng.shake(mode === 2 ? 0.2 : 0.08); }
@@ -714,6 +916,28 @@ export class Runner {
     if (Math.random() < 0.5) this.parts.sparks(cxp + (Math.random() - 0.5) * 3, 0.7, -(this.d + 1.2), 3);
     if (Math.random() < 0.15) this.parts.dust(cxp + (Math.random() - 0.5) * 3, -(this.d + 1.2), 3, 0.5);
     if (g.count <= 0.5) this.groupDone(g);
+  }
+  // до схватки: наши лучники/арбалеты дают залп, красные лучники стреляют по нам
+  ranged(g, dt) {
+    if (g.done || g.fight) return;
+    const dist = g.d - g.R * 0.7 - this.d;
+    if (dist < 18 && dist > 0 && !g.volleyed) {
+      g.volleyed = true;
+      const v = volleyPow(this.comp, this.weapon, this.mastery);
+      if (v > 0.5) {
+        g.count = Math.max(0, g.count - v / g.pw); g.pend = (g.pend || 0);
+        const n = Math.min(36, 6 + Math.round(v / 3));
+        for (let k = 0; k < n; k++) { const i = (Math.random() * Math.max(1, this.np)) | 0; this.arrows.push({ x0: this.P.x[i] || this.cx, d0: this.ud[i] || this.d, x1: g.x + (Math.random() - 0.5) * g.R * 1.6, d1: g.d + (Math.random() - 0.5) * g.R, t: 0, T: 0.55 + Math.random() * 0.2, hit: k === n - 1 ? g : null }); }
+        play("xbow", { vol: 0.8 }); play("arrow", { vol: 0.6 });
+        this.hud.float("Залп −" + Math.round(v / g.pw), "good");
+      }
+    }
+    const A = g.mix && g.mix.A ? g.count * g.mix.A : 0;
+    if (A > 0 && dist < 24 && dist > 0.5) {
+      this.arrowAcc += A * EMIX.A.volley * 0.55 * dt;
+      if (Math.random() < Math.min(1, A * dt * 1.2)) { const i = (Math.random() * Math.max(1, this.np)) | 0; this.arrows.push({ x0: g.x + (Math.random() - 0.5) * g.R * 2, d0: g.d + g.R * 0.5, x1: this.P.x[i] || this.cx, d1: this.ud[i] || this.d, t: 0, T: 0.6, red: 1 }); if (this.t - (this.arrT || 0) > 0.15) { this.arrT = this.t; play("arrow", { vol: 0.35, gap: 0.12 }); } }
+      if (this.arrowAcc > 1) { const k = this.losePower(this.arrowAcc, "fling", (Math.random() - 0.5) * 3, -2); this.arrowAcc = 0; if (k) this.deathFx(); }
+    }
   }
   groupDone(g, quiet) {
     if (g.done) return;
@@ -727,6 +951,7 @@ export class Runner {
     if (!quiet) play("coin", { vol: 0.6 });
   }
   // ---------- пушка ----------
+  cannonK() { return RUN_CFG.cannonK * (1 + RUN_CFG.cannonUp * (this.up.cannon || 0)); }
   updateCannon(dt) {
     const c = this.cannon; if (!c) return;
     const p = c.pad;
@@ -735,12 +960,16 @@ export class Runner {
       c.acc = (c.acc || 0) + (5 + this.count * 0.11) * dt;
       while (c.acc >= 1 && this.count > 1) {
         c.acc -= 1;
-        const rp = this.repP(), i = (Math.random() * this.np) | 0;
+        const i = (Math.random() * this.np) | 0;
         const P = this.P;
-        if (this.np > 0) { this.debris.add(P.x[i], 0.4, -this.ud[i], (c.pad.x - P.x[i]) * 0.9, 7, -(p.d1 + 1.5 - this.ud[i]) * 1.2, this.look.color, Math.PI); this.dead[i] = 2; this.compact(); }
-        this.count -= rp; c.ammo += rp; this.fed += rp;
+        if (this.np <= 0) break;
+        const t = P.ty[i]; if (t === 5) continue;   // чемпиона в пушку не грузим
+        const pw = this.unitPow(t) * this.repT[t];
+        this.debris.add(P.x[i], 0.4, -this.ud[i], (c.pad.x - P.x[i]) * 0.9, 7, -(p.d1 + 1.5 - this.ud[i]) * 1.2, this.look.color, Math.PI, null, TSCALE[t]);
+        this.comp[TYPES[t]] = Math.max(0, this.comp[TYPES[t]] - this.repT[t]); this.dead[i] = 2; this.compact(); this.count = compCount(this.comp);
+        c.ammo += pw; this.fed += pw;
       }
-      c.lb.set(Math.round(c.ammo * RUN_CFG.cannonK)); if (Math.random() < 0.3) c.lb.pop();
+      c.lb.set(Math.round(c.ammo * this.cannonK())); if (Math.random() < 0.3) c.lb.pop();
       if (this.t - (c.sT || 0) > 0.12) { c.sT = this.t; play("select", { vol: 0.5, rate: 0.8 + Math.min(0.8, c.ammo / 100), vary: false }); }
       if (this.t - this.hapT > 0.09) { this.hapT = this.t; T.haptic("select"); }
       this.hud.count(Math.round(this.count));
@@ -765,7 +994,7 @@ export class Runner {
     if (c.fireT > 0) return;
     c.fireT = 0.13;
     const take = Math.min(c.ammo, Math.max(1, c.ammo / 25)); c.ammo -= take;
-    c.lb.set(Math.round(c.ammo * RUN_CFG.cannonK));
+    c.lb.set(Math.round(c.ammo * this.cannonK()));
     const sx = c.cm.position.x + (c.lc || 0), sd = c.wd + 1.6;
     let tx = 0, td = this.final.bd || this.final.d;
     if (this.final.grp && !this.final.grp.done) {
@@ -774,7 +1003,7 @@ export class Runner {
       if (this.eg[j] === gi) { tx = this.E.x[j]; td = this.ed[j]; }
     }
     const T0 = 0.75 + Math.random() * 0.2;
-    this.shots.push({ tx, td, t: T0, pow: take * RUN_CFG.cannonK });
+    this.shots.push({ tx, td, t: T0, pow: take * this.cannonK() });
     this.debris.add(sx, 1.9, -sd, (tx - sx) / T0, (0 - 1.9 + 0.5 * 22 * T0 * T0) / T0, -(td - sd) / T0, this.look.color, 0, -5);
     play("cannon", { vol: 0.6, gap: 0.09 });
     c.cm.userData.barrel.position.z = 0.3;
@@ -788,15 +1017,21 @@ export class Runner {
       const F = this.final;
       play("boom", { vol: 0.5, gap: 0.08 }); this.eng.shake(0.18);
       this.parts.explosion(s.tx, -s.td, 1.3);
-      if (F.grp && !F.grp.done) { F.grp.count -= s.pow; this.kills += s.pow; this.attritionVisual(F.grp); if (F.grp.count <= 0.5) this.groupDone(F.grp); }
+      if (F.grp && !F.grp.done) { F.grp.count -= s.pow / F.grp.pw; this.attritionVisual(F.grp); if (F.grp.count <= 0.5) this.groupDone(F.grp); }
       else if (F.hp != null) { F.hp -= s.pow; }
     }
     if (this.cannon) this.cannon.cm.userData.barrel.position.z = lerp(this.cannon.cm.userData.barrel.position.z, 0, 0.2);
   }
-  attritionVisual(g) {
+  attritionVisual(g, front) {
     const gi = this.groups.indexOf(g), want = Math.ceil(Math.max(0, g.count) / g.rep);
     let alive = 0; for (let j = 0; j < this.ne; j++) if (this.eg[j] === gi && !this.edead[j]) alive++;
-    for (let rm = alive - want; rm > 0; rm--) { let j = (Math.random() * this.ne) | 0; for (let s = 0; s < 20 && (this.eg[j] !== gi || this.edead[j]); s++) j = (Math.random() * this.ne) | 0; if (this.eg[j] === gi && !this.edead[j]) this.killE(j, "fling"); }
+    for (let rm = alive - want; rm > 0; rm--) {
+      let bj = -1, bd = 1e9;
+      for (let s = 0; s < (front ? 8 : 20); s++) { const j = (Math.random() * this.ne) | 0; if (this.eg[j] === gi && !this.edead[j] && (!front || this.ed[j] < bd)) { bd = this.ed[j]; bj = j; if (!front) break; } }
+      if (bj < 0) for (let j = 0; j < this.ne; j++) if (this.eg[j] === gi && !this.edead[j]) { bj = j; break; }
+      if (bj < 0) break;
+      this.killE(bj, Math.random() < 0.3 || !front ? "fling" : "pop"); this.kills++;
+    }
     this.compactE();
     g.lb.set(Math.max(0, Math.ceil(g.count)));
   }
@@ -815,6 +1050,7 @@ export class Runner {
     this.fireCannon(dt);
     // сначала защитники / армия: сходятся в линию и рубятся
     if (F.grp && !F.grp.done) {
+      this.ranged(F.grp, dt);
       const g = F.grp, Rp = SPC * Math.sqrt(Math.max(1, this.np)) + 0.25, pf = this.d + Rp * this.sd * 0.6, ef = g.d - g.R * 0.65;
       if (!F.contact) {
         if (ef - pf < 18) g.charge = true;
@@ -836,10 +1072,10 @@ export class Runner {
     if (gap > 0.3) { this.updateBossIdle(dt); return C.speed * 0.8; }
     if (!F.contact) { F.contact = true; this.slowT = 0.8; this.eng.shake(0.6); play(F.kind === "boss" ? "roar2" : "stonehit", { vol: 0.8 }); T.haptic("impact", "heavy"); }
     // размен: наши бойцы бьют, великан/стрелы косят
-    const cp = this.count;
+    const cp = this.powNow();
     const rate = (6 + 0.35 * Math.min(cp, F.hp)) * dt;
-    F.hp -= rate * this.atk;
-    F.pend += rate / this.hpm;
+    F.hp -= rate * this.atk * weaponMul(this.weapon, { kind: F.kind }, this.mastery);
+    F.pend += rate / this.hpm * this.defMul();
     if (F.kind === "boss") this.bossFight(dt); else this.castleFight(dt);
     if (Math.random() < 0.7) this.parts.burst((Math.random() - 0.5) * 3, 1 + Math.random() * 2, -(F.bd - 1.5), 2, 0xffe08a, 4, 0.1, 3);
     if (this.t - this.sndT > 0.08) { this.sndT = this.t; play(F.kind === "boss" ? (Math.random() < 0.5 ? "hit" : "bone") : "stonehit", { vol: 0.45, gap: 0.06 }); }
@@ -861,11 +1097,8 @@ export class Runner {
     if (F.swing <= 0) {
       F.swing = 1.25;
       // удар: улетает накопленное
-      let n = F.pend; F.pend = 0;
-      const rp = this.repP(); let killed = 0;
-      while (n >= rp && this.np > 0) { n -= rp; let bi = -1, bd = -1e9; for (let s = 0; s < 6; s++) { const i = (Math.random() * this.np) | 0; if (!this.dead[i] && this.ud[i] > bd) { bd = this.ud[i]; bi = i; } } if (bi < 0) break; this.killP(bi, "fling", (Math.random() - 0.5) * 14, 9 + Math.random() * 6); killed++; }
-      F.pend += n;
-      if (killed) this.compact();
+      const n = F.pend; F.pend = 0;
+      this.losePower(n, "fling", (Math.random() - 0.5) * 14, 9 + Math.random() * 6);
       this.eng.shake(0.7); play("heavy", { vol: 0.9 }); play("die", { vol: 0.4, gap: 0.2 }); T.haptic("impact", "heavy");
       this.parts.dust(0, -(F.bd - 2.5), 16, 1.0); this.parts.ring(0, -(F.bd - 2.5), 0.6, 5, 0.5, 0xffe2b0, 0.1);
       this.parts.burst(0, 0.2, -(F.bd - 2), 20, 0xcfc6b8, 7, 0.22, 3);
@@ -877,9 +1110,8 @@ export class Runner {
   castleFight(dt) {
     const F = this.final;
     // бойцы ломятся в ворота и тают; лучники с башен
-    let n = F.pend; const rp = this.repP(); let killed = 0;
-    while (n >= rp && this.np > 0) { n -= rp; let bi = -1, bd = -1e9; for (let s = 0; s < 6; s++) { const i = (Math.random() * this.np) | 0; if (!this.dead[i] && this.ud[i] > bd) { bd = this.ud[i]; bi = i; } } if (bi < 0) break; this.killP(bi, Math.random() < 0.3 ? "fling" : "pop", (Math.random() - 0.5) * 6, 3); killed++; }
-    F.pend = n; if (killed) { this.compact(); this.hud.count(Math.round(this.count)); }
+    const n = F.pend; F.pend = 0;
+    if (this.losePower(n, null, (Math.random() - 0.5) * 6, 3)) this.hud.count(Math.round(this.count));
     F.arrowT -= dt;
     if (F.arrowT <= 0) { F.arrowT = 0.5; play("arrow", { vol: 0.4, gap: 0.2 }); }
     F.door.position.x = Math.sin(this.t * 40) * 0.08 * (1 - F.hp / F.max);
@@ -912,12 +1144,13 @@ export class Runner {
     const i = Math.floor((this.d - this.stairsD) / 2);
     if (this.d < this.stairsD) return RUN_CFG.speed;
     if (i > this.stair && i < 10) {
-      const need = this.stepCost[i];
-      if (this.count + 0.01 < need) { this.finishStairs(); return 0; }
-      this.stair = i; this.mult = i + 1;
-      this.count -= need;
+      const need = this.stepCost[i], pw = this.powNow();
+      if (pw + 0.01 < need) { this.finishStairs(); return 0; }
+      this.stair = i; this.mult = RUN_CFG.stair[i];
+      const kk = Math.max(0, 1 - need / pw), before = this.count;
+      for (const t of TYPES) this.comp[t] *= kk;
       // ставим бойцов на ступеньку
-      let show = Math.min(Math.ceil(need / this.repP()), this.np, 60);
+      let show = Math.min(Math.max(1, Math.ceil((before - compCount(this.comp)) / this.repP())), this.np, 60);
       const P = this.P, K = this.Park;
       K.parkN = K.parkN || 0;
       for (let s = 0; s < show && K.parkN < K.cap; s++) {
@@ -928,17 +1161,17 @@ export class Runner {
       this.syncUnits(false);
       play("select", { rate: 0.8 + i * 0.12, vary: false, vol: 0.8 }); play("coin", { vol: 0.5 });
       T.haptic("impact", "medium");
-      this.hud.float("×" + (i + 1), "gold");
+      this.hud.float("×" + String(RUN_CFG.stair[i]).replace(".", ","), "gold");
       this.parts.burst(0, 0.55 * (i + 1) + 0.5, -(this.stairsD + i * 2 + 1), 14, new THREE.Color().setHSL(i / 10 * 0.8, 0.8, 0.6).getHex(), 6, 0.15, 6, 12);
       this.hud.count(Math.round(this.count));
-      if (i === 9) { this.mult = 10; this.topT = this.t + 0.5; }
+      if (i === 9) { this.topT = this.t + 0.5; }
     }
     if (this.topT && this.t > this.topT) { this.topT = 0; this.finishStairs(); return 0; }
     return i >= 10 ? 0 : RUN_CFG.speed * 0.6;
   }
   finishStairs() {
     if (this.phase === "done") return;
-    this.mult = Math.max(1, this.mult);
+    this.mult = Math.max(1, this.mult || 1);
     this.phase = "done";
     const coins = Math.round((RUN_CFG.coinsBase + RUN_CFG.coinsPerLv * this.n) * this.mult * (1 + RUN_CFG.incK * (this.up.inc || 0)));
     this.result = { win: true, mult: this.mult, coins, kills: Math.round(this.kills), max: Math.round(this.maxCount) };
@@ -956,15 +1189,39 @@ export class Runner {
     setTimeout(() => this.hud.end(this.result), 1300);
   }
   // ---------- бот для автотестов и демо ----------
+  // skilled — лучшие ворота с учётом стрельбы, лучшее оружие против финала, бочки, обход ловушек; random — рулит наугад
   autoSteer() {
     if (this.phase !== "run") return;
     const hw = this.roadAt(this.d + 4).hw, R0 = SPC * Math.sqrt(Math.max(1, this.np)) + 0.25;
+    if (this.autoKind === "random") {
+      this.rndT = (this.rndT || 0) - 1 / 30;
+      if (this.rndT <= 0) { this.rndT = 0.5 + Math.random() * 0.9; this.rndX = (Math.random() * 2 - 1) * hw; }
+      this.want = lerp(this.want, this.rndX, 0.2); this.dragT += 0.05; return;
+    }
     const side = (this.autoSide = this.autoSide || (Math.random() < 0.5 ? -1 : 1));
     let target = this.cx, best = 1e9;
     const consider = (dist, x) => { if (dist > -2 && dist < best) { best = dist; target = x; } };
-    // ворота: лучшая створка
-    const g = this.items.find((it) => it.panels && !it.used && it.d > this.d - 1 && it.d - this.d < 30 && (!it.lc || Math.sign(it.lc) === side));
-    if (g) { let bk = -1, bv = -1; g.panels.forEach((p, k) => { const v = applyGate(Math.round(this.count), p.v); if (v > bv) { bv = v; bk = k; } }); consider(g.d - this.d + 6, (g.lc || 0) + (g.off || 0) + (-g.tot / 2 + g.W * (bk + 0.5))); }
+    const rate = shotRate(this.count, this.comp.archer, this.up.shots), spd = RUN_CFG.speed;
+    // ворота и стойки с оружием: лучшая створка (ворота «↑» — с учётом того, что успеем настрелять)
+    const g = this.items.find((it) => it.panels && !it.used && it.d > this.d - 1 && it.d - this.d < 34 && (!it.lc || Math.sign(it.lc) === side));
+    if (g) {
+      let bk = 0, bv = -1;
+      const vs = { kind: this.def.f === "army" ? "army" : this.def.f, mix: this.def.mix };
+      g.panels.forEach((p, k) => {
+        let v;
+        if (g.t === "weapon") v = weaponMul(p.w, vs, this.mastery) * (p.w === "shield" ? 1.04 : 1);
+        else { const left = Math.max(0, (g.d - this.d - 2) / spd); const pg = p.g0.grow ? grownGate(p.g0, p.hits + rate * left * 0.75, p.g0.N) : p.g; v = compPower(applyGateComp(cloneComp(this.comp), pg), this.cards); }
+        if (v > bv) { bv = v; bk = k; }
+      });
+      consider(g.d - this.d + 6, (g.lc || 0) + (g.off || 0) + (-g.tot / 2 + g.W * (bk + 0.5)));
+    }
+    // бочки: стоим за ней, пока успеваем разбить; вплотную — обходим
+    for (const it of this.items) {
+      if (it.t !== "barrel" || it.done || it.d < this.d || it.d - this.d > 34) continue;
+      const left = (it.d - this.d - 1) / spd;
+      if (it.d - this.d < 3.5) consider(0, it.bx > 0 ? it.bx - 1.3 - R0 : it.bx + 1.3 + R0);
+      else if (it.hp <= rate * left * 0.85) consider(it.d - this.d + 3, it.bx);
+    }
     const fk = this.items.find((it) => it.t === "fork" && it.d - this.d < 30 && it.d1 > this.d);
     if (fk) consider(fk.d - this.d, side * fk.lc);
     const c = this.cannon; if (c && this.d > c.pad.d0 - 20 && this.d < c.pad.d1) consider(c.pad.d0 - this.d, c.pad.x);
@@ -1012,7 +1269,11 @@ export class Runner {
     const R = SPC * Math.sqrt(Math.max(1, this.np)) + 0.4;
     this.eng.focus(this.cx * 0.5, -(this.d + 6));
     this.lbl.x = this.cx; this.lbl.y = 1.6 + R * 0.25; this.lbl.z = -(this.d + R * this.sd * 0.2);
-    this.lbl.set(Math.max(0, Math.round(this.count)));
+    this.lbl.set((this.lblIcon ? this.lblIcon + " " : "") + Math.max(0, Math.round(this.count)));
+    { const m = this.bulM.instanceMatrix.array; let k = 0; for (const b of this.bul) { const o = k++ * 16; m.fill(0, o, o + 16); m[o] = m[o + 5] = m[o + 10] = 1; m[o + 15] = 1; m[o + 12] = b.x; m[o + 13] = b.y; m[o + 14] = -b.d; } this.bulM.count = k; this.bulM.instanceMatrix.needsUpdate = true; }
+    { const am = this.arrM, m4 = this._m4 || (this._m4 = new THREE.Matrix4()), q = this._q || (this._q = new THREE.Quaternion()), p = this._p || (this._p = new THREE.Vector3()), e3 = this._e3 || (this._e3 = new THREE.Euler()), one = this._one || (this._one = new THREE.Vector3(1, 1, 1)); let k = 0;
+      for (const a of this.arrows) { if (k >= 80) break; const f = Math.min(1, a.t / a.T); p.set(lerp(a.x0, a.x1, f), 1 + Math.sin(f * Math.PI) * 3, -lerp(a.d0, a.d1, f)); e3.set(-Math.cos(f * Math.PI) * 0.9 * Math.sign(a.d1 - a.d0), Math.atan2(a.x1 - a.x0, -(a.d1 - a.d0)), 0); q.setFromEuler(e3); m4.compose(p, q, one); am.setMatrixAt(k++, m4); }
+      am.count = k; am.instanceMatrix.needsUpdate = true; }
     this.lbl.on = this.np > 0 && this.phase !== "done";
     this.updateCamera(dt);
     this.labels.update(this.eng.W, this.eng.H);

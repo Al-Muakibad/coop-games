@@ -16,6 +16,7 @@
 - «Fantasy Sound Effects (Tinysized SFX)» — https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx   (perk, upgrade, levelup, bell)
 - «25 CC0 bang / firework SFX» — https://opengameart.org/content/25-cc0-bang-firework-sfx   (cannon, boom, boom2)
 - gong — из «80 CC0 RPG SFX»
+- hurt, magic, heal, potion (добавлены в v2) — из той же подборки Аванпоста (../../oborona/audio, источники перечислены в ../../oborona/assets/LICENSE.txt: «80 CC0 RPG SFX», «100 CC0 SFX», «Fantasy Sound Effects (Tinysized SFX)»)
 
 Музыка (CC0, OpenGameArt.org):
 - m_battle2 — «Medieval: Battle», RandomMind — https://opengameart.org/content/medieval-battle
