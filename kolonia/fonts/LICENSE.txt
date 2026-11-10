@@ -1,0 +1,3 @@
+Nunito (c) The Nunito Project Authors — SIL Open Font License 1.1
+Comfortaa (c) The Comfortaa Project Authors — SIL Open Font License 1.1
+Files: Google Fonts subsets (cyrillic, latin), woff2. License text: https://openfontlicense.org
