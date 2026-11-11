@@ -47,7 +47,7 @@ export const isFixed = (k) => CARDS[k] && !!CARDS[k].fixed;
 export function newGame(opt) {
   opt = opt || {};
   const G = {
-    v: 2, rs: (opt.seed >>> 0) || 12345, nid: 1, day: 1, t: 0, ph: "day", nt: 0, spd: 1, hold: 0,
+    v: 2, cid: ((opt.seed >>> 0) || 12345).toString(36) + Date.now().toString(36).slice(-4), rs: (opt.seed >>> 0) || 12345, nid: 1, day: 1, t: 0, ph: "day", nt: 0, spd: 1, hold: 0,
     cards: {}, fights: {}, nfid: 1, kn: {}, q: 0, won: 0, lost: 0, endless: 0, bridge: 0,
     open: { home: 1 }, f: {}, bought: {}, ev: [], twr: 0, ht: {}, season: 0,
     pl: [{ role: (opt.roles && opt.roles[0]) || "forester" }, { role: (opt.roles && opt.roles[1]) || "master" }],

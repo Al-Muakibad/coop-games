@@ -125,7 +125,11 @@
     function handle(buf) {
       let m; try { m = JSON.parse(typeof buf === "string" ? buf : buf.toString()); } catch (_) { return; }
       if (!m || m.f === me.id) return;
-      if (peer && m.f !== peer.id) { if (m.t === "hi") relay(pack("full", { to: m.f })); return; }
+      if (peer && m.f !== peer.id) {
+        // вернулся тот же игрок с новой вкладкой: гость принимает нового хозяина комнаты сразу, хозяин — если старый гость уже молчит
+        if (m.t === "hi" && ((!isHost && m.h) || (isHost && Date.now() - peerSeen > 3000))) { const p = peer; peer = null; if (p2p) { p2p.close(); p2p = null; } emit("peer-left", p); }
+        else { if (m.t === "hi") relay(pack("full", { to: m.f })); return; }
+      }
       if (m.t === "full") { if (m.d && m.d.to === me.id) emit("full"); return; }
       if (!peer && (m.t === "hi" || m.t === "ping")) {
         if (!isHost && !m.h) return;              // гость ждёт именно хозяина комнаты
@@ -168,7 +172,7 @@
       if (peer) send("ping", { ts: Date.now() }); else relay(pack("ping"));
       // прямой канал молчит дольше 8 с, хотя открыт, — закрываем; хозяин потом попробует открыть новый
       if (p2p && p2p.open && Date.now() - p2pIn > 8000) { p2p.close(); p2p = null; emit("link", "relay"); }
-      if (peer && isHost && (!p2p || p2p.closed) && Date.now() - p2pTry > 30000 && Date.now() - peerSeen < 4000) startP2P();
+      if (peer && isHost && (!p2p || p2p.closed) && Date.now() - p2pTry > 20000 && Date.now() - peerSeen < 4000) startP2P();
       if (peer && ++hbN % 15 === 0 && window.Stats) Stats.event("net_rtt", { game, rtt, link: p2p && p2p.open ? "p2p" : "relay" });
       if (peer && Date.now() - peerSeen > 12000) { const p = peer; peer = null; if (p2p) { p2p.close(); p2p = null; } emit("peer-left", p); }
     }, 2000);

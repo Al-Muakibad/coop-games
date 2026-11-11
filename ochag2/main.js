@@ -24,7 +24,7 @@ const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (
 /* ---------- состояние ---------- */
 let G = null, mode = "menu", me = 0, room = null, hs = null, gs = null, bot = null, botSkill = "good";
 let partner = { name: "", online: false, cur: null, bot: false };
-let waitPause = false, lastSave = 0;
+let waitPause = false, lastSave = 0, hf = 0;
 let started = false, ended = false, simAcc = 0, saveT = 0, hudT = 0, clock = 0, menuG = null, pendingRoles = null;
 let drag = null, pend = null, ghost = null, hiT = null, sellHot = false;
 const pings = [];
@@ -154,40 +154,50 @@ function buy(k) {
 }
 
 /* ---------- режимы ---------- */
+// подписи сохранений: что это за хутор
+const SLOT_UI = {
+  host: (p) => [`👥 ${L("Продолжить вдвоём")}${p.meta.partner ? " · " + esc(p.meta.partner) : ""}`, L("Твой хутор, ты хозяин")],
+  guest: (p) => [`🏡 ${L("Вернуться в хутор")}${p.meta.partner ? " " + esc(p.meta.partner) : " " + L("друга")}`, L("Ты был гостем")],
+  bot: () => [`🤖 ${L("Продолжить с ботом")}`, ""],
+  solo: () => [`🙋 ${L("Продолжить одному")}`, ""],
+};
 function showMenu() {
   mode = "menu"; started = false; ended = false; G = null; drag = null; partner = { name: "", online: false, cur: null }; bot = null; waitPause = false;
   closeConfirm(false); clearPairs(); netNote("");
   hideAll(); $("top").classList.add("hidden"); $("bot").classList.add("hidden");
   $("menu").classList.remove("hidden"); $("title").classList.remove("hidden");
-  const co = SV.peek("coop"), so = SV.peek("solo");
+  const sv = {}; for (const k of SV.SLOTS) sv[k] = SV.peek(k);
   const p = $("menup");
+  const resBtn = (k) => { const q = sv[k]; if (!q) return ""; const [a, b] = SLOT_UI[k](q); return `<button class="b" id="m-r-${k}" data-slot="${k}"><span>▶</span><span class="t">${a}<small>${b ? b + " · " : ""}${L("День")} ${q.day} · ${L("мост")} ${q.bridge}/5</small></span></button>`; };
   p.innerHTML = `
     <button class="b primary" id="m-coop"><span>👥</span><span class="t">${L("Играть вдвоём")}<small>${L("Ссылка другу — каждый со своего телефона")}</small></span></button>
-    ${co ? `<button class="b" id="m-res"><span>▶</span><span class="t">${L("Продолжить общий хутор")}<small>${L("День")} ${co.day} · ${L("мост")} ${co.bridge}/5</small></span></button>` : ""}
+    ${resBtn("host")}${resBtn("guest")}
     <div class="b2"><button class="b" id="m-bot"><span>🤖</span><span class="t">${L("С ботом")}</span></button><button class="b" id="m-solo"><span>🙋</span><span class="t">${L("Одному")}</span></button></div>
-    ${so ? `<button class="b" id="m-sres"><span>▶</span><span class="t">${L("Продолжить одиночную")}<small>${L("День")} ${so.day} · ${L("мост")} ${so.bridge}/5</small></span></button>` : ""}
+    ${resBtn("bot")}${resBtn("solo")}
     <div class="b2"><button class="b ghost" id="m-help">❓ ${L("Как играть")}</button><button class="b ghost" id="m-games">🎮 ${L("Другие игры")}</button></div>`;
-  // новая игра поверх сохранения — только после вопроса (раньше случайный тап стирал хутор при первом автосохранении)
-  const fresh = (have, slot, go) => () => {
-    if (!have) return go();
-    dialog(`<h2>${L("Начать заново?")}</h2><p>${L("Сохранённый хутор")} (${L("день")} ${have.day}, ${L("мост")} ${have.bridge}/5) ${L("будет заменён новым.")}</p>
-      <button class="b primary" id="nw-res">▶ ${L("Продолжить сохранённый")}</button><button class="b" id="nw-go">${L("Да, начать новый")}</button><button class="b ghost" id="nw-x">${L("Назад")}</button>`);
-    $("nw-res").onclick = () => { hideDlg(); slot === "coop" ? resumeMenu() : resumeSolo(); };
-    $("nw-go").onclick = () => { hideDlg(); go(); };
-    $("nw-x").onclick = () => hideDlg();
-  };
-  $("m-coop").onclick = fresh(co, "coop", () => hostGame(null));
-  $("m-bot").onclick = fresh(so, "solo", () => rolesLocal("bot", null));
-  $("m-solo").onclick = fresh(so, "solo", () => rolesLocal("solo", null));
-  if (co) $("m-res").onclick = () => resumeMenu();
-  if (so) $("m-sres").onclick = () => resumeSolo();
+  $("m-coop").onclick = () => guardSlot("host", null, () => hostGame(null, 0));
+  $("m-bot").onclick = () => guardSlot("bot", null, () => rolesLocal("bot", null));
+  $("m-solo").onclick = () => guardSlot("solo", null, () => rolesLocal("solo", null));
+  for (const k of SV.SLOTS) if (sv[k]) $("m-r-" + k).onclick = () => resumeSlot(k);
   $("m-help").onclick = () => showHelp();
   $("m-games").onclick = () => { location.href = "../"; };
   music("m_build");
   // localStorage мог очиститься (Telegram так делает), а в облаке сохранение есть — покажем «Продолжить»
-  if (!co || !so) Promise.all([co ? 0 : SV.probe("coop"), so ? 0 : SV.probe("solo")]).then(([a, b]) => { if ((a || b) && mode === "menu" && !started && $("dlg").classList.contains("hidden")) showMenu(); });
+  const miss = SV.SLOTS.filter((k) => !sv[k]);
+  if (miss.length) Promise.all(miss.map((k) => SV.probe(k))).then((r) => { if (r.some(Boolean) && mode === "menu" && !started && $("dlg").classList.contains("hidden") && $("roles").classList.contains("hidden")) showMenu(); });
 }
-// загрузка сохранения: облако может отвечать до 2,5 с — показываем, что идёт загрузка, и не даём тапнуть «новую игру»
+// новая (или другая) игра в занятый слот — только после вопроса
+function guardSlot(slot, cid, go) {
+  const have = SV.peek(slot);
+  if (!have || (cid && have.cid === cid)) return go();
+  const [a] = SLOT_UI[slot](have);
+  dialog(`<h2>${L("Заменить сохранение?")}</h2><p>${L("Там уже есть хутор")}: <b>${a}</b> (${L("день")} ${have.day}, ${L("мост")} ${have.bridge}/5). ${L("Он будет заменён.")}</p>
+    <button class="b primary" id="nw-res">▶ ${L("Продолжить сохранённый")}</button><button class="b" id="nw-go">${L("Да, заменить")}</button><button class="b ghost" id="nw-x">${L("Назад")}</button>`);
+  $("nw-res").onclick = () => { hideDlg(); resumeSlot(slot); };
+  $("nw-go").onclick = () => { hideDlg(); go(); };
+  $("nw-x").onclick = () => hideDlg();
+}
+// загрузка сохранения: облако может отвечать до 2,5 с — показываем, что идёт загрузка
 async function loadSlot(slot) {
   dialog(`<h2>${L("Загружаем хутор…")}</h2><p class="lb-dots"></p>`, true);
   const s = await SV.load(slot);
@@ -195,35 +205,43 @@ async function loadSlot(slot) {
   if (!s) { toast(L("Сохранение не найдено"), "bad"); showMenu(); return null; }
   return s;
 }
-async function resumeSolo() {
-  const s = await loadSlot("solo"); if (!s) return;
-  const fam = s.meta.me === 1 ? 1 : 0;
-  start(s.G.solo ? "solo" : "bot", s.G, fam);
-}
-async function resumeMenu() {
-  const s = await loadSlot("coop"); if (!s) return;
-  const m = s.meta || {}, wasGuest = m.from === "guest", rid = m.room;
-  dialog(`<h2>${L("Общий хутор")}</h2><p>${L("День")} ${s.G.day} · ${L("мост")} ${s.G.bridge}/5.</p>
-    ${rid ? `<button class="b primary" id="r-same">▶ ${wasGuest ? L("Вернуться к напарнику") : L("Продолжить — друг подключится сам")}</button>` : ""}
-    <button class="b ${rid ? "" : "primary"}" id="r-f">👥 ${L("Новая ссылка другу")}${wasGuest ? `<small>${L("ты поведёшь южную семью")}</small>` : ""}</button>
-    <button class="b" id="r-b">🤖 ${L("Доиграть с ботом")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`);
-  if (rid) $("r-same").onclick = () => { hideAll(); if (wasGuest) joinGame(rid, s.G); else rehost(s.G, rid); };
-  $("r-f").onclick = () => { hideAll(); hostGame(s.G); };
-  $("r-b").onclick = () => { hideAll(); start("bot", s.G, wasGuest ? 1 : 0); };
+async function resumeSlot(slot) {
+  const s = await loadSlot(slot); if (!s) return;
+  const m = s.meta || {}, fam = m.me === 1 ? 1 : 0;
+  if (slot === "solo") return start("solo", s.G, fam);
+  if (slot === "bot") { s.G.solo = 0; return start("bot", s.G, fam); }
+  const rid = m.room, gfam = slot === "guest" ? (m.me === 0 ? 0 : 1) : fam;
+  const toBot = () => guardSlot("bot", s.G.cid, () => { hideAll(); s.G.solo = 0; start("bot", s.G, gfam); });
+  if (slot === "host") {
+    dialog(`<h2>${L("Твой общий хутор")}</h2><p>${L("День")} ${s.G.day} · ${L("мост")} ${s.G.bridge}/5${m.partner ? " · " + L("с") + " " + esc(m.partner) : ""}.</p>
+      ${rid ? `<button class="b primary" id="r-same">▶ ${L("Продолжить")}<small>${L("Друг подключится сам: пусть нажмёт «Вернуться в хутор» или откроет твою ссылку")}</small></button>` : ""}
+      <button class="b ${rid ? "" : "primary"}" id="r-f">📨 ${L("Новая ссылка другу")}</button>
+      <button class="b" id="r-b">🤖 ${L("Доиграть с ботом")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`);
+    if (rid) $("r-same").onclick = () => { hideAll(); rehost(s.G, rid, fam); };
+    $("r-f").onclick = () => { hideAll(); hostGame(s.G, fam); };
+  } else {
+    dialog(`<h2>${L("Хутор")}${m.partner ? " " + esc(m.partner) : ""}</h2><p>${L("Ты был там гостем")} · ${L("день")} ${s.G.day} · ${L("мост")} ${s.G.bridge}/5.</p>
+      ${rid ? `<button class="b primary" id="r-same">▶ ${L("Вернуться к напарнику")}<small>${L("Подождём, пока хозяин откроет хутор")}</small></button>` : ""}
+      <button class="b" id="r-f">📨 ${L("Стать хозяином этой копии")}<small>${L("Новая ссылка; ты ведёшь свою же семью")}</small></button>
+      <button class="b" id="r-b">🤖 ${L("Доиграть с ботом")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`);
+    if (rid) $("r-same").onclick = () => { hideAll(); rejoin(rid, s.G, gfam); };
+    $("r-f").onclick = () => guardSlot("host", s.G.cid, () => { hideAll(); hostGame(s.G, gfam); });
+  }
+  $("r-b").onclick = toBot;
   $("r-x").onclick = () => showMenu();
 }
 // хозяин вернулся в ту же комнату: гость, если он ещё в игре, подключится сам (у него та же ссылка)
-async function rehost(saved, rid) {
+async function rehost(saved, rid, fam) {
   hideAll(); $("title").classList.add("hidden");
   dialog(`<h2>${L("Подключаемся…")}</h2><p class="lb-dots"></p>`, true);
   let r;
   try { r = await Net.open(GAME, rid, { name: myName(), host: true }); }
-  catch (_) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); start("bot", saved, 0); return; }
-  room = r; me = 0;
+  catch (_) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); start("bot", saved, fam); return; }
+  room = r;
   partner = { name: r.peer ? r.peer.name : L("Друг"), online: !!r.peer, cur: null };
   hs = new HostSync(room, hostApi());
   saved.solo = 0;
-  start("host", saved);
+  start("host", saved, fam);
   partner.online = !!room.peer;
   St.event("o2_room", { role: "host", resume: 2 });
   if (room.peer) { hs.full(); room.send("go", {}); return; }
@@ -231,12 +249,14 @@ async function rehost(saved, rid) {
   waitDialog();
 }
 function waitDialog() {
-  dialog(`<h2>${L("Ждём напарника")}</h2><p>${L("Хутор на паузе. Если друг ещё в игре — он подключится сам. Если вышел — отправь ему ссылку.")}</p>
+  dialog(`<h2>${L("Ждём напарника")}</h2><p>${L("Хутор на паузе. Если друг ещё в игре — он подключится сам. Если вышел — пусть откроет «Вернуться в хутор» в меню или твою ссылку.")}</p>
     <button class="b primary" id="w-inv">📨 ${L("Отправить ссылку")}</button><button class="b" id="w-bot">🤖 ${L("Пусть играет бот")}</button><button class="b ghost" id="w-menu">${L("В меню")}</button>`, true);
   $("w-inv").onclick = () => { const link = Net.inviteLink(GAME, room.id); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(L("Заходи в мой хутор!"))}`); };
-  $("w-bot").onclick = () => { bot = makeBot(1, { skill: "good" }); partner.name = "🤖 " + L("Бот"); partner.bot = true; partner.online = true; if (waitPause) { waitPause = false; G.spd = 1; } hideDlg(); toast(L("Бот ведёт северную семью"), "good"); };
+  $("w-bot").onclick = () => { botFor(); if (waitPause) { waitPause = false; G.spd = 1; } hideDlg(); };
   $("w-menu").onclick = () => toMenu();
 }
+// бот берёт семью напарника
+function botFor() { bot = makeBot(1 - me, { skill: "good" }); partner.name = "🤖 " + L("Бот"); partner.bot = true; partner.online = true; toast(1 - me === 1 ? L("Бот ведёт северную семью") : L("Бот ведёт южную семью"), "good"); }
 function toMenu() { save(true); try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; bot = null; started = false; waitPause = false; showMenu(); }
 // выбор ремёсел: локально (один / бот)
 function rolesLocal(m, saved) {
@@ -250,20 +270,21 @@ function rolesLocal(m, saved) {
       ${fam(0)}${m === "solo" ? fam(1) : ""}
       <button class="b primary" id="r-go">▶ ${L("Начать")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`;
     p.querySelectorAll(".role").forEach((el) => el.onclick = () => { r[+el.dataset.f] = el.dataset.r; if (m === "bot" && +el.dataset.f === 0 && r[1] === r[0]) r[1] = ROLE_IDS.find((x) => x !== r[0] && x !== "trader"); play("select"); draw(); });
-    $("r-go").onclick = () => { hideAll(); const g = saved || S.newGame({ seed: (Math.random() * 1e9) | 0, roles: r, solo: m === "solo" }); g.pl[0].role = r[0]; g.pl[1].role = r[1]; g.solo = m === "solo" ? 1 : 0; start(m, g, saved && saved._fam || 0); };
+    $("r-go").onclick = () => { hideAll(); const g = saved || S.newGame({ seed: (Math.random() * 1e9) | 0, roles: r, solo: m === "solo" }); g.pl[0].role = r[0]; g.pl[1].role = r[1]; g.solo = m === "solo" ? 1 : 0; start(m, g, 0); };
     $("r-x").onclick = () => showMenu();
   };
   $("roles").classList.remove("hidden"); draw();
 }
-// хозяин: комната → друг зашёл → ремёсла → старт
-async function hostGame(saved) {
+// хозяин: комната → друг зашёл → ремёсла → старт. fam — какую семью ведёт хозяин (обычно южную; у бывшего гостя — свою северную)
+async function hostGame(saved, fam) {
   hideAll(); $("title").classList.add("hidden");
-  const r = await Lobby.host(GAME, { text: L("Го строить хутор вдвоём 🌉 Заходи — два берега, один мост!"), onCancel: () => showMenu(), onBot: () => rolesLocal("bot", saved) });
-  room = r; me = 0;
+  hf = fam === 1 ? 1 : 0;
+  const r = await Lobby.host(GAME, { text: L("Го строить хутор вдвоём 🌉 Заходи — два берега, один мост!"), onCancel: () => showMenu(), onBot: () => { if (saved) { saved.solo = 0; start("bot", saved, hf); } else rolesLocal("bot", null); } });
+  room = r; me = hf;
   r.off("peer"); r.off("peer-left");      // обработчики лобби больше не нужны: при переподключении окно лобби не должно всплывать поверх игры
   partner = { name: r.peer ? r.peer.name : L("Друг"), online: true, cur: null };
   const roles = saved ? [saved.pl[0].role, saved.pl[1].role] : ["forester", "master"];
-  pendingRoles = { roles, saved };
+  pendingRoles = { roles, saved, hf };
   hs = new HostSync(room, hostApi());
   St.event("o2_room", { role: "host", resume: saved ? 1 : 0 });
   rolesCoop();
@@ -272,7 +293,7 @@ function rolesCoop() {
   const isHost = mode !== "guest" && !!hs;
   const P = pendingRoles; if (!P) return;
   hideDlg();
-  const r = P.roles; const mine = isHost ? 0 : 1, other = 1 - mine;
+  const r = P.roles; const hfam = P.hf === 1 ? 1 : 0; const mine = isHost ? hfam : 1 - hfam, other = 1 - mine;
   const p = $("rolesp");
   p.innerHTML = `<h2>${L("Ремёсла семей")}</h2><p>${L("Каждый ведёт свою семью на своём берегу. Мост и тяжёлые стройки — только вдвоём.")}</p>
     <div class="who"><span style="background:${FAM[mine].c};color:#fff">${L("Ты")}: ${mine === 0 ? L("юг") : L("север")}</span><span style="background:${FAM[other].c};color:#062428">${esc(partner.name || L("Друг"))}: ${other === 0 ? L("юг") : L("север")}</span></div>
@@ -281,55 +302,72 @@ function rolesCoop() {
   p.querySelectorAll(".role").forEach((el) => el.onclick = () => {
     if (r[other] === el.dataset.r) { toast(L("Это ремесло выбрал напарник"), "bad"); return; }
     r[mine] = el.dataset.r; play("select"); haptic("select");
-    if (isHost) room.send("lob", { roles: r, name: myName(), day: P.saved ? P.saved.day : 0 }); else room.send("rl", { r: r[mine], name: myName() });
+    if (isHost) room.send("lob", { roles: r, name: myName(), day: P.saved ? P.saved.day : 0, hf: hfam }); else room.send("rl", { r: r[mine], name: myName() });
     rolesCoop();
   });
   if (isHost) {
     $("r-go").onclick = () => {
       const g = P.saved || S.newGame({ seed: (Math.random() * 1e9) | 0, roles: r });
       g.pl[0].role = r[0]; g.pl[1].role = r[1]; g.solo = 0;
-      hideAll(); start("host", g);
+      hideAll(); start("host", g, hfam);
       room.send("go", {}); hs.full();
     };
-    room.send("lob", { roles: r, name: myName(), day: P.saved ? P.saved.day : 0 });
+    room.send("lob", { roles: r, name: myName(), day: P.saved ? P.saved.day : 0, hf: hfam });
   }
   $("roles").classList.remove("hidden");
 }
 function hostApi() {
+  const pg = () => 1 - me;      // семья гостя
   return {
-    G: () => G,
+    G: () => G, fam: () => me,
     intent: (t, d) => {
-      if (t === "rl") { if (pendingRoles && !started) { if (d.r && pendingRoles.roles[0] !== d.r) pendingRoles.roles[1] = d.r; if (d.name) partner.name = d.name; rolesCoop(); } return; }
+      if (t === "rl") { if (pendingRoles && !started) { const gi = 1 - (pendingRoles.hf || 0); if (d.r && pendingRoles.roles[1 - gi] !== d.r) pendingRoles.roles[gi] = d.r; if (d.name) partner.name = d.name; rolesCoop(); } return; }
       if (!G || !started) return;
-      if (t === "pk") { const r = S.pickI(G, 1, d.i); if (r.err) room.send("nk", { i: d.i, w: r.err }); else { const c = G.cards[d.i]; if (c && d.x != null) { c.x = d.x; c.y = d.y; } } }
-      else if (t === "mv") { S.moveI(G, 1, d.i, d.x, d.y); partner.cur = { x: d.x, y: d.y + CH / 2, t: clock, down: 1 }; }
-      else if (t === "dr") { const r = S.dropI(G, 1, d.i, d.x, d.y, d.t); if (r.err) room.send("nk", { i: d.i, w: r.err }); }
-      else if (t === "by") { const c = S.buyI(G, 1, d.k, d.x, d.y); if (!c) room.send("nk", { w: "coins" }); }
-      else if (t === "op") S.openI(G, 1, d.i);
-      else if (t === "sp") { S.speedI(G, 1, d.s); }
+      if (t === "pk") { const r = S.pickI(G, pg(), d.i); if (r.err) room.send("nk", { i: d.i, w: r.err }); else { const c = G.cards[d.i]; if (c && d.x != null) { c.x = d.x; c.y = d.y; } } }
+      else if (t === "mv") { S.moveI(G, pg(), d.i, d.x, d.y); partner.cur = { x: d.x, y: d.y + CH / 2, t: clock, down: 1 }; }
+      else if (t === "dr") { const r = S.dropI(G, pg(), d.i, d.x, d.y, d.t); if (r.err) room.send("nk", { i: d.i, w: r.err }); }
+      else if (t === "by") { const c = S.buyI(G, pg(), d.k, d.x, d.y); if (!c) room.send("nk", { w: "coins" }); }
+      else if (t === "op") S.openI(G, pg(), d.i);
+      else if (t === "sp") { S.speedI(G, pg(), d.s); }
     },
     cursor: (d) => { partner.cur = { x: d.x, y: d.y, t: clock, down: d.d }; },
-    ping: (d) => addPing(d.x, d.y, d.k, 1, true),
-    emote: (d) => showEmote(d.e, 1, true),
+    ping: (d) => addPing(d.x, d.y, d.k, pg(), true),
+    emote: (d) => showEmote(d.e, pg(), true),
     peer: (on, p) => partnerConn(on, p),
     resync: () => { if (started) netNote(L("Связь с напарником восстановлена"), "good"); },
   };
 }
-// гость: вход по ссылке
-async function joinGame(id, copy) {
+// гость возвращается в комнату хозяина: ждём, сколько нужно (хозяин может нажать «Продолжить» позже)
+async function rejoin(rid, copy, fam) {
+  hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden");
+  let r = null, gone = false;
+  const cancel = (fn) => () => { gone = true; try { r && r.close(); } catch (_) {} hideDlg(); fn(); };
+  dialog(`<h2>${L("Ждём хозяина")}</h2><p class="lb-dots">${L("Попроси напарника открыть меню и нажать «Продолжить вдвоём» → «Продолжить»")}</p>
+    <button class="b" id="rj-bot">🤖 ${L("Доиграть с ботом")}</button><button class="b ghost" id="rj-x">${L("В меню")}</button>`, true);
+  $("rj-bot").onclick = cancel(() => guardSlot("bot", copy.cid, () => { copy.solo = 0; start("bot", copy, fam); }));
+  $("rj-x").onclick = cancel(() => showMenu());
+  try { r = await Net.open(GAME, rid, { name: myName() }); } catch (_) { if (!gone) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); showMenu(); } return; }
+  if (gone) { try { r.close(); } catch (_) {} return; }
+  if (!r.peer) await new Promise((res) => r.on("peer", () => res()));
+  if (gone) return;
+  hideDlg();
+  joinGame(rid, copy, r);
+}
+// гость: вход по ссылке (или с уже открытой комнатой из rejoin)
+async function joinGame(id, copy, opened) {
   hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden"); mode = "guest"; me = 1;
-  // своя копия хутора (если хозяина нет) — доиграть с ботом за свою (северную) семью
-  const r = await Lobby.join(GAME, id, { onCancel: () => { mode = "menu"; showMenu(); }, onBot: () => { mode = "menu"; if (copy) start("bot", copy, 1); else rolesLocal("bot", null); } });
+  const r = opened || await Lobby.join(GAME, id, { onCancel: () => { mode = "menu"; showMenu(); }, onBot: () => { mode = "menu"; if (copy) { copy.solo = 0; start("bot", copy, 1); } else rolesLocal("bot", null); } });
   room = r; r.off("peer"); r.off("peer-left"); partner = { name: r.peer ? r.peer.name : L("Хозяин"), online: true, cur: null };
-  St.event("o2_room", { role: "guest" });
+  St.event("o2_room", { role: "guest", resume: opened ? 1 : 0 });
   gs = new GuestSync(room, {
-    full: (g) => { if (!started) { G = g; start("guest", g); } else { G = g; ghost = null; } },
+    // семья гостя — противоположная хозяйской (хозяин сообщает свою в снимке)
+    full: (g, d) => { const gf = d && d.hf === 1 ? 0 : 1; if (!started) { G = g; start("guest", g, gf); } else { G = g; ghost = null; if (me !== gf) me = gf; } },
     events: (list) => onEvents(list),
-    nack: (d) => { if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "fcoin" ? L("Это монеты напарника — тратит их только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
+    nack: (d) => { gs.release(true); if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "fcoin" ? L("Это монеты напарника — тратит их только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
     cursor: (d) => { partner.cur = { x: d.x, y: d.y, t: clock, down: d.d, bot: d.b }; },
-    ping: (d) => addPing(d.x, d.y, d.k, 0, true),
-    emote: (d) => showEmote(d.e, 0, true),
-    lob: (d) => { if (started) return; partner.name = d.name || partner.name; pendingRoles = { roles: d.roles.slice(), saved: d.day ? { day: d.day } : null }; rolesCoop(); },
+    ping: (d) => addPing(d.x, d.y, d.k, 1 - me, true),
+    emote: (d) => showEmote(d.e, 1 - me, true),
+    lob: (d) => { if (started) return; partner.name = d.name || partner.name; pendingRoles = { roles: d.roles.slice(), saved: d.day ? { day: d.day } : null, hf: d.hf || 0 }; me = d.hf === 1 ? 0 : 1; rolesCoop(); },
     go: () => {},
     peer: (on, p) => partnerConn(on, p),
     resync: () => { if (started) netNote(L("Связь восстановлена — сверяем хутор"), "good"); },
@@ -343,7 +381,7 @@ async function joinGame(id, copy) {
 /* ---------- старт ---------- */
 function start(m, g, fam) {
   mode = m; G = g; started = true; ended = false; simAcc = 0; drag = null; ghost = null; waitPause = false; lastSave = performance.now();
-  me = m === "guest" ? 1 : fam === 1 && m !== "host" ? 1 : 0;
+  me = fam === 1 ? 1 : fam === 0 ? 0 : m === "guest" ? 1 : 0;
   for (const id in G.cards) if (G.cards[id].drag) G.cards[id].drag = 0;
   if (m === "bot") { bot = makeBot(1 - me, { skill: botSkill, seed: (Math.random() * 1e6) | 0 }); partner = { name: "🤖 " + L("Бот"), online: true, cur: null, bot: true }; }
   else bot = null;
@@ -372,7 +410,7 @@ let leftT = 0;
 function partnerConn(on, p) {
   if (on) {
     partner.online = true; if (p && p.name) partner.name = p.name;
-    if (started && mode === "host") { hs.full(); room.send("go", {}); if (bot) { bot = null; partner.bot = false; toast(L("Напарник вернулся — бот уступил место"), "good"); } else toast(L("Напарник снова с нами"), "good"); S.releaseAll(G, 1); if (waitPause) { waitPause = false; G.spd = 1; } }
+    if (started && mode === "host") { hs.full(); room.send("go", {}); if (bot) { bot = null; partner.bot = false; toast(L("Напарник вернулся — бот уступил место"), "good"); } else toast(L("Напарник снова с нами"), "good"); S.releaseAll(G, 1 - me); if (waitPause) { waitPause = false; G.spd = 1; } }
     if (started && mode === "guest") toast(L("Связь с хозяином восстановлена"), "good");
     if (!started && mode === "host" && pendingRoles) rolesCoop();
     hideDlg();
@@ -381,26 +419,27 @@ function partnerConn(on, p) {
   partner.online = false; partner.cur = null; leftT = clock;
   if (!started) { toast(L("Друг отключился"), "bad"); return; }
   if (mode === "host") {
-    S.releaseAll(G, 1);
+    S.releaseAll(G, 1 - me);
     St.event("o2_partner_left", { day: G.day });
     dialog(`<h2>${L("Напарник отключился")}</h2><p>${L("Связь пропала. Если друг вернётся по той же ссылке — продолжит за свою семью. Пока можно отдать его семью боту.")}</p>
       <button class="b primary" id="pl-bot">🤖 ${L("Пусть играет бот")}</button><button class="b" id="pl-wait">⏳ ${L("Ждать друга")}</button>`, true);
-    $("pl-bot").onclick = () => { bot = makeBot(1, { skill: "good" }); partner.name = "🤖 " + L("Бот"); partner.bot = true; hideDlg(); toast(L("Бот ведёт северную семью"), "good"); };
+    $("pl-bot").onclick = () => { botFor(); hideDlg(); };
     $("pl-wait").onclick = () => { hideDlg(); G.spd = 0; waitPause = true; toast(L("Пауза, пока друг не вернётся. Он подключится сам"), ""); };
   } else if (mode === "guest") {
     St.event("o2_host_left", { day: G.day });
-    SV.save("coop", G, { from: "guest" }, true);
+    save(true);
     dialog(`<h2>${L("Хозяин отключился")}</h2><p>${L("Хутор сохранён у тебя. Можно подождать или продолжить без него — с ботом или одному за обе семьи.")}</p>
       <button class="b primary" id="hl-bot">🤖 ${L("Продолжить с ботом")}</button><button class="b" id="hl-solo">🙋 ${L("Одному за обе семьи")}</button><button class="b ghost" id="hl-wait">⏳ ${L("Подождать")}</button>`, true);
     const takeover = (solo) => {
       hideDlg(); try { room && room.close(); } catch (_) {}
       const g = S.deserialize(S.serialize(G)); g.solo = solo ? 1 : 0;
       for (const id in g.cards) g.cards[id].drag = 0;
-      mode = solo ? "solo" : "bot"; me = 1; G = g; hs = null; gs = null; room = null;
-      bot = solo ? null : makeBot(0, { skill: "good" });
+      mode = solo ? "solo" : "bot"; G = g; hs = null; gs = null; room = null;
+      bot = solo ? null : makeBot(1 - me, { skill: "good" });
       partner = solo ? { name: "", online: false } : { name: "🤖 " + L("Бот"), online: true, bot: true };
       $("partner").style.display = solo ? "none" : "";
-      toast(solo ? L("Теперь обе семьи — твои") : L("Бот ведёт южную семью"), "good");
+      toast(solo ? L("Теперь обе семьи — твои") : 1 - me === 0 ? L("Бот ведёт южную семью") : L("Бот ведёт северную семью"), "good");
+      save(true);
     };
     $("hl-bot").onclick = () => takeover(false);
     $("hl-solo").onclick = () => takeover(true);
@@ -410,16 +449,19 @@ function partnerConn(on, p) {
 
 /* ---------- касания ---------- */
 const ptrs = new Map();
-let gest = null, lastTap = 0;
+let gest = null, lastTap = 0, lpT = 0;
+// долгое нажатие (метка «Сюда!») — только один палец, пустой стол, палец почти не двигался 650 мс
+const lpCancel = () => { if (lpT) { clearTimeout(lpT); lpT = 0; } };
 canvas.addEventListener("pointerdown", (e) => {
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() });
+  lpCancel();
   if (ptrs.size === 2) { if (drag) endDrag(e, true); pend = null; const [a, b] = [...ptrs.values()]; gest = { d: Math.hypot(a.x - b.x, a.y - b.y), dist: cam.dist, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; return; }
   if (ptrs.size > 2) return;
   if (!started || ended || mode === "menu") { gest = { pan: 1 }; return; }
   const c = hitCard(e.clientX, e.clientY);
   if (c && e.button !== 2) { pend = { id: c.id, x: e.clientX, y: e.clientY, t: performance.now() }; }
-  else { gest = { pan: 1, lp: setTimeout(() => longPress(e.clientX, e.clientY), 520) }; }
+  else { gest = { pan: 1 }; const pid = e.pointerId; lpT = setTimeout(() => { lpT = 0; const q = ptrs.get(pid); if (ptrs.size === 1 && q && !drag && !pend && Math.hypot(q.x - q.x0, q.y - q.y0) < 8) longPress(q.x0, q.y0); }, 650); }
   sendCursor(e.clientX, e.clientY, 1);
 });
 canvas.addEventListener("pointermove", (e) => {
@@ -435,12 +477,13 @@ canvas.addEventListener("pointermove", (e) => {
     return;
   }
   if (drag) { moveDrag(e.clientX, e.clientY); return; }
-  if (gest && gest.pan) { if (Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > 8 && gest.lp) { clearTimeout(gest.lp); gest.lp = null; } panBy(dx, dy); cam.vx = dx; cam.vz = dy; }
+  if (Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > 8) lpCancel();
+  if (gest && gest.pan) { panBy(dx, dy); cam.vx = dx; cam.vz = dy; }
   sendCursor(e.clientX, e.clientY, 1);
 });
 const up = (e) => {
   const p = ptrs.get(e.pointerId); ptrs.delete(e.pointerId);
-  if (gest && gest.lp) { clearTimeout(gest.lp); gest.lp = null; }
+  lpCancel();
   if (ptrs.size === 0) gest = null;
   if (drag) { endDrag(e); return; }
   if (pend) { const c = G && G.cards[pend.id]; pend = null; if (c && p && performance.now() - p.t0 < 450) tapCard(c); }
@@ -492,16 +535,22 @@ function startDrag(id, sx, sy) {
   if (why) { if (S.isEnemy(c.k)) toast(L("Врага не утащить — перетащи на него жителей"), ""); return; }
   const p = s2w(sx, sy, LIFT); if (!p) return;
   const ox = c.x - p.x, oy = c.y - p.y;
-  if (mode === "guest") { gs.send("pk", { i: id, x: Math.round(c.x), y: Math.round(c.y) }); }
+  const ids = chainIds(c);
+  if (mode === "guest") {
+    // сразу снимаем карту у себя — не ждём ответа хозяина (на 300–500 мс пинга иначе всё дёргается)
+    const q = gs.begin([...ids, c.dn || 0].filter(Boolean));
+    gs.send("pk", { i: id, x: Math.round(c.x), y: Math.round(c.y), q });
+    S.pickI(G, me, id); G.ev = [];
+  }
   else { const r = S.pickI(G, me, id); if (r.err) return; }
-  drag = { id, ids: chainIds(c), ox, oy, x: c.x, y: c.y, sx, sy, mvT: 0 };
+  drag = { id, ids, ox, oy, x: c.x, y: c.y, sx, sy, mvT: 0 };
   cards.bump(id); play("select", { vol: 0.6 }); haptic("impact", "light");
   moveDrag(sx, sy);
 }
 function moveDrag(sx, sy) {
   const p = s2w(sx, sy, LIFT); if (!p) return;
   drag.x = p.x + drag.ox; drag.y = p.y + drag.oy; drag.sx = sx; drag.sy = sy;
-  if (mode === "guest") { const now = performance.now(); if (now - drag.mvT > 50) { drag.mvT = now; gs.send("mv", { i: drag.id, x: Math.round(drag.x), y: Math.round(drag.y) }, true); } }
+  if (mode === "guest") { const now = performance.now(); if (now - drag.mvT > 50) { drag.mvT = now; gs.send("mv", { i: drag.id, x: Math.round(drag.x), y: Math.round(drag.y) }, true); } S.moveI(G, me, drag.id, drag.x, drag.y); }
   else S.moveI(G, me, drag.id, drag.x, drag.y);
   // зона продажи
   const sr = $("sell").getBoundingClientRect();
@@ -536,8 +585,20 @@ function endDrag(e, cancel) {
   sellHot = false; const tgt = hiT; hiT = null;
   $("sell").classList.remove("hot");
   if (mode === "guest") {
-    gs.send("dr", { i: d.id, x: Math.round(d.x), y: Math.round(d.y), t: tid });
-    ghost = { id: d.id, ids: d.ids, x: d.x, y: d.y, t: clock, sell: tid === -1 };
+    const x = Math.round(d.x), y = Math.round(d.y);
+    const tr = tid > 0 && G.cards[tid] ? (G.cards[tid].cb ? G.cards[tid] : S.root(G, G.cards[tid])) : null;
+    const special = tid === -1 || (tr && (S.isEnemy(tr.k) || tr.cb || CARDS[tr.k].c === "pack" || tr.k === "barrow"));
+    if (!special && c) {
+      // кладём у себя сразу: в стопку или на стол. Хозяин подтвердит (или поправит) — без рывков назад
+      if (tr) gs.holdMore(S.topOf(G, tr).id);
+      c.drag = me + 1; S.dropI(G, me, d.id, x, y, tid); G.ev = [];
+      const q = gs.dropped();
+      gs.send("dr", { i: d.id, x, y, t: tid, q });
+    } else {
+      const q = gs.dropped(); gs.release(false);
+      gs.send("dr", { i: d.id, x, y, t: tid, q });
+      ghost = { id: d.id, ids: d.ids, x: d.x, y: d.y, t: clock, sell: tid === -1 };
+    }
   } else if (c) {
     const r = S.dropI(G, me, d.id, d.x, d.y, tid);
     if (r.res === "nosell") { toast(L("Это не продаётся"), "bad"); play("error"); }
@@ -547,7 +608,7 @@ function endDrag(e, cancel) {
   else { play("whoosh", { vol: 0.35 }); haptic("impact", "light"); }
   cards.bump(d.id);
 }
-function cancelDrag() { if (!drag) return; const d = drag; drag = null; hiT = null; sellHot = false; if (mode !== "guest") S.dropI(G, me, d.id, d.x, d.y, 0); }
+function cancelDrag() { if (!drag) return; const d = drag; drag = null; hiT = null; sellHot = false; if (mode !== "guest") S.dropI(G, me, d.id, d.x, d.y, 0); else { const c = G.cards[d.id]; if (c) c.drag = 0; } }
 function tapCard(c) {
   if (CARDS[c.k].c === "pack") {
     if (mode === "guest") gs.send("op", { i: c.id }); else S.openI(G, me, c.id);
@@ -556,7 +617,7 @@ function tapCard(c) {
   showInfo(c);
 }
 function longPress(sx, sy) {
-  if (!started || drag) return;
+  if (!started || drag || ended || hitCard(sx, sy)) return;
   const p = s2w(sx, sy, 0); if (!p) return;
   gest = null;
   const msg = { x: Math.round(p.x), y: Math.round(p.y), k: "here" };
@@ -709,7 +770,7 @@ function winNow() {
 function loseNow() {
   ended = true; music("m_lose"); haptic("notify", "error");
   St.gameEnd({ win: 0, day: G.day, mode, bridge: G.bridge, min: Math.round(G.st.time / 60) });
-  if (mode !== "guest") SV.wipe(mode === "host" ? "coop" : "solo");
+  SV.wipe(slotOf());
   setTimeout(() => endScreen(false), 1500);
 }
 function endScreen(win) {
@@ -762,7 +823,7 @@ function updHud(force) {
   const pdot = pt.querySelector(".pd"); pdot.style.background = FAM[1 - me].c; pdot.style.boxShadow = partner.online ? "0 0 8px " + FAM[1 - me].c : "none";
   setText($("ptx"), partner.name || L("Напарник"));
   let net = "";
-  if (room && partner.online) net = (room.link === "p2p" ? "⚡" : "📶") + (room.rtt ? " " + room.rtt + L("мс") : "");
+  if (room && partner.online) net = (room.link === "p2p" ? "⚡ " + L("напрямую") : "📶 " + L("через сервер")) + (room.rtt ? " " + room.rtt + L("мс") : "");
   else if (!partner.online && mode !== "solo" && mode !== "bot") net = L("нет связи");
   setText($("pnet"), net);
   // лавка
@@ -881,13 +942,13 @@ document.querySelectorAll("#spd button").forEach((b) => b.onclick = () => {
 });
 
 /* ---------- сохранение ---------- */
+// каждый режим — в свой слот: свой общий хутор, чужой (копия гостя), с ботом, одному
+const slotOf = () => (mode === "host" ? "host" : mode === "guest" ? "guest" : mode === "solo" ? "solo" : "bot");
 function save(force) {
   if (!G || !started || G.lost) return;
   lastSave = performance.now();
-  try {
-    if (mode === "host" || mode === "guest") SV.save("coop", G, { from: mode, room: room ? room.id : "", me }, force);
-    else SV.save("solo", G, { mode, me }, force);
-  } catch (e) { console.warn("save", e); }
+  try { SV.save(slotOf(), G, { from: mode, mode, room: room ? room.id : "", me, partner: partner.bot ? "" : (partner.name || "").slice(0, 24) }, force); }
+  catch (e) { console.warn("save", e); }
 }
 // уход со страницы: Telegram свернули/закрыли, экран погас, «Назад» — сохраняем сразу (и в облако)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") save(true); });
@@ -1141,7 +1202,7 @@ window.__o2 = {
   buy, look(x, y, dist) { cam.tx = U(x); cam.tz = U(y); if (dist) cam.dist = dist; cam.goal = null; clampCam(); }, setDist(d) { cam.dist = d; },
   ping: (x, y, k) => { const msg = { x, y, k: k || "here" }; if (mode === "host" && room) room.send("pg", msg); else if (mode === "guest") gs.send("pg", msg); addPing(x, y, k || "here", me, false); },
   emote: (k) => { if (mode === "host" && room) room.send("em", { e: k }); else if (mode === "guest") gs.send("em", { e: k }); showEmote(k, me, false); },
-  setBot(on, skill) { bot = on ? makeBot(1, { skill: skill || "good" }) : null; },
+  setBot(on, skill) { bot = on ? makeBot(1 - me, { skill: skill || "good" }) : null; },
   quality: (q) => { quality = q; qLock = true; applyQuality(); },
   showEnd: (w) => endScreen(w), banner, toast, onEvents,
 };

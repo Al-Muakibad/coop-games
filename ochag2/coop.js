@@ -36,7 +36,8 @@ export class HostSync {
     this.last = new Map(); this.seq = 0; this.evq = []; this.t = 0; this.tf = 0; this.rareSig = ""; this.rt = 0; this.on = true;
     this.stat = { tx: 0, bytes: 0, full: 0 };
     const R = room;
-    const I = (t) => R.on(t, (d) => { if (this.on) api.intent(t, d || {}); });
+    this.ack = 0;
+    const I = (t) => R.on(t, (d) => { if (!this.on) return; api.intent(t, d || {}); if (d && d.q && t === "dr") this.ack = Math.max(this.ack, d.q); });
     ["pk", "mv", "dr", "by", "op", "sp", "rl", "rd"].forEach(I);
     R.on("cu", (d) => api.cursor && api.cursor(d));
     R.on("pg", (d) => api.ping && api.ping(d, 1));
@@ -54,7 +55,7 @@ export class HostSync {
     this.last.clear();
     for (const id in G.cards) this.last.set(+id, sigOf(enc(G.cards[id])));
     this.rareSig = "";
-    this.send("f", { s: ++this.seq, g: S.serialize(G) });
+    this.send("f", { s: ++this.seq, g: S.serialize(G), k: this.ack, hf: this.api.fam ? this.api.fam() : 0 });
     this.stat.full++; this.tf = 0;
   }
   tick(dt) {
@@ -71,7 +72,7 @@ export class HostSync {
       if (this.last.get(+id) !== s) { this.last.set(+id, s); c.push(e); }
     }
     for (const id of this.last.keys()) if (!seen.has(id)) { x.push(id); this.last.delete(id); }
-    const msg = { s: ++this.seq, m: meta(G) };
+    const msg = { s: ++this.seq, m: meta(G), k: this.ack };
     if (c.length) msg.c = c; if (x.length) msg.x = x;
     if (this.evq.length) { msg.e = this.evq; this.evq = []; }
     if (this.rt > 0.5) {
@@ -87,13 +88,16 @@ export class HostSync {
 export class GuestSync {
   constructor(room, api) {
     this.room = room; this.api = api;          // api: {full(G), events(list), nack(d), cursor(d), ping, emote, lob(d), go(d), peer(on)}
-    this.G = null; this.seq = 0; this.askT = 0; this.stat = { rx: 0, bytes: 0, gaps: 0, fulls: 0 }; this.lastRx = Date.now();
+    this.G = null; this.seq = 0; this.askT = 0;
+    // предсказание: карты, которые гость взял/положил у себя сразу. Пока хозяин не подтвердил (k >= q), его устаревшие данные по ним не применяем.
+    this.q = 0; this.txn = null; this.hold = new Set(); this.pend = new Map(); this.stat = { rx: 0, bytes: 0, gaps: 0, fulls: 0 }; this.lastRx = Date.now();
     const R = room;
     R.on("f", (d) => {
       this.stat.fulls++; this.lastRx = Date.now();
       const G = S.deserialize(d.g); if (!G) return;
+      if (this.txn && d.k >= this.txn.q && this.txn.dropped) { this.txn = null; this.hold.clear(); this.pend.clear(); }
       for (const id in G.cards) { const c = G.cards[id]; const old = this.G && this.G.cards[id]; if (old && old._dx != null) { c._dx = old._dx; c._dy = old._dy; } }
-      this.G = G; this.seq = d.s; api.full && api.full(G);
+      this.G = G; this.seq = d.s; api.full && api.full(G, d);
     });
     R.on("d", (d) => {
       this.stat.rx++; this.lastRx = Date.now();
@@ -102,8 +106,10 @@ export class GuestSync {
       this.seq = d.s;
       const G = this.G;
       unmeta(G, d.m);
-      if (d.c) for (const a of d.c) { const c = G.cards[a[0]] || (G.cards[a[0]] = {}); dec(a, c); }
-      if (d.x) for (const id of d.x) delete G.cards[id];
+      const done = this.txn && this.txn.dropped && d.k != null && d.k >= this.txn.q;
+      if (done) { for (const [id, a] of this.pend) if (G.cards[id]) dec(a, G.cards[id]); this.txn = null; this.hold.clear(); this.pend.clear(); }
+      if (d.c) for (const a of d.c) { if (this.hold.has(a[0])) { this.pend.set(a[0], a); continue; } const c = G.cards[a[0]] || (G.cards[a[0]] = {}); dec(a, c); }
+      if (d.x) for (const id of d.x) { delete G.cards[id]; this.hold.delete(id); this.pend.delete(id); }
       if (d.r) for (const k in d.r) G[k] = d.r[k];
       if (d.e && api.events) api.events(d.e);
     });
@@ -119,11 +125,23 @@ export class GuestSync {
   }
   // сколько секунд от хозяина ничего не приходило (он шлёт 10 раз в секунду)
   silence() { return (Date.now() - this.lastRx) / 1000; }
+  // гость взял карту: номер действия и карты, которые меняются у него сразу
+  begin(ids) { this.q++; this.txn = { q: this.q, dropped: false, t: Date.now() }; this.hold = new Set(ids); this.pend.clear(); return this.q; }
+  holdMore(id) { if (this.txn && id) this.hold.add(id); }
+  dropped() { if (this.txn) { this.txn.dropped = true; this.txn.t = Date.now(); } return this.txn ? this.txn.q : 0; }
+  // отказ хозяина или долгая тишина — берём его данные и просим полный снимок
+  release(ask) {
+    const G = this.G;
+    if (G) for (const [id, a] of this.pend) if (G.cards[id]) dec(a, G.cards[id]);
+    this.txn = null; this.hold.clear(); this.pend.clear();
+    if (ask) { this.askT = 0; this.ask(); }
+  }
   ask() { const now = Date.now(); if (now - this.askT < 1500) return; this.askT = now; this.room.send("rf", {}); }
   send(t, d, fast) { if (fast) this.room.sendFast(t, d); else this.room.send(t, d); }
   // между снимками: время дня и полоски работы идут сами
   extrapolate(dt) {
     const G = this.G; if (!G || G.lost) return;
+    if (this.txn && this.txn.dropped && Date.now() - this.txn.t > 3500) this.release(true);
     const k = dt * (G.spd || 0);
     if (G.ph === "day") G.t = Math.min(G.t + k, 9999);
     for (const id in G.cards) { const c = G.cards[id]; if (c.rc && !c.dn && !c.drag && G.ph === "day") c.rt = Math.min((c.rt || 0) + k, c.rT || 999); }
