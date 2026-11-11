@@ -37,6 +37,10 @@ const PR = RECIPES.map((r) => {
 });
 PR.sort((a, b) => b.spec.length - a.spec.length);
 export const RECIPE_BY_ID = {}; for (const p of PR) RECIPE_BY_ID[p.r.id] = p.r;
+export const PR_BY_ID = {}; for (const p of PR) PR_BY_ID[p.r.id] = p;
+export const PAIR_XW = 2;
+// откуда берётся ресурс: природная карта → что с неё добывают (валун → камень)
+export const SRC = {}; for (const p of PR) if (p.r.cat === "gather" && p.wear.length === 1 && p.r.out) SRC[p.wear[0]] = SRC[p.wear[0]] || p.r.out[0];
 export const isW = (k) => CARDS[k] && CARDS[k].tg && CARDS[k].tg.indexOf("w") >= 0;
 export const isPerson = (k) => CARDS[k] && CARDS[k].c === "person";
 export const isEnemy = (k) => CARDS[k] && CARDS[k].c === "enemy";
@@ -233,12 +237,13 @@ function matchStack(G, cs, noMiss) {
   for (const c of cs) cnt[c.k] = (cnt[c.k] || 0) + 1;
   let miss = null;
   outer: for (const p of PR) {
-    if (p.size > cs.length || p.size + p.opt < cs.length) continue;
+    const xw = p.r.pair ? PAIR_XW : 0;     // общие стройки: можно больше жителей (лишние ускоряют)
+    if (p.size > cs.length || p.size + p.opt + xw < cs.length) continue;
     const left = Object.assign({}, cnt);
     for (const k of p.spec) { if (!left[k]) continue outer; left[k]--; }
     let ws = 0;
     for (const k in left) { if (!left[k]) continue; if (!isW(k)) continue outer; ws += left[k]; }
-    if (ws < p.w || ws > p.w + p.opt) continue;
+    if (ws < p.w || ws > p.w + p.opt + xw) continue;
     if (p.r.pair && !G.solo2) {
       let f0 = 0, f1 = 0; for (const c of cs) if (isW(c.k)) { if (c.o === 0) f0++; else f1++; }
       if (!f0 || !f1) { if (!miss) miss = p; continue; }
@@ -268,7 +273,8 @@ function recipeMult(G, cs, p) {
     }
   }
   if (p.opt && wcount > p.w) m = p.w ? m : (cs.some((c) => c.k === "farmer") ? 2.5 : 1.6);
-  return Math.max(1, m) * fam;
+  const extra = p.r.pair ? Math.max(0, wcount - p.w - p.opt) * 0.25 : 0;   // лишние жители на общей стройке: +25% каждый
+  return Math.max(1, m) * fam * (1 + extra);
 }
 // общий рецепт ждёт жителя другой семьи: {rid, fam, swap}. fam — чья семья нужна (-1 — нужны обе);
 // swap — в стопке двое из одной семьи: одного надо убрать и положить жителя другой.
@@ -277,7 +283,6 @@ export function pairWait(G, r) {
   if (!r || r.dn || r.rc || r.cb || r.drag || isEnemy(r.k) || (CARDS[r.k] && CARDS[r.k].c === "pack")) return null;
   const cs = chain(G, r);
   const [f0, f1] = wFams(cs);
-  if (r.ms) return { rid: r.ms, fam: f0 ? 1 : 0, swap: 1 };
   if (f0 && f1) return null;
   if (!f0 && !f1) {
     if (cs.length < 3) return null;
@@ -286,7 +291,36 @@ export function pairWait(G, r) {
   }
   const fam = f0 ? 1 : 0;
   const p = matchStack(G, cs.concat([{ k: "villager", o: fam }]), true);
-  return p && p.r.pair ? { rid: p.r.id, fam, swap: 0 } : null;
+  if (p && p.r.pair) return { rid: p.r.id, fam, swap: 0 };
+  return r.ms ? { rid: r.ms, fam, swap: 1 } : null;
+}
+// может ли из этой стопки выйти хоть какой-то рецепт (если доложить карт)
+export function stackFits(G, cs) {
+  if (cs.length < 2 || cs.every((c) => c.k === "coin")) return true;
+  outer: for (const p of PR) {
+    const left = {}; for (const k of p.spec) left[k] = (left[k] || 0) + 1;
+    let ws = 0;
+    for (const c of cs) { if (left[c.k]) { left[c.k]--; continue; } if (isW(c.k)) { ws++; continue; } continue outer; }
+    if (ws <= p.w + p.opt + (p.r.pair ? PAIR_XW : 0)) return true;
+  }
+  return false;
+}
+// стройка моста: что уже лежит и чего не хватает — для подсказки над местом моста
+export function siteCheck(G, r) {
+  if (!r || r.dn || !CARDS[r.k] || CARDS[r.k].c !== "site" || G.bridge >= 5) return null;
+  const p = PR_BY_ID["b_" + (G.bridge + 1)]; if (!p) return null;
+  const cs = chain(G, r).slice(1);
+  const need = {}; for (const k of p.use) need[k] = (need[k] || 0) + 1;
+  const have = {}, extra = {};
+  let w0 = 0, w1 = 0;
+  for (const c of cs) {
+    if (need[c.k] && (have[c.k] || 0) < need[c.k]) { have[c.k] = (have[c.k] || 0) + 1; continue; }
+    if (isW(c.k)) { if (c.o === 0) w0++; else w1++; continue; }
+    extra[c.k] = (extra[c.k] || 0) + 1;
+  }
+  const mats = Object.keys(need).map((k) => ({ k, have: have[k] || 0, need: need[k] }));
+  const maxW = p.w + p.opt + PAIR_XW;
+  return { rid: p.r.id, mats, w0, w1, maxW, overW: Math.max(0, w0 + w1 - maxW), extra, ok: mats.every((m) => m.have >= m.need) && w0 >= 1 && w1 >= 1 && w0 + w1 <= maxW && !Object.keys(extra).length };
 }
 export function stackInfo(G, r) { return r.rc ? { rec: RECIPE_BY_ID[r.rc], p: Math.min(1, r.rt / r.rT) } : null; }
 

@@ -146,7 +146,7 @@ export function makeBot(p, opt) {
       if (S.isW(c.k)) { w++; continue; }
       return false;
     }
-    return w <= n.w;
+    return w <= n.w + (r.pair ? S.PAIR_XW : 0);
   }
   // чего не хватает в стопке-якоре: {k: n}
   function missing(G, root, rid) {

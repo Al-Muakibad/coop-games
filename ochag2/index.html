@@ -98,6 +98,9 @@
   .cur .hand { width: 26px; height: 26px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.4); }
   .cur .nm { position: absolute; left: 22px; top: 18px; font-weight: 900; font-size: 12px; color: #fff; padding: 2px 8px; border-radius: 9px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
   .pairlab { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; color: #fff; font-weight: 900; font-size: 12.5px; line-height: 1.25; padding: 5px 9px; border-radius: 12px; border: 2px solid; max-width: 210px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.35); animation: plb 1.2s ease-in-out infinite; }
+  .pairlab.site { background: rgba(34, 24, 17, .94); border-color: #f6b04a; text-align: left; font-size: 12px; max-width: 250px; animation: none; }
+  .pairlab.site b { display: block; font-size: 13px; margin-bottom: 2px; } .pairlab.site .ok { color: #9be27a; } .pairlab.site .no { color: #ff9a80; }
+  .pairlab.site i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 2px 0 4px; } .pairlab.site small { color: #e8d8c0; font-weight: 800; }
   @keyframes plb { 50% { margin-top: -4px; } }
   #netw { position: fixed; left: 50%; top: calc(96px + var(--sat)); transform: translateX(-50%); z-index: 9; background: rgba(120, 26, 20, .92); color: #fff; font-weight: 900; font-size: 14px; padding: 7px 14px; border-radius: 14px; pointer-events: none; opacity: 0; transition: opacity .3s; max-width: 92vw; text-align: center; }
   #netw.show { opacity: 1; } #netw.good { background: rgba(30, 110, 60, .92); }
