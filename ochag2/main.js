@@ -604,9 +604,25 @@ function endDrag(e, cancel) {
     if (r.res === "nosell") { toast(L("Это не продаётся"), "bad"); play("error"); }
   }
   if (tid === -1) haptic("impact", "medium");
-  else if (tgt) { haptic("impact", "medium"); play("click", { vol: 0.7 }); }
+  else if (tgt) { haptic("impact", "medium"); play("click", { vol: 0.7 }); dropHint(d.id); }
   else { play("whoosh", { vol: 0.35 }); haptic("impact", "light"); }
   cards.bump(d.id);
+}
+// положил карту в стопку, из которой ничего не выйдет — коротко объясняем почему
+function dropHint(id) {
+  const c = G && G.cards[id]; if (!c || !c.dn) return;
+  const r = S.root(G, c), cs = S.chain(G, r);
+  const sc = S.siteCheck(G, r);
+  if (sc) {
+    const ek = Object.keys(sc.extra).find((k) => S.chain(G, c).some((q) => q.k === k));
+    if (ek) { const res = S.SRC[ek]; toast("🌉 " + cName(ek) + " " + L("мосту не нужен") + (res && sc.mats.some((m) => m.k === res) ? " — " + L("нужен") + " " + cName(res).toLowerCase() + ". " + L("Поставь жителя на") + " " + cName(ek).toLowerCase() + ", " + L("чтобы добыть") + "." : "."), "bad", 4.5); }
+    else if (sc.overW) toast("🌉 " + L("Слишком много жителей на мосту — хватит") + " " + sc.maxW, "bad", 3.5);
+    return;
+  }
+  if (!S.stackFits(G, cs)) {
+    const nat = cs.find((q) => S.SRC[q.k] && q !== cs[0]);
+    toast("✗ " + L("Из такой стопки ничего не выйдет") + (nat ? ". " + cName(nat.k) + " " + L("— не ресурс: поставь на него жителя") : ". " + L("Рецепты — в книге 📖")), "bad", 3.5);
+  }
 }
 function cancelDrag() { if (!drag) return; const d = drag; drag = null; hiT = null; sellHot = false; if (mode !== "guest") S.dropI(G, me, d.id, d.x, d.y, 0); else { const c = G.cards[d.id]; if (c) c.drag = 0; } }
 function tapCard(c) {
@@ -993,14 +1009,36 @@ function pairText(w) {
   if (w.fam === me) return "👥 " + L("Нужен твой житель");
   return "👥 " + (partner.bot ? L("Ждём жителя бота — он уже несёт") : L("Нужен житель второй семьи (напарника)"));
 }
+// чек-лист стройки моста: что лежит, чего не хватает, что лишнее
+function siteHtml(sc) {
+  const ok = (b) => (b ? "✓" : "✗");
+  const mats = sc.mats.map((m) => `<span class="${m.have >= m.need ? "ok" : "no"}">${ok(m.have >= m.need)} ${esc(cName(m.k))} ${m.have}/${m.need}</span>`).join(" · ");
+  const dot = (f) => `<i style="background:${FAM[f].c}"></i>`;
+  const wOk = sc.w0 >= 1 && sc.w1 >= 1 && !sc.overW;
+  let w = `<span class="${wOk ? "ok" : "no"}">${ok(wOk)} 👥 ${dot(0)}${sc.w0} ${dot(1)}${sc.w1}</span>`;
+  if (!sc.w0 || !sc.w1) w += ` <small>${L("нужен хотя бы 1 житель от каждой семьи")}</small>`;
+  if (sc.overW) w += ` <small>${L("лишние жители")}: ${sc.overW}</small>`;
+  const ex = Object.entries(sc.extra).map(([k, n]) => {
+    const want = sc.mats.find((m) => m.k === S.SRC[k]);
+    return `<div class="no">✗ ${esc(cName(k))}${n > 1 ? " ×" + n : ""} — ${want ? esc(L("это не")) + " " + esc(cName(want.k).toLowerCase()) + ": " + esc(L("поставь жителя на")) + " " + esc(cName(k).toLowerCase()) + ", " + esc(L("чтобы добыть")) : esc(L("мосту не нужно, убери"))}</div>`;
+  }).join("");
+  return `<b>🌉 ${esc(recName(sc.rid))}</b><div>${mats}</div><div>${w}</div>${ex}`;
+}
 function updPairs() {
   const want = new Map();
-  for (const id in G.cards) { const r = G.cards[id]; if (r.dn || !r.up || r.drag) continue; const w = S.pairWait(G, r); if (w) want.set(r.id, w); }
+  for (const id in G.cards) {
+    const r = G.cards[id]; if (r.dn || !r.up || r.drag) continue;
+    const sc = S.siteCheck(G, r);
+    if (sc) { if (!r.rc) want.set(r.id, { site: sc }); continue; }
+    const w = S.pairWait(G, r); if (w) want.set(r.id, w);
+  }
   for (const [id, el] of pairEls) if (!want.has(id)) { el.remove(); pairEls.delete(id); }
   for (const [id, w] of want) {
     let el = pairEls.get(id);
     if (!el) { el = document.createElement("div"); el.className = "pairlab"; $("layer").appendChild(el); pairEls.set(id, el); }
-    const txt = pairText(w); if (el.textContent !== txt) el.textContent = txt;
+    if (w.site) { const h = siteHtml(w.site); if (el.dataset.h !== h) { el.dataset.h = h; el.innerHTML = h; } el.classList.add("site"); el.style.background = ""; el.style.borderColor = ""; continue; }
+    el.classList.remove("site");
+    const txt = pairText(w); if (el.textContent !== txt) { el.textContent = txt; el.dataset.h = ""; }
     const f = w.fam < 0 ? 1 - me : w.fam; el.style.background = FAM[f].d; el.style.borderColor = FAM[f].c;
     const key = id + ":" + w.rid + ":" + w.fam + ":" + w.swap;
     if (!pairSeen.has(key)) { pairSeen.add(key); if (w.fam !== me || w.swap || mode === "solo") { toast(txt + " · " + recName(w.rid), "f" + f, 4); haptic("notify", "warning"); } else toast(txt + " · " + recName(w.rid), "f" + f, 4); }
