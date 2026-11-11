@@ -20,6 +20,8 @@
 | Чёрная дыра (hole.io: до 6, боты, вдвоём на одном телефоне) | `dyra/` | t.me/hrupkiy_gruz_bot?startapp=dyra |
 | Шаткая башня (физика, 2–4, боты, онлайн, один телефон) | `shatkaya/` | t.me/hrupkiy_gruz_bot?startapp=shatkaya |
 | Отряд (толпа через ворота, оружие, эпохи, 6 видов бойцов + режим «Пушка», казарма, 55 уровней) | `otryad/` | t.me/hrupkiy_gruz_bot?startapp=otryad |
+| Очаг (карточная колония: стопки-рецепты, еда по ночам, набеги, 3 края, Маяк или Курганный князь) | `kolonia/` | t.me/hrupkiy_gruz_bot?startapp=kolonia |
+| Хутор (кооп-колония на двоих: два берега, общий мост; бот, один) | `ochag2/` | t.me/hrupkiy_gruz_bot?startapp=ochag2 |
 
 Корневой `index.html` — меню игр и маршрутизация по `startapp=<игра>[-c<очки>x<имя>]`.
 Общий код: `shared/tg.js` (Telegram, рекорды, вызов другу), `shared/ui.css`.

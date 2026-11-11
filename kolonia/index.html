@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Очаг</title>
+<script>window.SFX_NO_MUSIC = true; window.SFX_OFF = true;</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="en.js"></script>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  /* шрифты лежат рядом (OFL): Nunito — текст, Comfortaa — заголовки */
+  @font-face { font-family: "Nunito"; font-style: normal; font-weight: 400 900; font-display: swap; src: url(fonts/nunito-cyr.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: "Nunito"; font-style: normal; font-weight: 400 900; font-display: swap; src: url(fonts/nunito-lat.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Comfortaa"; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/comfortaa-cyr.woff2) format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+  @font-face { font-family: "Comfortaa"; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/comfortaa-lat.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2212; }
+  :root {
+    --ink: #3b2618; --paper: #f7ecd6; --cream: #fff8ea; --honey: #e9a945; --honey-d: #c98a2c; --ember: #c2552d; --ember-d: #9b3f1f;
+    --moss: #6f8f4a; --wood: #5b3b25; --muted: #85694f; --red: #b8483f; --gold: #e9b949;
+    --accent: var(--ember); --accent-dark: var(--ember-d);
+    --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
+    --chip-bg: linear-gradient(180deg, #fffaf0, #f4e5c8);
+    --lift: 0 2px 0 rgba(59, 38, 24, .55), 0 6px 14px rgba(40, 18, 4, .28);
+    --linen: repeating-linear-gradient(0deg, rgba(120, 84, 40, .035) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(120, 84, 40, .03) 0 1px, transparent 1px 3px);
+  }
+  html, body { background: #5b3b25; touch-action: none; overscroll-behavior: none; font-family: Nunito, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+  #board { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* тёплая виньетка поверх стола — слоем браузера, а не канвасом */
+  #vig { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse 75% 70% at 50% 48%, rgba(40, 18, 4, 0) 55%, rgba(40, 18, 4, .38) 100%); }
+  .hud { position: fixed; z-index: 5; pointer-events: none; }
+  .hud > * { pointer-events: auto; }
+  h1, h2 { font-family: Comfortaa, Nunito, sans-serif; font-weight: 700; letter-spacing: -0.3px; color: var(--ink); }
+  button { font-family: inherit; }
+
+  /* верх */
+  #top { left: 8px; right: 8px; top: calc(8px + var(--sat)); display: flex; flex-direction: column; gap: 6px; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .chip { background: var(--chip-bg); border: 1.5px solid rgba(59, 38, 24, .85); border-radius: 14px; box-shadow: var(--lift);
+    padding: 4px 9px; font-weight: 800; font-size: 14px; color: var(--ink); white-space: nowrap; display: flex; align-items: center; gap: 4px; height: 36px; }
+  .chip.btn-i { width: 38px; justify-content: center; padding: 0; font-size: 18px; cursor: pointer; }
+  .chip.btn-i:active, #speed button:active { transform: translateY(1px); }
+  #day { flex: 1; min-width: 0; gap: 8px; padding-right: 6px; }
+  #day b { font-family: Comfortaa, Nunito, sans-serif; font-weight: 700; font-size: 15px; }
+  #dayring { width: 26px; height: 26px; flex: 0 0 26px; }
+  #daybar { flex: 1; height: 8px; border-radius: 5px; background: #e8d6b4; overflow: hidden; position: relative; min-width: 30px; box-shadow: inset 0 1px 2px rgba(59, 38, 24, .25); }
+  #daybar i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, #f3c661, #e9a945 55%, #c2552d 85%, #4b4a7a); background-size: var(--bw, 300px) 100%; border-radius: 5px; }
+  #speed { display: flex; gap: 2px; padding: 2px; overflow: hidden; }
+  #speed button { border: 0; background: transparent; font-size: 14px; width: 34px; height: 30px; border-radius: 10px; font-weight: 900; color: var(--ink); padding: 0; cursor: pointer; }
+  #speed button svg { display: block; margin: auto; }
+  .ico { width: 22px; height: 22px; flex: 0 0 22px; }
+  #speed button.on { background: var(--honey); box-shadow: inset 0 -2px 0 var(--honey-d); }
+  #stats .chip { flex: 1; justify-content: center; padding: 4px 4px; font-size: 13.5px; height: 32px; font-variant-numeric: tabular-nums; }
+  .chip.warn { background: linear-gradient(180deg, #ffe7dc, #f6c9b8); animation: warn 1.4s ease-in-out infinite; }
+  @keyframes warn { 50% { box-shadow: 0 2px 0 rgba(59,38,24,.55), 0 0 0 4px rgba(194, 85, 45, .35); } }
+  .chip.ok { background: linear-gradient(180deg, #f4f8e6, #dfe9c4); }
+  #qrow { display: flex; gap: 6px; align-items: flex-start; }
+  #quest { max-width: calc(100% - 44px); height: auto; min-height: 34px; padding: 5px 11px 6px 9px; gap: 8px; cursor: pointer; white-space: normal; text-align: left; line-height: 1.2;
+    background: var(--linen), var(--chip-bg); }
+  #quest .qi { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; background: var(--honey); box-shadow: inset 0 -2px 0 var(--honey-d); display: grid; place-items: center; font-size: 12px; }
+  #quest b { font-size: 13.5px; display: block; }
+  #quest small { font-weight: 700; font-size: 12px; color: var(--muted); display: block; }
+  #quest.done { animation: qdone .9s ease-out; }
+  @keyframes qdone { 0% { transform: scale(1); } 30% { transform: scale(1.05); background: #e6f0c8; } 100% { transform: scale(1); } }
+  #hintb { width: 34px; height: 34px; font-size: 16px; }
+  #hintb.off { opacity: .5; filter: grayscale(1); }
+  #tabs { display: flex; gap: 5px; flex-wrap: wrap; }
+  #tabs .chip { height: 30px; font-size: 13px; padding: 3px 10px; cursor: pointer; }
+  #tabs .chip.on { background: linear-gradient(180deg, #f6c867, #e2a03e); }
+  #tabs .chip.drop { background: #fff1b8; transform: scale(1.08); }
+  #tabs .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: none; }
+  #tabs .chip.alert .dot { display: inline-block; animation: blink .8s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+
+  /* низ: деревянная полка с наборами */
+  #tray { left: 0; right: 0; bottom: 0; padding: 10px 8px calc(8px + var(--sab)); display: flex; gap: 7px; align-items: stretch;
+    background:
+      linear-gradient(180deg, rgba(255, 220, 170, .22), rgba(255, 220, 170, 0) 3px),
+      repeating-linear-gradient(90deg, rgba(40, 20, 6, .0) 0 37px, rgba(40, 20, 6, .14) 37px 39px, rgba(40, 20, 6, 0) 39px 83px),
+      repeating-linear-gradient(0deg, rgba(255, 210, 160, .05) 0 2px, rgba(40, 20, 6, .06) 2px 5px),
+      linear-gradient(180deg, #7a5133, #5e3c25);
+    border-top: 2px solid #3b2618; box-shadow: 0 -6px 18px rgba(30, 12, 2, .35); }
+  #sell { flex: 0 0 72px; border: 2px dashed rgba(255, 236, 200, .6); border-radius: 16px; background: rgba(40, 20, 6, .28); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-weight: 900; font-size: 12px; color: #fbe9c8; gap: 2px; transition: transform .12s, background .12s; }
+  #sell .sell-ic { width: 30px; height: 30px; flex: 0 0 auto; filter: drop-shadow(0 2px 0 rgba(0,0,0,.3)); }
+  #sell.hot { background: rgba(233, 169, 69, .45); transform: scale(1.06); border-style: solid; border-color: #ffe39a; }
+  #sell.bad { background: rgba(184, 72, 63, .5); }
+  #packs { flex: 1; display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; padding: 0 2px 4px; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+  #packs::-webkit-scrollbar { display: none; }
+  .pack { flex: 0 0 66px; height: 84px; border: 1.5px solid rgba(59, 38, 24, .9); border-radius: 13px; background: var(--linen), linear-gradient(180deg, #fffaf0, #f1e1c2); box-shadow: 0 3px 0 #2e1c10, 0 6px 10px rgba(0,0,0,.3);
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 0 2px 5px; position: relative; cursor: pointer; overflow: hidden; }
+  .pack::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 9px; background: var(--pc, #c27598); box-shadow: inset 0 -1px 0 rgba(59,38,24,.3); }
+  .pack canvas { width: 40px; height: 40px; margin-top: 10px; }
+  .pack b { font-size: 11px; font-weight: 900; line-height: 1; text-align: center; }
+  .pack .price { font-size: 11.5px; font-weight: 900; background: linear-gradient(180deg, #f6d27a, #e2a83a); border: 1.2px solid rgba(59,38,24,.8); border-radius: 9px; padding: 0 6px; line-height: 15px; }
+  .pack.cant .price { background: #e8d6b4; color: #8a7462; }
+  .pack.locked { filter: saturate(.3); opacity: .6; }
+  .pack.locked .price { background: #e8d6b4; }
+  .pack:active { transform: translateY(2px); box-shadow: 0 1px 0 #2e1c10; }
+  .pack.drop { background: #fff1b8; transform: scale(1.06); }
+  .pack.flash { animation: pflash .5s; }
+  .pack.hinted { animation: pglow 1.2s ease-in-out infinite; }
+  @keyframes pglow { 50% { box-shadow: 0 3px 0 #2e1c10, 0 0 0 4px rgba(255, 214, 120, .9); } }
+  @keyframes pflash { 30% { transform: scale(1.12); background: #fff1b8; } }
+  #bookb { flex: 0 0 52px; border: 1.5px solid rgba(59, 38, 24, .9); border-radius: 13px; background: linear-gradient(180deg, #a2553a, #7d3a24); box-shadow: 0 3px 0 #2e1c10, 0 6px 10px rgba(0,0,0,.3); font-size: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #fbe9c8; }
+  #bookb small { font-size: 11px; font-weight: 900; }
+  #bookb.flash { animation: pflash .6s; }
+
+  /* всплывашки */
+  #toasts { position: fixed; left: 50%; top: calc(var(--toast-top, 150px) + 6px); transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: 92%; max-width: 380px; }
+  .toast { background: var(--linen), var(--cream); border: 1.5px solid rgba(59, 38, 24, .85); border-left: 5px solid var(--honey); border-radius: 12px; box-shadow: var(--lift); padding: 6px 12px; font-weight: 800; font-size: 14px;
+    animation: tin .25s ease-out, tout .35s ease-in forwards; animation-delay: 0s, var(--life, 2.6s); text-align: center; max-width: 100%; overflow-wrap: anywhere; }
+  .toast.bad { border-left-color: var(--red); background: var(--linen), #fff0e8; } .toast.good { border-left-color: var(--moss); background: var(--linen), #f3f7e4; } .toast.gold { border-left-color: var(--honey); background: var(--linen), #fff5d6; }
+  @keyframes tin { from { transform: translateY(-10px) scale(.94); opacity: 0; } }
+  @keyframes tout { to { transform: translateY(-8px); opacity: 0; } }
+  #banner { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.96); z-index: 7; pointer-events: none; text-align: center; color: #fff4dc;
+    font-family: Comfortaa, Nunito, sans-serif; font-weight: 700; font-size: 34px; text-shadow: 0 2px 0 rgba(59,38,24,.9), 0 0 3px rgba(40,18,4,.9), 0 0 18px rgba(30,12,0,.75), 0 0 34px rgba(255, 150, 50, .45); opacity: 0; transition: opacity .5s, transform .5s; width: 90%; }
+  #banner small { display: block; font-family: Nunito, sans-serif; font-weight: 800; font-size: 16px; margin-top: 8px; }
+  #banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #hold { position: fixed; left: 50%; bottom: calc(118px + var(--sab)); transform: translateX(-50%); z-index: 7; background: var(--linen), #fff0e8; border: 1.5px solid rgba(59,38,24,.85); border-left: 5px solid var(--red); border-radius: 14px;
+    box-shadow: var(--lift); padding: 8px 14px; font-weight: 800; font-size: 14px; text-align: center; width: 92%; max-width: 360px; }
+
+  /* карточка-подсказка */
+  #info { position: fixed; left: 8px; right: 8px; bottom: calc(114px + var(--sab)); z-index: 6; max-width: 420px; margin: 0 auto; background: var(--linen), var(--cream);
+    border: 1.5px solid rgba(59,38,24,.85); border-radius: 16px; box-shadow: var(--lift); padding: 10px 30px 10px 12px; display: flex; gap: 10px; animation: tin .18s ease-out; }
+  #info canvas { width: 56px; height: 76px; flex: 0 0 56px; }
+  #info .tx { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  #info .tx b { font-size: 15px; } #info .tx .cat { font-size: 11.5px; font-weight: 900; letter-spacing: .2px; }
+  #info .tx .st { margin-top: 4px; font-weight: 800; font-size: 12.5px; color: #6b5a48; }
+  #info .tx .rc { margin-top: 4px; font-size: 12px; color: #6b5a48; }
+  #info .x { position: absolute; right: 4px; top: 2px; border: 0; background: none; font-size: 18px; color: var(--muted); padding: 6px; }
+
+  /* экраны */
+  .screen { background: rgba(30, 14, 4, .5); z-index: 20; -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+  .card { max-width: 380px; background: var(--linen), var(--paper); border: 2px solid var(--ink); border-radius: 22px;
+    box-shadow: 0 5px 0 rgba(59,38,24,.75), 0 22px 44px rgba(20, 8, 0, .45); position: relative; }
+  .card::after { content: ""; position: absolute; inset: 6px; border: 1.5px dashed rgba(133, 105, 79, .35); border-radius: 17px; pointer-events: none; }
+  .btn { border: 2px solid var(--ink); border-radius: 15px; background: linear-gradient(180deg, #fffaf0, #f1e1c2); box-shadow: 0 3px 0 var(--ink); font-weight: 800; position: relative; z-index: 1; }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+  .btn.primary { background: linear-gradient(180deg, #d4693d, #b44a24); color: #fff6e6; text-shadow: 0 1px 0 rgba(59,20,5,.5); }
+  .btn.ghost { background: transparent; box-shadow: none; border-color: transparent; color: var(--ember-d); }
+  .sub { color: var(--muted); }
+  .scroll { max-height: 56vh; overflow-y: auto; text-align: left; margin: 6px -6px 0; padding: 0 6px; touch-action: pan-y; -webkit-overflow-scrolling: touch; position: relative; z-index: 1; }
+  #screen-menu .card { padding-top: 18px; }
+  .logo-row { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .logo-row canvas { width: 92px; height: 92px; margin-bottom: -6px; filter: drop-shadow(0 0 14px rgba(255, 160, 60, .55)); animation: ember 3.2s ease-in-out infinite; }
+  @keyframes ember { 50% { filter: drop-shadow(0 0 22px rgba(255, 170, 70, .8)); } }
+  #screen-menu h1 { font-size: 44px; margin: 0 0 6px; }
+  .btn small { display: block; font-weight: 700; font-size: 12.5px; opacity: .85; margin-top: 2px; }
+  .menu-links { display: flex; gap: 8px; } .menu-links .btn { flex: 1; font-size: 14px; padding: 10px 6px; }
+  .rec { display: flex; align-items: center; gap: 4px; padding: 7px 4px; border-bottom: 1px dashed #dcc7a4; flex-wrap: wrap; font-size: 13px; font-weight: 700; }
+  .rec .nm { width: 100%; font-weight: 900; font-size: 13.5px; }
+  .rec .ing { display: inline-flex; align-items: center; gap: 2px; background: #f1e1c2; border-radius: 8px; padding: 1px 6px 1px 2px; }
+  .rec .ar { font-weight: 900; color: var(--ember-d); }
+  .rec.unk { color: #ad9a80; }
+  .bk-h { font-family: Comfortaa, Nunito, sans-serif; font-weight: 700; font-size: 15px; margin: 14px 0 2px; color: var(--ember-d); }
+  .goal { display: flex; gap: 8px; align-items: flex-start; padding: 7px 4px; border-bottom: 1px dashed #dcc7a4; font-size: 13.5px; }
+  .goal .gi { font-size: 15px; width: 22px; text-align: center; }
+  .goal b { display: block; } .goal small { color: var(--muted); font-weight: 600; }
+  .goal.done { color: #8a9a7a; } .goal.done b { text-decoration: line-through; text-decoration-color: rgba(111,143,74,.7); }
+  .goal.cur { background: #fbe8bd; border-radius: 10px; }
+  .goal.lock { opacity: .45; }
+  .help p { margin: 7px 0; font-size: 14px; line-height: 1.5; text-align: left; }
+  .stat { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-weight: 700; border-bottom: 1px dotted #dcc7a4; }
+  #loading { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: #5b3b25; font-family: Comfortaa, Nunito, sans-serif; font-weight: 700; color: #fbe9c8; font-size: 24px; }
+  @media (min-width: 700px) {
+    #top { left: 50%; transform: translateX(-50%); width: 580px; right: auto; }
+    #tray { left: 50%; transform: translateX(-50%); width: 680px; right: auto; border-radius: 18px 18px 0 0; border-left: 2px solid #3b2618; border-right: 2px solid #3b2618; }
+  }
+  @media (prefers-reduced-motion: reduce) { .chip.warn, .pack.hinted, #tabs .chip.alert .dot { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="board"></canvas>
+<div id="vig"></div>
+<div id="loading">Очаг…</div>
+
+<div class="hud" id="top">
+  <div class="row">
+    <button class="chip btn-i" id="menub" aria-label="Пауза">☰</button>
+    <div class="chip" id="day"><svg id="dayring" viewBox="0 0 26 26"><circle cx="13" cy="13" r="10" fill="none" stroke="#e6d8c2" stroke-width="4"/><circle id="dayarc" cx="13" cy="13" r="10" fill="none" stroke="#f0a02a" stroke-width="4" stroke-linecap="round" stroke-dasharray="62.8" stroke-dashoffset="62.8" transform="rotate(-90 13 13)"/><text id="dayico" x="13" y="17.5" text-anchor="middle" font-size="11">☀️</text></svg><b id="dayn">День 1</b><div id="daybar"><i></i></div></div>
+    <div class="chip" id="speed"><button data-s="0" aria-label="Пауза"><svg viewBox="0 0 20 20" width="16" height="16"><rect x="4.5" y="4" width="4" height="12" rx="1.5" fill="currentColor"/><rect x="11.5" y="4" width="4" height="12" rx="1.5" fill="currentColor"/></svg></button><button data-s="1" class="on" aria-label="Обычная скорость"><svg viewBox="0 0 20 20" width="16" height="16"><path d="M6 4.2 Q6 3 7.2 3.7 L15.6 9 Q16.6 10 15.6 10.9 L7.2 16.3 Q6 17 6 15.8Z" fill="currentColor"/></svg></button><button data-s="3" aria-label="Быстро"><svg viewBox="0 0 22 20" width="18" height="16"><path d="M2.5 5 Q2.5 3.8 3.6 4.4 L10 9.1 Q10.9 10 10 10.9 L3.6 15.6 Q2.5 16.2 2.5 15Z M11 5 Q11 3.8 12.1 4.4 L18.5 9.1 Q19.4 10 18.5 10.9 L12.1 15.6 Q11 16.2 11 15Z" fill="currentColor"/></svg></button></div>
+  </div>
+  <div class="row" id="stats">
+    <div class="chip" id="s-pop" title="Жители"><img class="ico" data-ic="villager" alt=""><span>2</span></div>
+    <div class="chip" id="s-food" title="Еда к ночи"><img class="ico" data-ic="bowl" alt=""><span>0/0</span></div>
+    <div class="chip" id="s-cards" title="Место для карт"><img class="ico" data-ic="cards" alt=""><span>0/0</span></div>
+    <div class="chip" id="s-coin" title="Монеты"><img class="ico" data-ic="coin" alt=""><span>0</span></div>
+  </div>
+  <div id="qrow"><div class="chip" id="quest"><span class="qi">🎯</span><span><b id="qn"></b><small id="qh"></small></span></div><button class="chip btn-i" id="hintb" aria-label="Подсказки">💡</button></div>
+  <div id="tabs"></div>
+</div>
+
+<div class="hud" id="tray">
+  <div id="sell"><img class="ico sell-ic" data-ic="coin" alt=""><span>Продать</span></div>
+  <div id="packs"></div>
+  <button id="bookb" aria-label="Книга рецептов">📖<small id="bookn">0</small></button>
+</div>
+
+<div id="toasts"></div>
+<div id="banner"></div>
+<div id="hold" class="hidden"></div>
+<div id="info" class="hidden"></div>
+
+<div id="screen-menu" class="screen hidden">
+  <div class="card">
+    <div class="logo-row"><canvas id="logo" width="112" height="112"></canvas><h1>Очаг</h1></div>
+    <p class="sub">Карточная колония: складывай карты в стопки — добывай, строй, корми жителей и отбивайся от зверей и разбойников.</p>
+    <button class="btn primary" id="m-cont">▶ Продолжить<small id="m-cont-s"></small></button>
+    <button class="btn" id="m-new">🌱 Новая колония</button>
+    <div class="menu-links"><button class="btn" id="m-help">❓ Как играть</button><button class="btn" id="m-games">🎮 Другие игры</button></div>
+  </div>
+</div>
+
+<div id="screen-pause" class="screen hidden">
+  <div class="card">
+    <h2>Пауза</h2>
+    <p class="sub" id="p-sub"></p>
+    <button class="btn primary" id="p-resume">▶ Продолжить</button>
+    <button class="btn" id="p-goals">🎯 Цели</button>
+    <button class="btn" id="p-help">❓ Как играть</button>
+    <button class="btn" id="p-snd">🔊 Звук: вкл</button>
+    <button class="btn" id="p-hints">💡 Подсказки: вкл</button>
+    <button class="btn" id="p-menu">В меню</button>
+  </div>
+</div>
+
+<div id="screen-book" class="screen hidden">
+  <div class="card">
+    <h2>📖 Книга рецептов</h2>
+    <p class="sub" id="bk-sub"></p>
+    <div class="scroll" id="bk-list"></div>
+    <button class="btn" data-close>Закрыть</button>
+  </div>
+</div>
+
+<div id="screen-goals" class="screen hidden">
+  <div class="card">
+    <h2>🎯 Цели</h2>
+    <div class="scroll" id="gl-list"></div>
+    <button class="btn" data-close>Закрыть</button>
+  </div>
+</div>
+
+<div id="screen-help" class="screen hidden">
+  <div class="card">
+    <h2>Как играть</h2>
+    <div class="scroll help">
+      <p>🖐 <b>Перетаскивай карты</b> друг на друга, чтобы сложить стопку. Подходящая стопка начинает работу — над ней бежит полоска, а потом выпадают новые карты.</p>
+      <p>🌳 <b>Житель на дерево</b> — бревно, на валун — камень, на куст — ягоды. Бревно + камень + житель — хижина. Пробуй разные стопки: найденные рецепты попадают в книгу 📖.</p>
+      <p>🪙 <b>Продавай</b> лишнее, перетащив на «Продать». На монеты покупай <b>наборы</b> внизу — в них новые карты и идеи рецептов. Набор на столе открывается тапом.</p>
+      <p>🌙 <b>В конце дня</b> каждый житель съедает 2 еды. Голодный житель погибает. Еда на грядке, костре и кухне не съедается. Готовая еда сытнее сырой.</p>
+      <p>🃏 <b>Место для карт</b> ограничено. Ночью лишние карты придётся продать. Сараи и склады дают место.</p>
+      <p>⚔️ <b>Враги</b> приходят на рассвете. Перетащи жителей на врага — бой пойдёт сам. Копьё, меч, лук или доспех на жителе делают бойца. Башня стреляет сама.</p>
+      <p>🧭 <b>Края</b>: лодка откроет Остров, карта из пещеры — Горы, следопыт — Гиблый лес. Перетащи стопку на вкладку края, чтобы отправить её туда.</p>
+      <p>🏆 <b>Победа</b>: зажги Маяк Очага или победи Курганного князя. Он сам придёт на 18-й день. После победы — бесконечный режим.</p>
+      <p>👆 Тап по карте — подсказка. Двумя пальцами — масштаб. ⏸ ▶ ⏩ — пауза и скорость. 💡 — рука-подсказка к текущей цели (можно выключить).</p>
+    </div>
+    <button class="btn primary" data-close>Понятно</button>
+  </div>
+</div>
+
+<div id="screen-new" class="screen hidden">
+  <div class="card">
+    <h2>Новая колония?</h2>
+    <p class="sub">Текущая колония будет потеряна.</p>
+    <button class="btn primary" id="n-yes">🌱 Начать заново</button>
+    <button class="btn" data-close>Отмена</button>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <div class="logo" id="end-emoji">🏆</div>
+    <h2 id="end-title"></h2>
+    <p class="sub" id="end-sub2"></p>
+    <div class="breakdown" id="end-sub"></div>
+    <div id="end-buttons"></div>
+  </div>
+</div>
+
+
+<script src="../shared/tg.js"></script>
+<script src="../shared/ads.js"></script>
+<script src="../shared/stats.js"></script>
+<script src="../shared/feedback.js"></script>
+<script type="module" src="main.js"></script>
+</body>
+</html>

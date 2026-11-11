@@ -1,0 +1,34 @@
+Звуки и музыка игры «Хутор» — записанные (не синтезированные) файлы с лицензией CC0 1.0
+(общественное достояние): http://creativecommons.org/publicdomain/zero/1.0/
+Синтезированных звуков и MIDI-музыки в игре нет.
+
+Звуки и музыка взяты из папок ../../kolonia/audio и ../../oborona/audio этого же репозитория
+(там они уже обрезаны, выровнены по громкости и сжаты в mp3). Первоисточник — OpenGameArt.org, CC0
+(полный список авторов — в ../../oborona/assets/LICENSE.txt и ../../kolonia/audio/LICENSE.txt):
+
+Звуки:
+- Kenney — «Interface Sounds», «RPG Sound Pack (50 RPG sound effects)» — https://opengameart.org/content/interface-sounds, https://opengameart.org/content/50-rpg-sound-effects
+    click, select, confirm, error, open, buy, close
+- «80 CC0 RPG SFX» — https://opengameart.org/content/80-cc0-rpg-sfx   (gong, heal, potion, magic)
+- «100 CC0 SFX» и «100 CC0 SFX #2» — https://opengameart.org/content/100-cc0-sfx, https://opengameart.org/content/100-cc0-sfx-2
+- «75 CC0 breaking / falling / hit sfx» — https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+    stonehit, househit, collapse, chop, mine, build
+- «150 Combat Sound Effects» (CC0) — https://opengameart.org/content/150-combat-sound-effects
+    hit, hit2, bone, arrow, die, die2, hurt
+- «16 Monster Growls» — https://opengameart.org/content/16-monster-growls   (roar, roar2, growl)
+- «12 Coin Sound Effects» — https://opengameart.org/content/12-coin-sound-effects   (coin, coin2)
+- «Swishes Sound Pack» — https://opengameart.org/content/swishes-sound-pack   (whoosh)
+- «Fantasy Sound Effects (Tinysized SFX)» — https://opengameart.org/content/fantasy-sound-effects-tinysized-sfx   (perk, upgrade, levelup, bell)
+- «Fire Crackling» — https://opengameart.org/content/fire-crackling   (fire)
+
+Фоновые звуки природы (скачаны для «Хутора», вырезаны петли по 18–20 с со склейкой, моно 48 кбит/с):
+- amb_river, amb_birds — «Park Ambiences», автор Thimras, CC0 — https://opengameart.org/content/park-ambiences
+    (park_ambience_river.wav, park_ambience_birds.wav)
+- amb_night — «Crickets Ambient Noise (Loopable)», CC0 — https://opengameart.org/content/crickets-ambient-noise-loopable
+    (crickets-oneloop.mp3)
+
+Музыка (CC0, OpenGameArt.org):
+- m_build — «Medieval Exploration», RandomMind — https://opengameart.org/content/medieval-exploration
+- m_battle2 — «Medieval: Battle», RandomMind — https://opengameart.org/content/medieval-battle
+- m_win — «Medieval: Victory Theme», RandomMind — https://opengameart.org/content/medieval-victory-theme
+- m_lose — «Medieval: Defeat Theme», RandomMind — https://opengameart.org/content/medieval-defeat-theme

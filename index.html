@@ -13,7 +13,7 @@
 <script>
   // Маршрутизация по ссылке t.me/бот?startapp=<игра>[-c<очки>x<имя>]
   (function () {
-    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona", "dyra", "shatkaya", "otryad"];
+    const GAMES = ["gruz", "bashnya", "duel", "sniper", "morboy", "tanki", "g2048", "zmeyka", "tanchiki", "zahvat", "territoria", "tolpa", "slovo", "chervi", "shpion", "durak", "strelka", "arena", "futbol", "gonki", "rikoshet", "bilyard", "oborona", "dyra", "shatkaya", "otryad", "kolonia", "ochag2"];
     const tg = window.TG.tg;
     let p = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) ||
       new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
@@ -151,6 +151,12 @@
 
   <section data-sec="friends">
   <p class="secnote">Онлайн 1 на 1: жмёшь «Позвать друга» — он открывает ссылку и вы играете каждый на своём телефоне. Нет друга рядом — есть бот.</p>
+  <a class="game is-new" style="--c:#f6b04a" href="./ochag2/">
+    <div class="icon">🌉</div>
+    <div class="info"><b>Хутор</b><span>Кооп-колония на двоих: у каждого свой берег, вместе строите мост. Стопки карт, ужин, набеги.</span>
+      <i class="tag">👥 кооп онлайн</i> <i class="tag">🤖 бот</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
   <a class="game is-new" style="--c:#86efac" href="./futbol/">
     <div class="icon">🚗</div>
     <div class="info"><b>Футбол машинками</b><span>Гоняй мяч машинкой с ускорением и заносом. 1 на 1 или 2 на 2, боты.</span>
@@ -304,6 +310,12 @@
 
   <section data-sec="solo" class="hidden">
   <p class="secnote">Играй сам и кидай друзьям вызов на свой рекорд.</p>
+  <a class="game is-new" style="--c:#9ccf6b" href="./kolonia/">
+    <div class="icon">🔥</div>
+    <div class="info"><b>Очаг</b><span>Карточная колония: собирай, строй, корми и защищай.</span>
+      <i class="tag">🃏 колония</i> <i class="tag">🌙 30–60 минут</i></div>
+    <span class="go" aria-hidden="true">▶</span>
+  </a>
   <a class="game is-new" style="--c:#5aa2ff" href="./otryad/">
     <div class="icon">🏃</div>
     <div class="info"><b>Отряд</b><span>Веди толпу, выбирай оружие и эпоху, стреляй по воротам — и сноси красную армию. «Пушка» ездит по рельсу и выпускает чемпионов.</span>

@@ -1,0 +1,26 @@
+3D-модели игры «Хутор» — бесплатные, лицензия Creative Commons Zero (CC0 1.0, общественное достояние):
+http://creativecommons.org/publicdomain/zero/1.0/
+
+kit.bin — все фигурки и декор одним файлом. Модели «запечены»: позы персонажей и монстров (по два кадра),
+цвета палитры перенесены в цвета вершин, сетки упрощены (meshoptimizer) и сжаты в 16-битные координаты.
+Форма моделей не менялась, кроме упрощения; часть простых фигур (костёр, грядка, лодка, указатели, улей,
+глиняный яр, курган, плёс, кристаллы, ягоды, копьё, молот, мотыга, фонарь) построена кодом из примитивов.
+
+Источники:
+- KayKit от Kay Lousberg (www.kaylousberg.com), CC0 — взяты из ../../oborona/assets (там полный список):
+    KayKit Character Pack: Adventurers 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+      (жители, воины, лучники, разбойники, атаман, тролль)
+    KayKit Character Pack: Skeletons 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0
+      (скелет, призрак, страж кургана; анимации поз)
+    KayKit Medieval Hexagon Pack 1.0 — https://github.com/KayKit-Game-Assets/KayKit-Medieval-Hexagon-Pack-1.0
+      (дома, кузня, лесопилка, шахта, рынок, мельница, башня, леса стройки, деревья, камни, горы, облака, заборы, бочки)
+- Quaternius (https://quaternius.com), CC0 — из ../../oborona/assets:
+    Stylized Nature MegaKit — https://quaternius.itch.io/stylized-nature-megakit (кусты, травы, грибы, деревья, цветы, камни)
+    Fantasy Props MegaKit — https://quaternius.itch.io/fantasy-props-megakit (сундук, монеты)
+    LowPoly Animated Monsters / Animated Easy Enemies — летучая мышь, паук, жаба, дракон
+- Quaternius, CC0 — скачано с OpenGameArt.org для «Хутора»:
+    «Animal Pack Vol.2» — https://opengameart.org/content/animated-animales-low-poly (волк)
+    «LowPoly Animated Farm Animal Pack» — https://opengameart.org/content/lowpoly-animated-farm-animal-pack (кабан — из свиньи, овца)
+    «5 Low Poly Animals» — https://opengameart.org/content/5-low-poly-animals (рыба, цыплёнок, птица)
+
+Инструмент запекания (bake.html + simplify.mjs) в игру не грузится.

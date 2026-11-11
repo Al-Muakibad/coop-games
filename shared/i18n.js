@@ -89,7 +89,7 @@
   function set(l) { try { localStorage.setItem("kg_lang", l); } catch (_) {} location.reload(); }
 
   // Игры, переведённые полностью (в меню у остальных на английском стоит пометка RU)
-  const FULL = ["sniper", "chervi", "durak", "shpion", "dyra", "shatkaya", "otryad"];
+  const FULL = ["sniper", "chervi", "durak", "shpion", "dyra", "shatkaya", "otryad", "kolonia", "ochag2"];
   window.I18N = { lang, t, add, set, FULL };
   window.L = t;
 
@@ -148,7 +148,7 @@
     "Морской бой": "Battleship", "Артиллерия": "Artillery", "Змейка": "Snake", "Танчики": "Tanks", "Захват": "Conquest",
     "Толпа": "Crowd", "Объясни слово": "Explain the Word", "Червячки": "Worms", "Шпион": "Spyfall", "Дурак": "Durak",
     "Перестрелка": "Shootout", "Змеиная арена": "Snake Arena", "Футбол машинками": "Car Soccer", "Гонки": "Racing",
-    "Рикошет": "Ricochet", "Бильярд": "Pool", "Чёрная дыра": "Black Hole", "Шаткая башня": "Wobbly Tower", "Отряд": "Squad", "🗺 55 уровней": "🗺 55 levels",
+    "Рикошет": "Ricochet", "Бильярд": "Pool", "Чёрная дыра": "Black Hole", "Шаткая башня": "Wobbly Tower", "Отряд": "Squad", "Очаг": "Hearth", "Карточная колония: собирай, строй, корми и защищай.": "A card colony: gather, build, feed and defend.", "🃏 колония": "🃏 colony", "🌙 30–60 минут": "🌙 30–60 minutes", "Хутор": "Homestead", "Кооп-колония на двоих: у каждого свой берег, вместе строите мост. Стопки карт, ужин, набеги.": "A co-op colony for two: each has a riverbank, together you build the bridge. Card stacks, suppers, raids.", "🗺 55 уровней": "🗺 55 levels",
     "Веди толпу, выбирай оружие и эпоху, стреляй по воротам — и сноси красную армию. «Пушка» ездит по рельсу и выпускает чемпионов.": "Lead your crowd, pick weapons and eras, shoot the gates and crush the red army. The cannon rides a rail and launches champions.",
     "Глотай город: от людей до небоскрёбов.": "Swallow the city: from people to skyscrapers.", "📱 вдвоём": "📱 2 on 1 phone",
     "Строим одну башню по очереди. Уронил — проиграл.": "One tower, everyone takes turns. Drop it — you lose.", "🕳️ до 6": "🕳️ up to 6",
