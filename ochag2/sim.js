@@ -54,7 +54,7 @@ export function newGame(opt) {
     solo: opt.solo ? 1 : 0,
     st: { made: {}, sold: 0, packs: 0, kills: 0, deaths: 0, starve: 0, born: 0, eaten: 0, time: 0, maxPop: 4, acts: [0, 0], trades: 0 },
   };
-  for (const id of ["r_wood", "r_stone", "r_berry", "r_mush", "r_clay", "r_hut", "r_plank", "r_apple", "b_1", "b_2", "b_3", "b_4", "b_5"]) G.kn[id] = 1;
+  for (const id of ["r_wood", "r_stone", "r_berry", "r_mush", "r_clay", "r_hut", "r_breed", "r_plank", "r_apple", "b_1", "b_2", "b_3", "b_4", "b_5"]) G.kn[id] = 1;
   const put = (k, x, y, o) => { const c = add(G, k, x, y); if (o != null) c.o = o; return c; };
   // мост — в реке посередине
   put("site0", SITE_POS[0], SITE_POS[1]);
@@ -264,6 +264,24 @@ function recipeMult(G, cs, p) {
   }
   if (p.opt && wcount > p.w) m = p.w ? m : (cs.some((c) => c.k === "farmer") ? 2.5 : 1.6);
   return Math.max(1, m) * fam;
+}
+// общий рецепт ждёт жителя другой семьи: {rid, fam, swap}. fam — чья семья нужна (-1 — нужны обе);
+// swap — в стопке двое из одной семьи: одного надо убрать и положить жителя другой.
+const wFams = (cs) => { let f0 = 0, f1 = 0; for (const c of cs) if (isW(c.k)) { if (c.o === 0) f0++; else f1++; } return [f0, f1]; };
+export function pairWait(G, r) {
+  if (!r || r.dn || r.rc || r.cb || r.drag || isEnemy(r.k) || (CARDS[r.k] && CARDS[r.k].c === "pack")) return null;
+  const cs = chain(G, r);
+  const [f0, f1] = wFams(cs);
+  if (r.ms) return { rid: r.ms, fam: f0 ? 1 : 0, swap: 1 };
+  if (f0 && f1) return null;
+  if (!f0 && !f1) {
+    if (cs.length < 3) return null;
+    const p = matchStack(G, cs.concat([{ k: "villager", o: 0 }, { k: "villager", o: 1 }]), true);
+    return p && p.r.pair ? { rid: p.r.id, fam: -1, swap: 0 } : null;
+  }
+  const fam = f0 ? 1 : 0;
+  const p = matchStack(G, cs.concat([{ k: "villager", o: fam }]), true);
+  return p && p.r.pair ? { rid: p.r.id, fam, swap: 0 } : null;
 }
 export function stackInfo(G, r) { return r.rc ? { rec: RECIPE_BY_ID[r.rc], p: Math.min(1, r.rt / r.rT) } : null; }
 
@@ -799,6 +817,15 @@ function dawn(G) {
     for (const k of ks) { const e = add(G, k, q[0] + 60 + rnd(G) * (q[2] - q[0] - 120), q[1] + 30); e.mhp = e.hp; e.tm = 2; G.ev.push({ t: "pop", id: e.id, fx: e.x, fy: e.y, k, enemy: 1 }); }
     G.ev.push({ t: "threat", ks, region: b });
   }
+  // семья осталась без пары жителей — утром к ней приходит странник (не чаще раза в 2 дня на семью): из такого положения иначе не выбраться
+  if (popCount(G) > 0) for (const f of [0, 1]) {
+    G.sett = G.sett || [0, 0];
+    if (famCount(G, f) >= 2 || G.day - (G.sett[f] || 0) < 2) continue;
+    G.sett[f] = G.day;
+    const hy = f === 0 ? 1240 : 360;
+    const c = spawn(G, "villager", 700, hy, { o: f, dy: 0 });
+    if (c) { G.st.settlers = (G.st.settlers || 0) + 1; G.ev.push({ t: "settler", o: f, id: c.id, x: c.x, y: c.y }); }
+  }
   G.ev.push({ t: "dawn", day: G.day, season: G.season });
 }
 function endlessWave(G) {
@@ -944,5 +971,6 @@ export function deserialize(s) {
   for (const id in G.fights) { const f = G.fights[id]; f.foes = f.foes.filter((i) => G.cards[i]); f.allies = f.allies.filter((i) => G.cards[i]); if (!f.foes.length || !f.allies.length) { [...f.foes, ...f.allies].forEach((i) => { G.cards[i].cb = 0; }); delete G.fights[id]; } }
   for (const id in G.cards) { const c = G.cards[id]; if (c.cb && !G.fights[c.cb]) c.cb = 0; if (!c.dn) c.dirty = 1; }
   if (!G.st.acts) G.st.acts = [0, 0];
+  if (G.kn) G.kn.r_breed = 1;          // старые сохранения: рецепт «Новый житель» виден сразу
   return G;
 }

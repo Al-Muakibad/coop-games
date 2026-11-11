@@ -24,6 +24,7 @@ const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (
 /* ---------- состояние ---------- */
 let G = null, mode = "menu", me = 0, room = null, hs = null, gs = null, bot = null, botSkill = "good";
 let partner = { name: "", online: false, cur: null, bot: false };
+let waitPause = false, lastSave = 0;
 let started = false, ended = false, simAcc = 0, saveT = 0, hudT = 0, clock = 0, menuG = null, pendingRoles = null;
 let drag = null, pend = null, ghost = null, hiT = null, sellHot = false;
 const pings = [];
@@ -44,7 +45,7 @@ let world = null, cards = null, fx = null;
 function resize() {
   W = innerWidth; H = innerHeight;
   DPR = Math.min(devicePixelRatio || 1, [1, 1.5, 2][quality]);
-  renderer.setPixelRatio(DPR); renderer.setSize(W, H, false);
+  renderer.setPixelRatio(menuLow ? Math.min(devicePixelRatio || 1, mobile ? 0.75 : 1) : DPR); renderer.setSize(W, H, false);
   camera.aspect = W / H; camera.fov = W < H ? 50 : 38; camera.updateProjectionMatrix();
   if (fx) fx.setScale(H * DPR * 0.62 / Math.tan(camera.fov * Math.PI / 360));
 }
@@ -91,7 +92,8 @@ async function boot() {
   fx = new FX(scene, $("layer"), project);
   resize(); applyQuality();
   loadbar.style.width = "100%";
-  T.init({ header: "#2a1d14", bg: "#1b1410", back: "../" });
+  T.init({ header: "#2a1d14", bg: "#1b1410" });
+  setupBack();
   buildShop();
   menuG = demoState();
   world.setStage(menuG.bridge, false);
@@ -100,10 +102,19 @@ async function boot() {
   const inv = window.Net && Net.readInvite ? Net.readInvite() : null;
   if (inv) joinGame(inv); else showMenu();
 }
+let menuLow = null;
+function menuRes(on) {
+  if (menuLow === on || !world) return;
+  menuLow = on;
+  const d = on ? Math.min(devicePixelRatio || 1, mobile ? 0.75 : 1) : Math.min(devicePixelRatio || 1, [1, 1.5, 2][quality]);
+  renderer.setPixelRatio(d); renderer.setSize(W, H, false);
+  renderer.shadowMap.enabled = !on && quality > 0; world.sun.castShadow = !on && quality > 0;
+  scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
+}
 function applyQuality() {
   resize();
-  renderer.shadowMap.enabled = quality > 0;
-  if (world) { world.sun.castShadow = quality > 0; const s = quality > 1 ? 2048 : 1024; if (world.sun.shadow.map && world.sun.shadow.mapSize.x !== s) { world.sun.shadow.map.dispose(); world.sun.shadow.map = null; } world.sun.shadow.mapSize.set(s, s); }
+  renderer.shadowMap.enabled = quality > 0 && !menuLow;
+  if (world) { world.sun.castShadow = quality > 0 && !menuLow; const s = quality > 1 ? 2048 : 1024; if (world.sun.shadow.map && world.sun.shadow.mapSize.x !== s) { world.sun.shadow.map.dispose(); world.sun.shadow.map = null; } world.sun.shadow.mapSize.set(s, s); }
   if (fx) fx.q = [0.45, 0.8, 1][quality];
   scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
 }
@@ -144,7 +155,8 @@ function buy(k) {
 
 /* ---------- режимы ---------- */
 function showMenu() {
-  mode = "menu"; started = false; ended = false; G = null; drag = null; partner = { name: "", online: false, cur: null };
+  mode = "menu"; started = false; ended = false; G = null; drag = null; partner = { name: "", online: false, cur: null }; bot = null; waitPause = false;
+  closeConfirm(false); clearPairs(); netNote("");
   hideAll(); $("top").classList.add("hidden"); $("bot").classList.add("hidden");
   $("menu").classList.remove("hidden"); $("title").classList.remove("hidden");
   const co = SV.peek("coop"), so = SV.peek("solo");
@@ -155,23 +167,77 @@ function showMenu() {
     <div class="b2"><button class="b" id="m-bot"><span>🤖</span><span class="t">${L("С ботом")}</span></button><button class="b" id="m-solo"><span>🙋</span><span class="t">${L("Одному")}</span></button></div>
     ${so ? `<button class="b" id="m-sres"><span>▶</span><span class="t">${L("Продолжить одиночную")}<small>${L("День")} ${so.day} · ${L("мост")} ${so.bridge}/5</small></span></button>` : ""}
     <div class="b2"><button class="b ghost" id="m-help">❓ ${L("Как играть")}</button><button class="b ghost" id="m-games">🎮 ${L("Другие игры")}</button></div>`;
-  $("m-coop").onclick = () => hostGame(null);
-  $("m-bot").onclick = () => rolesLocal("bot", null);
-  $("m-solo").onclick = () => rolesLocal("solo", null);
+  // новая игра поверх сохранения — только после вопроса (раньше случайный тап стирал хутор при первом автосохранении)
+  const fresh = (have, slot, go) => () => {
+    if (!have) return go();
+    dialog(`<h2>${L("Начать заново?")}</h2><p>${L("Сохранённый хутор")} (${L("день")} ${have.day}, ${L("мост")} ${have.bridge}/5) ${L("будет заменён новым.")}</p>
+      <button class="b primary" id="nw-res">▶ ${L("Продолжить сохранённый")}</button><button class="b" id="nw-go">${L("Да, начать новый")}</button><button class="b ghost" id="nw-x">${L("Назад")}</button>`);
+    $("nw-res").onclick = () => { hideDlg(); slot === "coop" ? resumeMenu() : resumeSolo(); };
+    $("nw-go").onclick = () => { hideDlg(); go(); };
+    $("nw-x").onclick = () => hideDlg();
+  };
+  $("m-coop").onclick = fresh(co, "coop", () => hostGame(null));
+  $("m-bot").onclick = fresh(so, "solo", () => rolesLocal("bot", null));
+  $("m-solo").onclick = fresh(so, "solo", () => rolesLocal("solo", null));
   if (co) $("m-res").onclick = () => resumeMenu();
-  if (so) $("m-sres").onclick = async () => { const s = await SV.load("solo"); if (s) start(s.G.solo ? "solo" : "bot", s.G); };
+  if (so) $("m-sres").onclick = () => resumeSolo();
   $("m-help").onclick = () => showHelp();
   $("m-games").onclick = () => { location.href = "../"; };
   music("m_build");
+  // localStorage мог очиститься (Telegram так делает), а в облаке сохранение есть — покажем «Продолжить»
+  if (!co || !so) Promise.all([co ? 0 : SV.probe("coop"), so ? 0 : SV.probe("solo")]).then(([a, b]) => { if ((a || b) && mode === "menu" && !started && $("dlg").classList.contains("hidden")) showMenu(); });
+}
+// загрузка сохранения: облако может отвечать до 2,5 с — показываем, что идёт загрузка, и не даём тапнуть «новую игру»
+async function loadSlot(slot) {
+  dialog(`<h2>${L("Загружаем хутор…")}</h2><p class="lb-dots"></p>`, true);
+  const s = await SV.load(slot);
+  hideDlg();
+  if (!s) { toast(L("Сохранение не найдено"), "bad"); showMenu(); return null; }
+  return s;
+}
+async function resumeSolo() {
+  const s = await loadSlot("solo"); if (!s) return;
+  const fam = s.meta.me === 1 ? 1 : 0;
+  start(s.G.solo ? "solo" : "bot", s.G, fam);
 }
 async function resumeMenu() {
-  const s = await SV.load("coop"); if (!s) return;
-  dialog(`<h2>${L("Общий хутор")}</h2><p>${L("День")} ${s.G.day} · ${L("мост")} ${s.G.bridge}/5. ${L("Позови друга — он продолжит за свою семью. Или доиграй с ботом.")}</p>
-    <button class="b primary" id="r-f">👥 ${L("Позвать друга")}</button><button class="b" id="r-b">🤖 ${L("С ботом")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`);
+  const s = await loadSlot("coop"); if (!s) return;
+  const m = s.meta || {}, wasGuest = m.from === "guest", rid = m.room;
+  dialog(`<h2>${L("Общий хутор")}</h2><p>${L("День")} ${s.G.day} · ${L("мост")} ${s.G.bridge}/5.</p>
+    ${rid ? `<button class="b primary" id="r-same">▶ ${wasGuest ? L("Вернуться к напарнику") : L("Продолжить — друг подключится сам")}</button>` : ""}
+    <button class="b ${rid ? "" : "primary"}" id="r-f">👥 ${L("Новая ссылка другу")}${wasGuest ? `<small>${L("ты поведёшь южную семью")}</small>` : ""}</button>
+    <button class="b" id="r-b">🤖 ${L("Доиграть с ботом")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`);
+  if (rid) $("r-same").onclick = () => { hideAll(); if (wasGuest) joinGame(rid, s.G); else rehost(s.G, rid); };
   $("r-f").onclick = () => { hideAll(); hostGame(s.G); };
-  $("r-b").onclick = () => { hideAll(); start("bot", s.G); };
+  $("r-b").onclick = () => { hideAll(); start("bot", s.G, wasGuest ? 1 : 0); };
   $("r-x").onclick = () => showMenu();
 }
+// хозяин вернулся в ту же комнату: гость, если он ещё в игре, подключится сам (у него та же ссылка)
+async function rehost(saved, rid) {
+  hideAll(); $("title").classList.add("hidden");
+  dialog(`<h2>${L("Подключаемся…")}</h2><p class="lb-dots"></p>`, true);
+  let r;
+  try { r = await Net.open(GAME, rid, { name: myName(), host: true }); }
+  catch (_) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); start("bot", saved, 0); return; }
+  room = r; me = 0;
+  partner = { name: r.peer ? r.peer.name : L("Друг"), online: !!r.peer, cur: null };
+  hs = new HostSync(room, hostApi());
+  saved.solo = 0;
+  start("host", saved);
+  partner.online = !!room.peer;
+  St.event("o2_room", { role: "host", resume: 2 });
+  if (room.peer) { hs.full(); room.send("go", {}); return; }
+  G.spd = 0; waitPause = true;
+  waitDialog();
+}
+function waitDialog() {
+  dialog(`<h2>${L("Ждём напарника")}</h2><p>${L("Хутор на паузе. Если друг ещё в игре — он подключится сам. Если вышел — отправь ему ссылку.")}</p>
+    <button class="b primary" id="w-inv">📨 ${L("Отправить ссылку")}</button><button class="b" id="w-bot">🤖 ${L("Пусть играет бот")}</button><button class="b ghost" id="w-menu">${L("В меню")}</button>`, true);
+  $("w-inv").onclick = () => { const link = Net.inviteLink(GAME, room.id); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(L("Заходи в мой хутор!"))}`); };
+  $("w-bot").onclick = () => { bot = makeBot(1, { skill: "good" }); partner.name = "🤖 " + L("Бот"); partner.bot = true; partner.online = true; if (waitPause) { waitPause = false; G.spd = 1; } hideDlg(); toast(L("Бот ведёт северную семью"), "good"); };
+  $("w-menu").onclick = () => toMenu();
+}
+function toMenu() { save(true); try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; bot = null; started = false; waitPause = false; showMenu(); }
 // выбор ремёсел: локально (один / бот)
 function rolesLocal(m, saved) {
   hideAll(); $("title").classList.add("hidden");
@@ -184,7 +250,7 @@ function rolesLocal(m, saved) {
       ${fam(0)}${m === "solo" ? fam(1) : ""}
       <button class="b primary" id="r-go">▶ ${L("Начать")}</button><button class="b ghost" id="r-x">${L("Назад")}</button>`;
     p.querySelectorAll(".role").forEach((el) => el.onclick = () => { r[+el.dataset.f] = el.dataset.r; if (m === "bot" && +el.dataset.f === 0 && r[1] === r[0]) r[1] = ROLE_IDS.find((x) => x !== r[0] && x !== "trader"); play("select"); draw(); });
-    $("r-go").onclick = () => { hideAll(); const g = saved || S.newGame({ seed: (Math.random() * 1e9) | 0, roles: r, solo: m === "solo" }); g.pl[0].role = r[0]; g.pl[1].role = r[1]; g.solo = m === "solo" ? 1 : 0; start(m, g); };
+    $("r-go").onclick = () => { hideAll(); const g = saved || S.newGame({ seed: (Math.random() * 1e9) | 0, roles: r, solo: m === "solo" }); g.pl[0].role = r[0]; g.pl[1].role = r[1]; g.solo = m === "solo" ? 1 : 0; start(m, g, saved && saved._fam || 0); };
     $("r-x").onclick = () => showMenu();
   };
   $("roles").classList.remove("hidden"); draw();
@@ -246,12 +312,14 @@ function hostApi() {
     ping: (d) => addPing(d.x, d.y, d.k, 1, true),
     emote: (d) => showEmote(d.e, 1, true),
     peer: (on, p) => partnerConn(on, p),
+    resync: () => { if (started) netNote(L("Связь с напарником восстановлена"), "good"); },
   };
 }
 // гость: вход по ссылке
-async function joinGame(id) {
+async function joinGame(id, copy) {
   hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden"); mode = "guest"; me = 1;
-  const r = await Lobby.join(GAME, id, { onCancel: () => { mode = "menu"; showMenu(); }, onBot: () => { mode = "menu"; rolesLocal("bot", null); } });
+  // своя копия хутора (если хозяина нет) — доиграть с ботом за свою (северную) семью
+  const r = await Lobby.join(GAME, id, { onCancel: () => { mode = "menu"; showMenu(); }, onBot: () => { mode = "menu"; if (copy) start("bot", copy, 1); else rolesLocal("bot", null); } });
   room = r; r.off("peer"); r.off("peer-left"); partner = { name: r.peer ? r.peer.name : L("Хозяин"), online: true, cur: null };
   St.event("o2_room", { role: "guest" });
   gs = new GuestSync(room, {
@@ -264,6 +332,7 @@ async function joinGame(id) {
     lob: (d) => { if (started) return; partner.name = d.name || partner.name; pendingRoles = { roles: d.roles.slice(), saved: d.day ? { day: d.day } : null }; rolesCoop(); },
     go: () => {},
     peer: (on, p) => partnerConn(on, p),
+    resync: () => { if (started) netNote(L("Связь восстановлена — сверяем хутор"), "good"); },
   });
   // хозяин мог ещё не подписаться — повторяем «я тут», пока не пришёл выбор ремёсел
   room.send("rl", { name: myName() });
@@ -272,10 +341,11 @@ async function joinGame(id) {
 }
 
 /* ---------- старт ---------- */
-function start(m, g) {
-  mode = m; G = g; started = true; ended = false; simAcc = 0; drag = null; ghost = null;
-  me = m === "guest" ? 1 : 0;
-  if (m === "bot") { bot = makeBot(1, { skill: botSkill, seed: (Math.random() * 1e6) | 0 }); partner = { name: "🤖 " + L("Бот"), online: true, cur: null, bot: true }; }
+function start(m, g, fam) {
+  mode = m; G = g; started = true; ended = false; simAcc = 0; drag = null; ghost = null; waitPause = false; lastSave = performance.now();
+  me = m === "guest" ? 1 : fam === 1 && m !== "host" ? 1 : 0;
+  for (const id in G.cards) if (G.cards[id].drag) G.cards[id].drag = 0;
+  if (m === "bot") { bot = makeBot(1 - me, { skill: botSkill, seed: (Math.random() * 1e6) | 0 }); partner = { name: "🤖 " + L("Бот"), online: true, cur: null, bot: true }; }
   else bot = null;
   if (m === "solo") partner = { name: "", online: false, cur: null };
   hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden");
@@ -292,6 +362,9 @@ function start(m, g) {
     setTimeout(() => banner(m === "solo" ? L("Две семьи — два берега") : me === 0 ? L("Твой берег — южный") : L("Твой берег — северный"), m === "solo" ? L("Строй мост: ему нужны жители обеих семей") : L("Трудитесь вместе: мост строят только вдвоём")), 600);
   }
   updHud(true);
+  closeConfirm(true);
+  pairSeen.clear();
+  save(true);
 }
 
 /* ---------- напарник: связь ---------- */
@@ -299,7 +372,7 @@ let leftT = 0;
 function partnerConn(on, p) {
   if (on) {
     partner.online = true; if (p && p.name) partner.name = p.name;
-    if (started && mode === "host") { hs.full(); room.send("go", {}); if (bot) { bot = null; toast(L("Напарник вернулся — бот уступил место"), "good"); } else toast(L("Напарник снова с нами"), "good"); S.releaseAll(G, 1); }
+    if (started && mode === "host") { hs.full(); room.send("go", {}); if (bot) { bot = null; partner.bot = false; toast(L("Напарник вернулся — бот уступил место"), "good"); } else toast(L("Напарник снова с нами"), "good"); S.releaseAll(G, 1); if (waitPause) { waitPause = false; G.spd = 1; } }
     if (started && mode === "guest") toast(L("Связь с хозяином восстановлена"), "good");
     if (!started && mode === "host" && pendingRoles) rolesCoop();
     hideDlg();
@@ -313,7 +386,7 @@ function partnerConn(on, p) {
     dialog(`<h2>${L("Напарник отключился")}</h2><p>${L("Связь пропала. Если друг вернётся по той же ссылке — продолжит за свою семью. Пока можно отдать его семью боту.")}</p>
       <button class="b primary" id="pl-bot">🤖 ${L("Пусть играет бот")}</button><button class="b" id="pl-wait">⏳ ${L("Ждать друга")}</button>`, true);
     $("pl-bot").onclick = () => { bot = makeBot(1, { skill: "good" }); partner.name = "🤖 " + L("Бот"); partner.bot = true; hideDlg(); toast(L("Бот ведёт северную семью"), "good"); };
-    $("pl-wait").onclick = () => { hideDlg(); G.spd = 0; toast(L("Пауза, пока друг не вернётся"), ""); };
+    $("pl-wait").onclick = () => { hideDlg(); G.spd = 0; waitPause = true; toast(L("Пауза, пока друг не вернётся. Он подключится сам"), ""); };
   } else if (mode === "guest") {
     St.event("o2_host_left", { day: G.day });
     SV.save("coop", G, { from: "guest" }, true);
@@ -597,6 +670,11 @@ function onEvent(e) {
     St.state({ day: e.day, bridge: G.bridge, pop: S.popCount(G) });
   } else if (t === "hold") { banner("📦 " + L("Слишком много карт"), L("Продайте лишние:") + " " + e.over + " · " + L("иначе продадим сами")); play("error"); }
   else if (t === "autosell") toast(L("Лишние карты проданы за вас"), "");
+  else if (t === "settler") {
+    const [X, , Z] = wp(e.x, e.y);
+    banner("🚶 " + L("Пришёл странник"), (e.o === 0 ? L("Южная семья") : L("Северная семья")) + L(" получила нового жителя"), "gold");
+    fx.burst(X, 0.6, Z, 16, fx.col.gold, 1.3); play("heal");
+  }
   else if (t === "sell") { const [X, , Z] = wp(e.x, e.y); play("coin2"); fx.text(X, 0.8, Z, "+" + e.n + " 🪙", "coin"); }
   else if (t === "buy") { play("buy"); const c = G.cards[e.id]; if (c) { const [X, , Z] = wp(c.x, c.y); fx.puff(X, 0.2, Z, 14, fx.col.dust, 1.2); fx.burst(X, 0.5, Z, 10, fx.col.gold, 1.3); } if (e.p !== me && mode !== "solo") toast("🧺 " + (partner.name || L("Напарник")) + " " + L("купил сундук"), "f" + e.p); }
   else if (t === "open") { play("open"); const [X, , Z] = wp(e.x, e.y); fx.burst(X, 0.5, Z, 26, fx.col.gold, 2); fx.puff(X, 0.2, Z, 12); }
@@ -639,7 +717,7 @@ function endScreen(win) {
   const mk = (txt, cls, fn) => { const el = document.createElement("button"); el.className = "b " + cls; el.textContent = txt; el.onclick = fn; b.appendChild(el); };
   if (win && mode !== "guest") mk("♾ " + L("Играть дальше (бесконечный режим)"), "primary", () => { $("screen-end").classList.add("hidden"); ended = false; });
   if (win && mode === "guest") mk("♾ " + L("Играть дальше"), "primary", () => { $("screen-end").classList.add("hidden"); ended = false; });
-  mk("🏠 " + L("В меню"), "", () => { try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; showMenu(); });
+  mk("🏠 " + L("В меню"), "", () => toMenu());
   $("screen-end").classList.remove("hidden");
   ended = true;
 }
@@ -753,6 +831,7 @@ function showHelp() {
     <p><b>${L("Складывай карты в стопки.")}</b> ${L("Житель на дерево — бревно, на валун — камень. Подходящая стопка работает сама: над ней бежит полоска.")}</p>
     <p><b>${L("Два берега.")}</b> ${L("Юг богат лесом, север — камнем. Перетаскивай ресурсы через реку напарнику. Своих жителей двигает только их семья.")}</p>
     <p><b>${L("Мост — общая цель.")}</b> ${L("Каждый шаг моста и тяжёлые стройки (амбар, ярмарка) требуют жителей из обеих семей в одной стопке.")}</p>
+    <p><b>${L("Новые жители.")}</b> ${L("Хижина + 2 жителя (любых семей) — через полминуты новый житель, раз в день на хижину. Остался один? Положи его на хижину — напарник добавит своего. А к семье, где меньше двух жителей, утром приходит странник.")}</p>
     <p><b>${L("Ночью ужин.")}</b> ${L("Каждый житель съедает 2 еды из общего запаса. Голодный погибает. Готовая еда сытнее.")}</p>
     <p><b>${L("Набеги")}</b> ${L("приходят с севера и юга. Тяжёлых врагов (👥) пробивают только бойцы обеих семей вместе.")}</p>
     <p><b>${L("Связь:")}</b> ${L("долгое нажатие на стол — метка «Сюда!», кнопка 💬 — быстрые фразы.")}</p>
@@ -766,7 +845,7 @@ function openPause() {
     <div class="b2"><button class="b" id="p-snd">${SET.snd ? "🔊 " + L("Звук") : "🔇 " + L("Звук")}</button><button class="b" id="p-mus">${SET.mus ? "🎵 " + L("Музыка") : "🎵 " + L("выкл")}</button></div>
     <button class="b" id="p-q">✨ ${L("Графика")}: ${[L("низкая"), L("средняя"), L("высокая")][quality]}</button>
     ${mode === "host" || mode === "guest" ? `<button class="b" id="p-inv">📨 ${L("Ссылка для друга ещё раз")}</button>` : ""}
-    <button class="b" id="p-menu">🏠 ${L("В меню")}${mode !== "guest" ? " · " + L("сохранится") : ""}</button><button class="b ghost" id="p-x">${L("Продолжить")}</button>`;
+    <button class="b" id="p-menu">🏠 ${L("В меню")} · ${L("сохранится")}</button><button class="b ghost" id="p-x">${L("Продолжить")}</button>`;
   $("pause").classList.remove("hidden");
   $("p-goals").onclick = () => { $("pause").classList.add("hidden"); showGoals(); };
   $("p-book").onclick = () => { $("pause").classList.add("hidden"); showBook(); };
@@ -775,7 +854,7 @@ function openPause() {
   $("p-mus").onclick = () => { SET.mus = SET.mus ? 0 : 1; saveSet(); openPause(); };
   $("p-q").onclick = () => { quality = (quality + 2) % 3; qLock = true; applyQuality(); openPause(); };
   if ($("p-inv")) $("p-inv").onclick = () => { const link = Net.inviteLink(GAME, room.id); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(L("Заходи в мой хутор!"))}`); };
-  $("p-menu").onclick = () => { save(true); try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; started = false; showMenu(); };
+  $("p-menu").onclick = () => toMenu();
   $("p-x").onclick = () => $("pause").classList.add("hidden");
 }
 $("b-menu").onclick = () => { play("click"); openPause(); };
@@ -795,8 +874,99 @@ document.querySelectorAll("#spd button").forEach((b) => b.onclick = () => {
 /* ---------- сохранение ---------- */
 function save(force) {
   if (!G || !started || G.lost) return;
-  if (mode === "host" || mode === "guest") SV.save("coop", G, { from: mode }, force);
-  else SV.save("solo", G, { mode }, force);
+  lastSave = performance.now();
+  try {
+    if (mode === "host" || mode === "guest") SV.save("coop", G, { from: mode, room: room ? room.id : "", me }, force);
+    else SV.save("solo", G, { mode, me }, force);
+  } catch (e) { console.warn("save", e); }
+}
+// уход со страницы: Telegram свернули/закрыли, экран погас, «Назад» — сохраняем сразу (и в облако)
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") save(true); });
+addEventListener("pagehide", () => save(true));
+// Telegram: не закрывать мини-приложение случайным свайпом во время игры
+function closeConfirm(on) { try { const tg = T.tg; if (!tg) return; if (on) tg.enableClosingConfirmation && tg.enableClosingConfirmation(); else tg.disableClosingConfirmation && tg.disableClosingConfirmation(); } catch (_) {} }
+// кнопка «Назад» Telegram: в игре — не выходим молча, а спрашиваем; в меню — к списку игр
+function setupBack() {
+  const tg = T.tg; if (!tg || !tg.BackButton) return;
+  try { tg.BackButton.show(); tg.BackButton.onClick(onBack); } catch (_) {}
+}
+function onBack() {
+  play("click");
+  if (started && G) {
+    save(true);
+    for (const id of ["info", "book", "pause", "emotes"]) if (!$(id).classList.contains("hidden")) { $(id).classList.add("hidden"); return; }
+    if (!$("dlg").classList.contains("hidden") && !$("dlg").dataset.keep) { hideDlg(); return; }
+    if (!$("screen-end").classList.contains("hidden")) { toMenu(); return; }
+    dialog(`<h2>${L("Выйти в меню?")}</h2><p>${L("Прогресс сохранится.")}${mode === "host" || mode === "guest" ? " " + L("Напарник сможет подождать тебя — вернись через «Продолжить общий хутор».") : ""}</p>
+      <button class="b primary" id="bk-stay">▶ ${L("Остаться")}</button><button class="b" id="bk-menu">🏠 ${L("В меню")}</button>`);
+    $("bk-stay").onclick = () => hideDlg();
+    $("bk-menu").onclick = () => { hideDlg(); toMenu(); };
+    return;
+  }
+  if (!$("roles").classList.contains("hidden") || !$("dlg").classList.contains("hidden")) { hideAll(); showMenu(); return; }
+  if (window.Lobby && document.getElementById("lobby") && !document.getElementById("lobby").classList.contains("hidden")) { try { Lobby.current && Lobby.current.close(); } catch (_) {} Lobby.hide(); showMenu(); return; }
+  location.href = "../";
+}
+
+/* ---------- общие стройки: чего ждёт стопка ---------- */
+const pairEls = new Map(), pairSeen = new Set();
+function clearPairs() { for (const el of pairEls.values()) el.remove(); pairEls.clear(); }
+const famGen = (f) => (f === 0 ? L("южной семьи") : L("северной семьи"));
+function pairText(w) {
+  const solo = mode === "solo";
+  if (w.fam === -1) return "👥 " + L("Нужны жители обеих семей");
+  if (w.swap) {
+    if (solo) return "👥 " + L("Тут двое из одной семьи — замени одного на жителя") + " " + famGen(w.fam);
+    return w.fam === me ? "👥 " + L("Напарник положил двоих — нужен твой житель вместо одного") : "👥 " + L("Двое твоих не подойдут: убери одного — нужен житель второй семьи (напарника)");
+  }
+  if (solo) return "👥 " + L("Нужен житель") + " " + famGen(w.fam);
+  if (w.fam === me) return "👥 " + L("Нужен твой житель");
+  return "👥 " + (partner.bot ? L("Ждём жителя бота — он уже несёт") : L("Нужен житель второй семьи (напарника)"));
+}
+function updPairs() {
+  const want = new Map();
+  for (const id in G.cards) { const r = G.cards[id]; if (r.dn || !r.up || r.drag) continue; const w = S.pairWait(G, r); if (w) want.set(r.id, w); }
+  for (const [id, el] of pairEls) if (!want.has(id)) { el.remove(); pairEls.delete(id); }
+  for (const [id, w] of want) {
+    let el = pairEls.get(id);
+    if (!el) { el = document.createElement("div"); el.className = "pairlab"; $("layer").appendChild(el); pairEls.set(id, el); }
+    const txt = pairText(w); if (el.textContent !== txt) el.textContent = txt;
+    const f = w.fam < 0 ? 1 - me : w.fam; el.style.background = FAM[f].d; el.style.borderColor = FAM[f].c;
+    const key = id + ":" + w.rid + ":" + w.fam + ":" + w.swap;
+    if (!pairSeen.has(key)) { pairSeen.add(key); if (w.fam !== me || w.swap || mode === "solo") { toast(txt + " · " + recName(w.rid), "f" + f, 4); haptic("notify", "warning"); } else toast(txt + " · " + recName(w.rid), "f" + f, 4); }
+  }
+}
+function drawPairs() {
+  for (const [id, el] of pairEls) {
+    const r = G.cards[id]; if (!r) continue;
+    // под стопкой (над ней часто баннеры и шапка)
+    const s = project(U(r._dx != null ? r._dx : r.x), 0.1, U((r._dy != null ? r._dy : r.y) + S.stackH(G, r)) + 0.12);
+    el.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, 0)`;
+  }
+}
+// «в семье остался один» — подсказка, где взять жителей (раз в день на семью)
+const loneSeen = {};
+function loneHint() {
+  for (const f of mode === "solo" ? [0, 1] : [me]) {
+    const n = S.famCount(G, f); const key = f + ":" + G.day;
+    if (n >= 2 || loneSeen[key] || G.ph !== "day" || G.lost) continue;
+    loneSeen[key] = 1;
+    toast("🏠 " + (mode === "solo" ? (f === 0 ? L("Южная семья") : L("Северная семья")) : L("У тебя")) + ": " + L("жителей меньше двух. Положи жителя на хижину — напарник добавит своего, будет новый. А утром придёт странник."), "f" + f, 6);
+  }
+}
+/* ---------- связь у гостя: хозяин шлёт 10 раз в секунду, тишина дольше 3 с — проблема ---------- */
+let netNoteT = 0;
+function netNote(txt, cls) {
+  let el = $("netw"); if (!el) { el = document.createElement("div"); el.id = "netw"; document.body.appendChild(el); }
+  el.textContent = txt; el.className = txt ? "show " + (cls || "") : "";
+  clearTimeout(netNoteT); if (txt && cls === "good") netNoteT = setTimeout(() => netNote(""), 2500);
+}
+let netBad = false;
+function netWatch() {
+  if (!gs || !started || mode !== "guest") return;
+  const q = gs.silence();
+  if (q > 3 && partner.online) { if (!netBad) { netBad = true; netNote("📶 " + L("Связь с хозяином прервалась — переподключаемся…"), "bad"); } gs.ask(); }
+  else if (netBad && q < 1) { netBad = false; netNote(L("Связь восстановлена"), "good"); }
 }
 
 /* ---------- курсоры, метки, стрелки ---------- */
@@ -839,6 +1009,7 @@ function drawOverlay(dt) {
     n++;
   }
   for (let i = n; i < arrows.length; i++) arrows[i].style.display = "none";
+  if (G && started) drawPairs();
 }
 
 /* ---------- главный цикл ---------- */
@@ -866,12 +1037,13 @@ function loop(now) {
     if (G.ev.length) { const evs = G.ev; G.ev = []; onEvents(evs); if (hs) hs.events(evs); }
     if (hs) hs.tick(dt);
     simMs += performance.now() - t0;
-    saveT += dt; if (saveT > 20) { saveT = 0; save(); }
+    if (performance.now() - lastSave > 10000) save();
     // курсор хозяина для гостя
     if (hs && room && room.peer && drag) { const d = { x: Math.round(drag.x), y: Math.round(drag.y + CH / 2), d: 1 }; if ((loop.ct = (loop.ct || 0) + dt) > 0.08) { loop.ct = 0; room.sendFast("cu", d); } }
   } else if (live && mode === "guest") {
     gs.extrapolate(dt);
-    saveT += dt; if (saveT > 30) { saveT = 0; save(); }
+    if (performance.now() - lastSave > 10000) save();
+    netWatch(dt);
     if (ghost) { const c = G.cards[ghost.id]; if (!c || (c.drag === 0 && Math.abs(c.x - ghost.x) + Math.abs(c.y - ghost.y) < 260) || clock - ghost.t > 1.6 || ghost.sell) ghost = ghost.sell && c && clock - ghost.t < 1.2 ? ghost : null; }
   }
   // камера
@@ -915,10 +1087,13 @@ function loop(now) {
     let fire = 0; for (const l of lights) { const d = Math.hypot(l.X - cam.tx, l.Z - cam.tz); fire = Math.max(fire, 1 - d / 6); }
     ambience({ amb_river: 0.55 * Math.max(0.15, 1 - dRiver * 0.8), amb_birds: (1 - (world.night || 0)) * (GG.season === 3 ? 0.2 : 0.55), amb_night: (world.night || 0) * 0.6, fire: fire * 0.6 * (started ? 1 : 0.5) });
   }
-  hudT += dt; if (live && hudT > 0.15) { hudT = 0; updHud(); if (drag) $("sell").classList.toggle("hot", sellHot); }
+  hudT += dt; if (live && hudT > 0.15) { hudT = 0; updHud(); updPairs(); loneHint(); if (drag) $("sell").classList.toggle("hot", sellHot); }
   // за окнами лобби и выбора ремёсел мир почти не виден — рисуем редко (экономим батарею и не мешаем сети)
+  // меню и окна до старта: ровные ~30 кадров (за окнами лобби — 20) в пониженном разрешении, без теней.
+  // Раньше за окнами рисовали раз в 0,4 с — на телефоне это выглядело как «фриз».
   const busyUi = !started && ((document.getElementById("lobby") && !document.getElementById("lobby").classList.contains("hidden")) || !$("roles").classList.contains("hidden") || !$("dlg").classList.contains("hidden"));
-  if (busyUi && now - (loop.lr || 0) < 400) return;
+  menuRes(!started);
+  if (!started && now - (loop.lr || 0) < (busyUi ? 48 : 31)) return;
   loop.lr = now;
   if (document.hidden || window.__noRender) return;
   const tj1 = performance.now();

@@ -35,7 +35,7 @@ window.I18N && I18N.add({
   // HUD и сообщения
   "День": "Day", "Ночь": "Night", "Жители ужинают…": "Villagers are having supper…", "Все сыты": "Everyone is fed", "Голодали:": "Went hungry:",
   "Новый рецепт:": "New recipe:", "уже в книге": "already in the book", "всё": "used up",
-  "Погиб:": "Died:", "умер от голода": "starved to death", "Засада:": "Ambush:", "нападает!": "attacks!",
+  "Погиб:": "Died:", "🧳 Пришёл странник — теперь двое: положите обоих на хижину — появится третий": "🧳 A wanderer arrived — now there are two: put them on a hut to get a third", "Положи на хижину двух жителей — через полминуты появится третий (раз в день на хижину). Остался один житель? Утром придёт странник. +2 к месту.": "Put two villagers on a hut — a third appears shortly (once a day per hut). Only one villager left? A wanderer comes in the morning. +2 card space.", "умер от голода": "starved to death", "Засада:": "Ambush:", "нападает!": "attacks!",
   "пришли": "arrived:", "(частокол ослабил)": "(weakened by the palisade)",
   "Курганный князь идёт!": "The Barrow Prince is coming!", "Собери всех бойцов": "Gather all your fighters",
   "Курганный князь пробудился!": "The Barrow Prince has awoken!", "Курганный князь повержен!": "The Barrow Prince is defeated!",

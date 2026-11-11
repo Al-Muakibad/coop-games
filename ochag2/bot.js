@@ -510,10 +510,57 @@ export function makeBot(p, opt) {
     return false;
   }
 
+  // работник, которого можно снять с дела ради общей стройки: верхний в стопке, не в бою, не на другой общей стройке
+  function spareWorkers(G, except) {
+    const out = idle(G).filter((c) => S.root(G, c) !== except);
+    if (out.length) return out;
+    for (const id in G.cards) {
+      const c = G.cards[id];
+      if (!mine(c) || c.cb || c.up || !S.isW(c.k) || claimed(G, c.id)) continue;
+      const r = S.root(G, c);
+      if (r === except || r.drag || r.cb || CARDS[r.k].c === "site") continue;
+      const rec = r.rc && REC[r.rc];
+      if (rec && (rec.pair || rec.cat === "breed")) continue;
+      out.push(c);
+    }
+    return out;
+  }
+  // стопка ждёт жителя моей семьи (мост, амбар…) — несём сразу, напарник не должен ждать
+  function helpPair(G) {
+    if (G.ph !== "day") return false;
+    for (const id in G.cards) {
+      const r = G.cards[id];
+      if (r.dn || !r.up) continue;
+      const w = S.pairWait(G, r);
+      if (!w || w.swap || (w.fam !== p && w.fam !== -1)) continue;
+      if (G._carry && G._carry[p] && G._carry[p].tid === r.id) continue;
+      const ws = spareWorkers(G, r);
+      if (!ws.length) continue;
+      const wk = pickWorker(G, ws, REC[w.rid].cat, r);
+      return move(G, wk.id, r.id, 0, 0, "help " + w.rid);
+    }
+    return false;
+  }
+  // у напарника остался один житель и он положил его на хижину — добавляем своего: новый житель уйдёт в его семью
+  function helpBreed(G) {
+    if (G.ph !== "day" || S.famCount(G, 1 - p) >= 3) return false;
+    for (const id in G.cards) {
+      const h = G.cards[id];
+      if (h.k !== "hut" || h.dn || h.rc || h.br === G.day || !free(G, h)) continue;
+      const cs = S.chain(G, h);
+      if (cs.length !== 2 || !S.isPerson(cs[1].k) || cs[1].o === p) continue;
+      const ws = spareWorkers(G, h);
+      if (!ws.length) continue;
+      return move(G, nearest(ws, h).id, h.id, 0, 0, "breed for partner");
+    }
+    return false;
+  }
+
   function decide(G) {
     if (G.ph === "hold") return sellJunk(G, true);
     if (openPacks(G)) return true;
     if (good) { if (combat(G)) return true; } else if (rand() < 0.4 && combat(G)) return true;
+    if ((good || rand() < 0.5) && (helpPair(G) || helpBreed(G))) return true;
     if (good && equip(G)) return true;
     const fp = foodPlan(G);
     let ws = idle(G);

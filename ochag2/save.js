@@ -1,11 +1,12 @@
 // «Хутор» — сохранение: localStorage (часто) + Telegram CloudStorage (6.9+, кусками по 3800 символов, не чаще раза в 30 с).
 // Два слота: "coop" — общий хутор (сохраняют оба игрока: хозяин — всегда, гость — копию от хозяина) и "solo".
 import { serialize, deserialize } from "./sim.js";
-const KEYS = { coop: "o2_coop", solo: "o2_solo" }, CK = { coop: "o2c", solo: "o2s" }, CHUNK = 3800, MAXCH = 28;
+const KEYS = { coop: "o2_coop", solo: "o2_solo" }, CK = { coop: "o2c", solo: "o2s" }, CHUNK = 3800, MAXCH = 60;
 const T = window.TG, tg = T && T.tg;
 const cloudOk = () => { try { return !!(tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast("6.9")); } catch (_) { return false; } };
 
-function wrap(G, meta) { return JSON.stringify({ t: Date.now(), day: G.day, bridge: G.bridge, meta: meta || {}, g: serialize(G) }); }
+// служебные поля отрисовки (_dx, _Y …) в сохранение не пишем — меньше кусков в облаке
+function wrap(G, meta) { const g = JSON.parse(serialize(G)); for (const id in g.cards) for (const k in g.cards[id]) if (k[0] === "_") delete g.cards[id][k]; delete g._claims; delete g._carry; delete g._plans; return JSON.stringify({ t: Date.now(), day: G.day, bridge: G.bridge, meta: meta || {}, g: JSON.stringify(g) }); }
 function unwrap(s) { try { const o = JSON.parse(s); if (!o || !o.g) return null; const G = deserialize(o.g); return G ? { t: o.t || 0, G, meta: o.meta || {} } : null; } catch (_) { return null; } }
 
 export function peek(slot) { try { const s = localStorage.getItem(KEYS[slot]); if (!s) return null; const o = JSON.parse(s); return { day: o.day || 1, bridge: o.bridge || 0, meta: o.meta || {}, t: o.t }; } catch (_) { return null; } }
@@ -40,8 +41,15 @@ export function save(slot, G, meta, force) {
   if (!cloudOk() || (!force && now - (lastCloud[slot] || 0) < 30000)) return;
   lastCloud[slot] = now;
   const parts = []; for (let i = 0; i < s.length; i += CHUNK) parts.push(s.slice(i, i + CHUNK));
-  if (parts.length > MAXCH) return;
+  if (parts.length > MAXCH) { try { tg.CloudStorage.setItem(CK[slot] + "_n", "0", () => {}); } catch (_) {} return; }   // не оставлять в облаке старую копию
   try { parts.forEach((p, i) => tg.CloudStorage.setItem(CK[slot] + i, p, () => {})); tg.CloudStorage.setItem(CK[slot] + "_n", String(parts.length), () => {}); } catch (_) {}
+}
+// есть ли сохранение (с облаком): если в localStorage пусто, а в облаке есть — восстанавливаем его локально
+export async function probe(slot) {
+  const p = peek(slot); if (p) return p;
+  const s = await load(slot); if (!s) return null;
+  try { localStorage.setItem(KEYS[slot], JSON.stringify({ t: s.t, day: s.G.day, bridge: s.G.bridge, meta: s.meta, g: serialize(s.G) })); } catch (_) {}
+  return peek(slot);
 }
 export function wipe(slot) {
   try { localStorage.removeItem(KEYS[slot]); } catch (_) {}

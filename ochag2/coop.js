@@ -27,7 +27,7 @@ function dec(a, c) {
 const sigOf = (e) => { const s = e.slice(); s[12] = 0; return s.join(","); };
 function meta(G) { return [G.day, Math.round(G.t * 10), PH.indexOf(G.ph), Math.round(G.nt * 10), G.spd, G.q, G.bridge, G.won ? 1 : 0, G.lost ? 1 : 0, G.season || 0, Math.round((G.hold || 0) * 10), G.nid]; }
 function unmeta(G, m) { G.day = m[0]; G.t = m[1] / 10; G.ph = PH[m[2]] || "day"; G.nt = m[3] / 10; G.spd = m[4]; G.q = m[5]; G.bridge = m[6]; G.won = m[7] ? G.won || "bridge" : 0; G.lost = m[8]; G.season = m[9]; G.hold = m[10] / 10; G.nid = m[11]; }
-const RARE = ["kn", "f", "st", "bought", "pl", "solo", "open", "fights", "lastNight", "wonDay", "ht"];
+const RARE = ["kn", "f", "st", "bought", "pl", "solo", "open", "fights", "lastNight", "wonDay", "ht", "sett"];
 
 /* ---------- хозяин ---------- */
 export class HostSync {
@@ -44,6 +44,8 @@ export class HostSync {
     R.on("rf", () => this.full());
     R.on("peer", (p) => { api.peer && api.peer(true, p); });
     R.on("peer-left", (p) => { api.peer && api.peer(false, p); });
+    // гость нас «терял» (связь рвалась в одну сторону) — шлём ему мир целиком
+    R.on("resync", () => { this.full(); api.resync && api.resync(); });
   }
   send(t, d, fast) { const s = JSON.stringify(d); this.stat.tx++; this.stat.bytes += s.length; if (fast) this.room.sendFast(t, d); else this.room.send(t, d); }
   events(list) { for (const e of list) if (e.t !== "drop" && e.t !== "stack") this.evq.push(e); if (this.evq.length > 300) this.evq.splice(0, this.evq.length - 300); }
@@ -111,9 +113,12 @@ export class GuestSync {
     R.on("em", (d) => api.emote && api.emote(d, 0));
     R.on("lob", (d) => api.lob && api.lob(d));
     R.on("go", (d) => api.go && api.go(d));
-    R.on("peer", (p) => api.peer && api.peer(true, p));
+    R.on("peer", (p) => { this.askT = 0; this.ask(); api.peer && api.peer(true, p); });
     R.on("peer-left", (p) => api.peer && api.peer(false, p));
+    R.on("resync", () => { this.askT = 0; this.ask(); api.resync && api.resync(); });
   }
+  // сколько секунд от хозяина ничего не приходило (он шлёт 10 раз в секунду)
+  silence() { return (Date.now() - this.lastRx) / 1000; }
   ask() { const now = Date.now(); if (now - this.askT < 1500) return; this.askT = now; this.room.send("rf", {}); }
   send(t, d, fast) { if (fast) this.room.sendFast(t, d); else this.room.send(t, d); }
   // между снимками: время дня и полоски работы идут сами

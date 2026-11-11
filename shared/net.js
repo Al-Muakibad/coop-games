@@ -99,21 +99,28 @@
   async function open(game, roomId, opts) {
     opts = opts || {};
     const client = await anyBroker("kg_");
-    const isHost = !roomId, id = roomId || rid(6), topic = `coopgames-kg7x/v1/${game}/${id}`;
+    const isHost = !roomId || !!opts.host, id = roomId || rid(6), topic = `coopgames-kg7x/v1/${game}/${id}`;
+    // opts.host — хозяин возвращается в свою же комнату (по старой ссылке); без него поведение прежнее
     const me = { id: "p_" + rid(8), name: (opts.name || "Игрок").slice(0, 20) };
     const handlers = {}, dup = Dedupe();
     let peer = null, peerSeen = 0, closed = false, seq = 0, p2p = null, rtt = 0, hbN = 0;
+    // живость прямого канала: когда последний раз что-то пришло именно по нему. Канал может «умереть» молча
+    // (смена сети, телефон уснул): readyState остаётся "open", а данные уходят в пустоту — тогда шлём ещё и через брокер.
+    let p2pIn = 0, p2pTry = 0, hbLast = Date.now(), peerAt = 0;
+    const p2pStale = () => p2p && p2p.open && Date.now() - p2pIn > 3500;
     const emit = (type, data, from) => (handlers[type] || []).forEach((fn) => { try { fn(data, from); } catch (e) { console.error(e); } });
     const pack = (type, data) => JSON.stringify({ f: me.id, n: me.name, h: isHost ? 1 : 0, t: type, d: data === undefined ? null : data, i: ++seq });
     const relay = (s) => client.publish(topic, s, { qos: 0 });
     const send = (type, data, fast) => {
       if (closed) return;
       const s = pack(type, data);
-      if (!(p2p && (fast ? p2p.sendFast(s) : p2p.send(s)))) relay(s);
+      const ok = p2p && (fast ? p2p.sendFast(s) : p2p.send(s));
+      if (!ok || p2pStale()) relay(s);     // дубль отсеется на той стороне
     };
     const startP2P = () => {
       if (p2p) p2p.close();
-      p2p = P2P((d) => relay(pack("rtc", d)), isHost, (text) => handle(text), (on) => { emit("link", on ? "p2p" : "relay"); window.Stats && Stats.event("net_link", { game, link: on ? "p2p" : "relay" }); });
+      p2pTry = Date.now();
+      p2p = P2P((d) => relay(pack("rtc", d)), isHost, (text) => { p2pIn = Date.now(); handle(text); }, (on) => { if (on) p2pIn = Date.now(); emit("link", on ? "p2p" : "relay"); window.Stats && Stats.event("net_link", { game, link: on ? "p2p" : "relay" }); });
     };
     function handle(buf) {
       let m; try { m = JSON.parse(typeof buf === "string" ? buf : buf.toString()); } catch (_) { return; }
@@ -123,7 +130,7 @@
       if (!peer && (m.t === "hi" || m.t === "ping")) {
         if (!isHost && !m.h) return;              // гость ждёт именно хозяина комнаты
         peer = { id: m.f, name: m.n || "Друг", host: !!m.h };
-        peerSeen = Date.now();
+        peerSeen = peerAt = Date.now();
         relay(pack("hi"));
         emit("peer", peer);
         if (isHost) startP2P();
@@ -132,8 +139,16 @@
       if (!peer) return;
       if (dup(m.f, m.i)) return;
       peerSeen = Date.now();
-      if (m.t === "rtc") { if (!p2p && !isHost) startP2P(); if (m.d && m.d.sdp && m.d.sdp.type === "offer" && p2p && !isHost && p2p.used) startP2P(); if (p2p) { p2p.used = true; p2p.signal(m.d); } return; }
-      if (m.t === "ping") { if (m.d && m.d.ts) send("pong", { ts: m.d.ts }); return; }
+      if (m.t === "rtc") { if ((!p2p || p2p.closed) && !isHost) startP2P(); if (m.d && m.d.sdp && m.d.sdp.type === "offer" && p2p && !isHost && p2p.used) startP2P(); if (p2p) { p2p.used = true; p2p.signal(m.d); } return; }
+      if (m.t === "ping") {
+        if (m.d && m.d.ts) { send("pong", { ts: m.d.ts }); return; }
+        if (Date.now() - peerAt < 4000) return;     // пинг, отправленный до рукопожатия
+        // пинг без метки шлёт только тот, кто нас «потерял» (у него нет напарника). Мы же его видим —
+        // значит, связь рвалась в одну сторону: прямой канал бросаем, здороваемся заново через брокер.
+        if (p2p) { p2p.close(); p2p = null; emit("link", "relay"); }
+        relay(pack("hi")); emit("resync", peer);
+        return;
+      }
       if (m.t === "pong") { if (m.d && m.d.ts) rtt = Math.round(rtt ? rtt * 0.7 + (Date.now() - m.d.ts) * 0.3 : Date.now() - m.d.ts); return; }
       if (m.t === "hi") return;
       if (m.t === "bye") { const p = peer; peer = null; if (p2p) { p2p.close(); p2p = null; } emit("peer-left", p); return; }
@@ -144,8 +159,16 @@
     client.on("connect", () => { emit("status", "online"); client.subscribe(topic); relay(pack("hi")); });
     await new Promise((res) => client.subscribe(topic, { qos: 0 }, res));
     relay(pack("hi"));
+    // вкладка спала (экран погас, Telegram свернули): таймеры стояли, сообщения ещё не разобраны — не считаем это уходом напарника
+    const woke = () => { const now = Date.now(); if (now - hbLast > 5000 && peer) peerSeen = Math.max(peerSeen, now - 4000); hbLast = now; };
+    const onVis = () => { if (document.visibilityState === "visible" && !closed) { woke(); if (peer) send("ping", { ts: Date.now() }); else relay(pack("ping")); } };
+    document.addEventListener("visibilitychange", onVis);
     const hb = setInterval(() => {
+      woke();
       if (peer) send("ping", { ts: Date.now() }); else relay(pack("ping"));
+      // прямой канал молчит дольше 8 с, хотя открыт, — закрываем; хозяин потом попробует открыть новый
+      if (p2p && p2p.open && Date.now() - p2pIn > 8000) { p2p.close(); p2p = null; emit("link", "relay"); }
+      if (peer && isHost && (!p2p || p2p.closed) && Date.now() - p2pTry > 30000 && Date.now() - peerSeen < 4000) startP2P();
       if (peer && ++hbN % 15 === 0 && window.Stats) Stats.event("net_rtt", { game, rtt, link: p2p && p2p.open ? "p2p" : "relay" });
       if (peer && Date.now() - peerSeen > 12000) { const p = peer; peer = null; if (p2p) { p2p.close(); p2p = null; } emit("peer-left", p); }
     }, 2000);
@@ -154,7 +177,7 @@
       on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); return room; },
       off(type) { delete handlers[type]; },
       send, sendFast: (type, data) => send(type, data, true),
-      close() { if (closed) return; send("bye"); closed = true; clearInterval(hb); setTimeout(() => { try { p2p && p2p.close(); } catch (_) {} try { client.end(true); } catch (_) {} }, 200); }
+      close() { if (closed) return; send("bye"); closed = true; clearInterval(hb); document.removeEventListener("visibilitychange", onVis); setTimeout(() => { try { p2p && p2p.close(); } catch (_) {} try { client.end(true); } catch (_) {} }, 200); }
     };
     window.addEventListener("pagehide", () => room.close());
     return room;

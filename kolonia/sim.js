@@ -707,6 +707,15 @@ function dawn(G) {
     for (const k of ks) spawnEnemy(G, k, b, 0);
     G.ev.push({ t: "threat", ks, b });
   }
+  // странник: если в колонии меньше двух людей, к утру приходит новый житель (не чаще раза в 2 дня) — иначе хижина не даст потомства и игра встаёт
+  if (!G.lost && popCount(G) > 0 && popCount(G) < 2 && G.day - (G.f.wand || -9) >= 2) {
+    G.f.wand = G.day;
+    const any = Object.values(G.cards).find((c) => isPerson(c.k));
+    const b = "home", hut = Object.values(G.cards).find((c) => c.k === "hut" && c.b === b);
+    const at = hut || (any && any.b === b ? any : null);
+    const v = spawn(G, "villager", b, at ? at.x : 600, at ? at.y : 500, { dy: 60 });
+    G.ev.push({ t: "wander", b });
+  }
   G.ev.push({ t: "dawn", day: G.day });
 }
 function endlessWave(G) {

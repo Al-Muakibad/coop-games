@@ -338,6 +338,7 @@ function onEvents() {
         break;
       }
       case "starve": setTimeout(() => { toast("💀 " + nm(e.k) + " умер от голода", "bad"); play("hurt"); haptic("notify", "error"); if (e.b === board) { burst(e.x, e.y + CH / 2, 22, "#8a7a9a", { v: 120 }); shake = 8; } }, (e.delay || 0) * 1000 + 300); break;
+      case "wander": setTimeout(() => { toast("🧳 Пришёл странник — теперь двое: положите обоих на хижину — появится третий", "good", 6); play("bell", { vol: 0.4 }); }, 1800); break;
       case "hold": showHold(); play("error"); haptic("notify", "warning"); break;
       case "dawn": {
         $("hold").classList.add("hidden");
