@@ -145,7 +145,7 @@ function buy(k) {
   const p = PACKS.find((q) => q.k === k);
   if (S.packLocked(G, p)) { toast(L("Пока закрыто: ") + L(PACK_LOCK[p.lock]), "bad"); play("error"); haptic("notify", "error"); return; }
   const cost = S.packCost(G, p, me);
-  if (S.coins(G) < cost) { toast(L("Не хватает монет: нужно ") + cost, "bad"); play("error"); haptic("notify", "error"); flash("s-coins"); return; }
+  if (S.coins(G, me) < cost) { toast(L("Не хватает монет: нужно ") + cost + (mode !== "solo" && S.coins(G, 1 - me) >= cost ? " · " + L("у напарника есть — попроси перекинуть через реку") : ""), "bad", 3.5); play("error"); haptic("notify", "error"); flash("s-coins"); return; }
   const c = viewCenter();
   if (mode === "guest") { gs.send("by", { k, x: Math.round(c.x), y: Math.round(c.y) }); play("buy"); haptic("impact", "light"); return; }
   const r = S.buyI(G, me, k, c.x, c.y);
@@ -325,7 +325,7 @@ async function joinGame(id, copy) {
   gs = new GuestSync(room, {
     full: (g) => { if (!started) { G = g; start("guest", g); } else { G = g; ghost = null; } },
     events: (list) => onEvents(list),
-    nack: (d) => { if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
+    nack: (d) => { if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "fcoin" ? L("Это монеты напарника — тратит их только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
     cursor: (d) => { partner.cur = { x: d.x, y: d.y, t: clock, down: d.d, bot: d.b }; },
     ping: (d) => addPing(d.x, d.y, d.k, 0, true),
     emote: (d) => showEmote(d.e, 0, true),
@@ -488,6 +488,7 @@ function startDrag(id, sx, sy) {
   const why = S.canTouch(G, me, c);
   if (why === "foreign") { toast(L("Это житель напарника — его двигает только он"), "bad"); play("error"); haptic("notify", "error"); return; }
   if (why === "busy") { toast(L("Эту карту уже держит напарник"), "bad"); play("error"); return; }
+  if (why === "fcoin") { toast(L("Это монеты напарника — тратит их только он"), "bad"); play("error"); haptic("notify", "error"); return; }
   if (why) { if (S.isEnemy(c.k)) toast(L("Врага не утащить — перетащи на него жителей"), ""); return; }
   const p = s2w(sx, sy, LIFT); if (!p) return;
   const ox = c.x - p.x, oy = c.y - p.y;
@@ -670,6 +671,10 @@ function onEvent(e) {
     St.state({ day: e.day, bridge: G.bridge, pop: S.popCount(G) });
   } else if (t === "hold") { banner("📦 " + L("Слишком много карт"), L("Продайте лишние:") + " " + e.over + " · " + L("иначе продадим сами")); play("error"); }
   else if (t === "autosell") toast(L("Лишние карты проданы за вас"), "");
+  else if (t === "gift") {
+    const [X, , Z] = wp(e.x, e.y); fx.burst(X, 0.6, Z, 12, fx.col.gold, 1.2); play("coin2");
+    if (mode !== "solo") toast("🎁 " + (e.p === me ? L("Ты подарил напарнику") : (partner.name || L("Напарник")) + " " + L("подарил тебе")) + " 🪙" + e.n, "f" + e.to, 3);
+  }
   else if (t === "settler") {
     const [X, , Z] = wp(e.x, e.y);
     banner("🚶 " + L("Пришёл странник"), (e.o === 0 ? L("Южная семья") : L("Северная семья")) + L(" получила нового жителя"), "gold");
@@ -745,7 +750,9 @@ function updHud(force) {
   const cc = S.cardCount(G), cap = S.capacity(G);
   setText($("s-cards").children[0], cc + "/" + cap);
   $("s-cards").classList.toggle("warn", cc > cap);
-  setText($("s-coins").children[0], String(S.coins(G)));
+  setText($("s-coins").children[0], String(S.coins(G, me)));
+  const pc = $("s-pcoins"), pcs = mode === "solo" ? "" : String(S.coins(G, 1 - me));
+  if (pc.textContent !== pcs) { pc.textContent = pcs; pc.style.background = FAM[1 - me].c; pc.title = L("Монеты напарника"); }
   setText($("s-bridge").children[0], G.bridge + "/5");
   const q = S.questNow(G);
   setText($("goaltx"), L(q.n));
@@ -759,7 +766,7 @@ function updHud(force) {
   else if (!partner.online && mode !== "solo" && mode !== "bot") net = L("нет связи");
   setText($("pnet"), net);
   // лавка
-  const coins = S.coins(G);
+  const coins = S.coins(G, me);
   document.querySelectorAll(".pk").forEach((el) => {
     const p = PACKS.find((x) => x.k === el.dataset.k); const lock = S.packLocked(G, p); const cost = S.packCost(G, p, me);
     el.classList.toggle("lock", lock); el.classList.toggle("can", !lock && coins >= cost); el.classList.toggle("no", !lock && coins < cost);
@@ -831,7 +838,8 @@ function showHelp() {
     <p><b>${L("Складывай карты в стопки.")}</b> ${L("Житель на дерево — бревно, на валун — камень. Подходящая стопка работает сама: над ней бежит полоска.")}</p>
     <p><b>${L("Два берега.")}</b> ${L("Юг богат лесом, север — камнем. Перетаскивай ресурсы через реку напарнику. Своих жителей двигает только их семья.")}</p>
     <p><b>${L("Мост — общая цель.")}</b> ${L("Каждый шаг моста и тяжёлые стройки (амбар, ярмарка) требуют жителей из обеих семей в одной стопке.")}</p>
-    <p><b>${L("Новые жители.")}</b> ${L("Хижина + 2 жителя (любых семей) — через полминуты новый житель, раз в день на хижину. Остался один? Положи его на хижину — напарник добавит своего. А к семье, где меньше двух жителей, утром приходит странник.")}</p>
+    <p><b>${L("Новые жители.")}</b> ${L("Хижина + 2 твоих жителя — через полминуты новый житель в твою семью, раз в день на хижину. Остался один? Положи его на хижину — напарник добавит своего, и новый житель придёт к тебе. А к семье, где меньше двух жителей, утром приходит странник.")}</p>
+    <p><b>${L("Свои монеты.")}</b> ${L("У каждого свой кошелёк: продал — монеты твои, сундук покупаешь на свои, и всё из него — твоё. Ресурсы общие. Монеты можно подарить: перетащи их на берег напарника.")}</p>
     <p><b>${L("Ночью ужин.")}</b> ${L("Каждый житель съедает 2 еды из общего запаса. Голодный погибает. Готовая еда сытнее.")}</p>
     <p><b>${L("Набеги")}</b> ${L("приходят с севера и юга. Тяжёлых врагов (👥) пробивают только бойцы обеих семей вместе.")}</p>
     <p><b>${L("Связь:")}</b> ${L("долгое нажатие на стол — метка «Сюда!», кнопка 💬 — быстрые фразы.")}</p>
@@ -864,6 +872,7 @@ $("goal").onclick = () => { const q = S.questNow(G); toast("🎯 " + L(q.h), "",
 $("partner").onclick = () => { if (partner.cur) { cam.goal = { tx: U(partner.cur.x), tz: U(partner.cur.y), t: 0.8 }; } else toast(L("Напарник пока ничего не трогал")); };
 $("s-bridge").onclick = () => { const [X, , Z] = wp(SITE_POS[0], SITE_POS[1]); cam.goal = { tx: X, tz: Z, t: 0.8 }; const r = S.RECIPE_BY_ID["b_" + Math.min(5, G.bridge + 1)]; if (G.bridge < 5 && r) toast("🌉 " + L(BRIDGE[G.bridge].d), "", 4.5); };
 $("s-food").onclick = () => toast(L("Еда к ночи: есть / нужно. Еда на грядках и кострах не считается."), "", 3.5);
+$("s-coins").onclick = () => toast(mode === "solo" ? L("Монеты: общий кошелёк обеих семей.") : L("Твои монеты (рядом — у напарника). Продаёшь — монеты твои, сундук покупаешь на свои. Перетащи монеты на берег напарника — подаришь."), "", 4.5);
 $("s-cards").onclick = () => toast(L("Место для карт. Сараи и амбар дают больше. Жители и монеты место не занимают."), "", 3.5);
 document.querySelectorAll("#spd button").forEach((b) => b.onclick = () => {
   if (!G) return; const s = +b.dataset.s; play("click");

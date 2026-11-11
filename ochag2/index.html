@@ -46,6 +46,8 @@
   #spd button { width: 36px; height: 100%; border: 0; background: transparent; color: var(--cream); font-size: 14px; font-weight: 900; }
   #spd button.on { background: rgba(246,176,74,.9); color: var(--ink); }
   #stats .chip { flex: 1; justify-content: center; padding: 0 6px; font-size: 14px; gap: 4px; }
+  #s-pcoins { font-size: 11px; font-weight: 900; opacity: .9; padding: 1px 5px; border-radius: 8px; color: #062428; margin-left: 2px; }
+  #s-pcoins:empty { display: none; }
   #stats .chip.warn { background: rgba(140, 30, 24, .85); animation: pulse 1s infinite; }
   #stats .chip.ok { box-shadow: 0 0 0 2px rgba(126,217,87,.6) inset, 0 4px 14px rgba(0,0,0,.25); }
   .dots i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 2px; }
@@ -187,7 +189,7 @@
     <div class="chip" id="s-pop" title="Жители">👥 <span>4</span><span class="dots" id="s-dots"></span></div>
     <div class="chip" id="s-food" title="Еда к ночи">🍖 <span>0/0</span></div>
     <div class="chip" id="s-cards" title="Место для карт">🃏 <span>0/0</span></div>
-    <div class="chip" id="s-coins" title="Монеты">🪙 <span>0</span></div>
+    <div class="chip" id="s-coins" title="Монеты">🪙 <span>0</span><small id="s-pcoins"></small></div>
     <div class="chip" id="s-bridge" title="Мост">🌉 <span>0/5</span></div>
   </div>
   <div class="row">

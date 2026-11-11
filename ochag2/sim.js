@@ -71,8 +71,8 @@ export function newGame(opt) {
   put("villager", nx - 50, ny - 120 + 140, 1); put("villager", nx + 50, ny - 120 + 140, 1);
   const m1 = put("mushroom", nx - 140, ny + 220); stackOnto(G, put("mushroom", nx, ny), m1);
   // монеты — у каждого берега
-  for (let i = 0; i < 3; i++) { const c = put("coin", sx + 250, sy - 160); const t = coinPile(G, c.id, c.y); if (t) stackOnto(G, c, t); }
-  for (let i = 0; i < 3; i++) { const c = put("coin", nx - 250, ny + 120); const t = coinPile(G, c.id, c.y); if (t) stackOnto(G, c, t); }
+  for (let i = 0; i < 3; i++) { const c = put("coin", sx + 250, sy - 160, 0); const t = coinPile(G, c.id, c.y, 0); if (t) stackOnto(G, c, t); }
+  for (let i = 0; i < 3; i++) { const c = put("coin", nx - 250, ny + 120, 1); const t = coinPile(G, c.id, c.y, 1); if (t) stackOnto(G, c, t); }
   for (const id in G.cards) { const c = G.cards[id]; if (isPerson(c.k)) c.hp = maxHp(G, c); }
   G.ev = [];
   return G;
@@ -172,11 +172,15 @@ export function freeSpot(G, x, y, h, skip) {
   }
   const t = { x: x + (rnd(G) - 0.5) * 80, y: y + (rnd(G) - 0.5) * 80 }; clampToBoard(G, t, h); return [t.x, t.y];
 }
-function coinPile(G, skipId, nearY) {
+// у каждой семьи свой кошелёк: монета помнит хозяина (o). Без хозяина (старые сохранения) — по берегу.
+export const bankFam = (y) => (bankOf(y) === "n" ? 1 : 0);
+export const coinOf = (c) => (c.o != null ? c.o : bankFam(c.y));
+function coinPile(G, skipId, nearY, o) {
   let best = null, bd = 1e12;
   const bank = nearY != null ? bankOf(nearY) : null;
   for (const r of roots(G)) {
     if (r.id === skipId || r.k !== "coin" || r.drag) continue;
+    if (o != null && coinOf(r) !== o) continue;
     if (bank && bankOf(r.y) !== bank) continue;
     const d = nearY != null ? Math.abs(r.y - nearY) : r.y; if (d < bd) { bd = d; best = r; }
   }
@@ -192,7 +196,8 @@ export function spawn(G, k, x, y, opt) {
   const fx = x, fy = y;
   let placed = false;
   if (k === "coin") {
-    const p = coinPile(G, c.id, y);
+    c.o = opt.o != null ? opt.o : bankFam(y);
+    const p = coinPile(G, c.id, y, c.o);
     if (p && Math.abs(p.x - x) + Math.abs(p.y - y) < 900) { stackOnto(G, c, p); placed = true; }
   } else if ((d.c === "res" || d.c === "food" || d.c === "item") && !opt.loose) {
     let best = null, bd = 230 * 230;
@@ -323,7 +328,8 @@ function finishRecipe(G, r, p) {
       G.st.made[k] = (G.st.made[k] || 0) + 1; dirty(G, c);
       G.ev.push({ t: "pop", id: c.id, fx: x, fy: y, k, inplace: 1 }); ri++; continue;
     }
-    const c = spawn(G, k, x, y, { dx: (ri - (outs.length - 1) / 2) * 30, o: k === "villager" ? weakFam(G) : undefined });
+    // новый житель — в семью тех, кто работал; если работали обе семьи (выручка одинокого жителя) — в меньшую
+    const c = spawn(G, k, x, y, { dx: (ri - (outs.length - 1) / 2) * 30, o: isPerson(k) ? (fams.length === 1 ? fams[0] : weakFam(G)) : k === "coin" && fams.length === 1 ? fams[0] : undefined });
     ri++;
     if (c && (k === "trail" || k === "darkpath" || k === "boat")) unlockVia(G, k);
   }
@@ -593,7 +599,7 @@ function unlockVia(G, k) {
 export function canTouch(G, p, c) {
   if (!c || isEnemy(c.k) || isFixed(c.k)) return "no";
   if (c.drag) return c.drag === p + 1 ? "" : "busy";
-  if (!G.solo) for (const q of chain(G, c)) if (isPerson(q.k) && q.o !== p) return "foreign";
+  if (!G.solo) for (const q of chain(G, c)) if ((isPerson(q.k) || q.k === "coin") && (q.k === "coin" ? coinOf(q) : q.o) !== p) return q.k === "coin" ? "fcoin" : "foreign";
   return "";
 }
 export function pickI(G, p, id) {
@@ -630,6 +636,11 @@ export function dropI(G, p, id, x, y, tid) {
   const r = root(G, c);
   const bank1 = bankOf(r.y);
   if (bank0 && bank1 && bank0 !== bank1 && chain(G, c).some((q) => !isPerson(q.k) && q.k !== "coin")) { G.f.traded = 1; G.st.trades++; G.ev.push({ t: "trade", p, x: r.x, y: r.y }); }
+  // монеты на чужой берег или в чужую кучку — подарок напарнику
+  if (c.k === "coin" && !G.solo) {
+    const to = r !== c && r.k === "coin" ? coinOf(r) : bank1 ? bankFam(r.y) : p;
+    if (to !== p) { const cs = chain(G, c).filter((q) => q.k === "coin"); for (const q of cs) q.o = to; G.st.gifts = (G.st.gifts || 0) + cs.length; G.ev.push({ t: "gift", p, to, n: cs.length, x: r.x, y: r.y }); }
+  }
   delete c.px; delete c.py;
   return { ok: 1, res };
 }
@@ -673,7 +684,8 @@ function nudge(G, r, target) {
 }
 
 /* ---------- монеты, продажа, сундуки ---------- */
-export function coins(G) { let n = 0; for (const id in G.cards) if (G.cards[id].k === "coin") n++; return n; }
+// coins(G) — все монеты; coins(G, p) — кошелёк семьи p (в одиночной игре кошелёк общий)
+export function coins(G, p) { let n = 0; for (const id in G.cards) { const c = G.cards[id]; if (c.k === "coin" && (p == null || G.solo || coinOf(c) === p)) n++; } return n; }
 export function sellValue(G, c) { const v = CARDS[c.k].v; if (v == null) return null; return v + (v > 0 && hasB(G, "fair") ? 1 : 0); }
 export function canSell(G, r) { return chain(G, r).every((c) => CARDS[c.k].v != null); }
 function sell(G, r, x, y, p) {
@@ -685,7 +697,8 @@ function sell(G, r, x, y, p) {
   if (p != null && roleOf(G, p) === "trader" && sum > 0) sum++;
   for (const c of cs) delete G.cards[c.id];
   const sp = { x, y: y - 120 }; clampToBoard(G, sp);
-  for (let i = 0; i < sum; i++) spawn(G, "coin", sp.x, sp.y);
+  const o = p != null && !G.solo ? p : bankFam(sp.y);
+  for (let i = 0; i < sum; i++) spawn(G, "coin", sp.x, sp.y, { o });
   G.ev.push({ t: "sell", n: sum, x: sp.x, y: sp.y, cnt: cs.length, p });
   return { ok: true, n: sum };
 }
@@ -701,13 +714,14 @@ export function buyI(G, p, k, x, y) {
   const pk = PACKS.find((q) => q.k === k);
   if (!pk || packLocked(G, pk)) return null;
   const cost = packCost(G, pk, p);
-  if (coins(G) < cost) return null;
+  if (coins(G, p) < cost) return null;
   G.st.acts[p] = (G.st.acts[p] || 0) + 1;
   let need = cost;
-  // монеты снимаем сначала с ближайших стопок
-  const pools = Object.values(G.cards).filter((c) => c.k === "coin" && !c.drag && !c.up).sort((a, c) => ((a.x - x) ** 2 + (a.y - y) ** 2) - ((c.x - x) ** 2 + (c.y - y) ** 2));
+  const mineC = (c) => c.k === "coin" && !c.drag && (G.solo || coinOf(c) === p);
+  // монеты снимаем только из своего кошелька (в одиночной — из общего), сначала с ближайших стопок
+  const pools = Object.values(G.cards).filter((c) => mineC(c) && !c.up).sort((a, c) => ((a.x - x) ** 2 + (a.y - y) ** 2) - ((c.x - x) ** 2 + (c.y - y) ** 2));
   for (const c of pools) { if (!need) break; G.ev.push({ t: "spend", x: c.x, y: c.y }); removeCard(G, c); need--; }
-  while (need > 0) { const c = Object.values(G.cards).find((q) => q.k === "coin" && !q.up && !q.drag); if (!c) break; G.ev.push({ t: "spend", x: c.x, y: c.y }); removeCard(G, c); need--; }
+  while (need > 0) { const c = Object.values(G.cards).find((q) => mineC(q) && !q.up); if (!c) break; G.ev.push({ t: "spend", x: c.x, y: c.y }); removeCard(G, c); need--; }
   const c = add(G, k, x, y);
   c.o = p;
   const sp = freeSpot(G, x, y, CH, c); c.x = sp[0]; c.y = sp[1];
@@ -740,7 +754,8 @@ export function openI(G, p, id) {
     got.push(k);
   }
   G.ev.push({ t: "open", k: c.k, x, y, p, id });
-  got.forEach((k, i) => { spawn(G, k, x, y, { dx: (i - (got.length - 1) / 2) * 70, dy: 30, loose: 1, o: k === "villager" ? weakFam(G) : undefined }); });
+  const own = c.o != null ? c.o : p;   // всё из сундука — у того, кто его купил: жители — в его семью, монеты — в его кошелёк
+  got.forEach((k, i) => { spawn(G, k, x, y, { dx: (i - (got.length - 1) / 2) * 70, dy: 30, loose: 1, o: isPerson(k) || k === "coin" ? own : undefined }); });
   return true;
 }
 export function speedI(G, p, s) { G.spd = s; G.ev.push({ t: "speed", s, p }); }
@@ -971,6 +986,8 @@ export function deserialize(s) {
   for (const id in G.fights) { const f = G.fights[id]; f.foes = f.foes.filter((i) => G.cards[i]); f.allies = f.allies.filter((i) => G.cards[i]); if (!f.foes.length || !f.allies.length) { [...f.foes, ...f.allies].forEach((i) => { G.cards[i].cb = 0; }); delete G.fights[id]; } }
   for (const id in G.cards) { const c = G.cards[id]; if (c.cb && !G.fights[c.cb]) c.cb = 0; if (!c.dn) c.dirty = 1; }
   if (!G.st.acts) G.st.acts = [0, 0];
-  if (G.kn) G.kn.r_breed = 1;          // старые сохранения: рецепт «Новый житель» виден сразу
+  if (G.kn) G.kn.r_breed = 1;
+  // старые сохранения: монеты без хозяина делим по берегу (вся кучка — хозяину её нижней монеты)
+  for (const id in G.cards) { const c = G.cards[id]; if (c.k !== "coin" || c.dn || c.o != null) continue; const o = bankFam(c.y); for (const q of chain(G, c)) if (q.k === "coin") q.o = o; }          // старые сохранения: рецепт «Новый житель» виден сразу
   return G;
 }

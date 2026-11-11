@@ -406,7 +406,7 @@ export function makeBot(p, opt) {
     return false;
   }
   function shop(G) {
-    const coins = S.coins(G);
+    const coins = S.coins(G, p);
     if (B.lastBuy && G.st.time - B.lastBuy < (good ? 4 : 10)) return false;
     if (coins < 2 || (B.shopT && G.st.time - B.shopT < 2.5)) return false;
     B.shopT = G.st.time;
@@ -487,7 +487,7 @@ export function makeBot(p, opt) {
   // монет нет, работы нет — продаём то, что не нужно стройкам
   function liquidate(G, dem) {
     const cheapest = Math.min(...PACKS.filter((q) => !S.packLocked(G, q)).map((q) => S.packCost(G, q, p)));
-    if (S.coins(G) >= cheapest) return false;
+    if (S.coins(G, p) >= cheapest) return false;
     const keep = Object.assign({}, dem, { relic: 1, crystal: 2, iron: 2, map: G.open.mountains ? 0 : 1, lantern: 1, sword: 3, bow: 3, spear: 3, armor: 2 });
     let best = null, bv = -1;
     for (const id in G.cards) {
@@ -506,7 +506,7 @@ export function makeBot(p, opt) {
     return move(G, top.id, -1, best.c.x, best.c.y + 400, "liquidate " + best.c.k);
   }
   function openPacks(G) {
-    for (const id in G.cards) { const c = G.cards[id]; if (CARDS[c.k].c === "pack" && !c.drag && (c.o === p || G.st.time - (c.bt || 0) > 4 || !good)) { if (!c.bt) { c.bt = G.st.time; if (c.o !== p) continue; } S.openI(G, p, c.id); B.acts++; return true; } }
+    for (const id in G.cards) { const c = G.cards[id]; if (CARDS[c.k].c === "pack" && !c.drag && (c.o === p || c.o == null || G.solo)) { if (!c.bt) { c.bt = G.st.time; if (c.o !== p) continue; } S.openI(G, p, c.id); B.acts++; return true; } }
     return false;
   }
 
@@ -556,11 +556,23 @@ export function makeBot(p, opt) {
     return false;
   }
 
+  // напарник на мели, а у меня монет полно — отдаём пару через реку (раз в день)
+  function giveCoins(G) {
+    if (G.solo || G.ph !== "day" || B.gave === G.day) return false;
+    const mineN = S.coins(G, p), his = S.coins(G, 1 - p);
+    if (his >= 2 || mineN < 9) return false;
+    let pile = null;
+    for (const id in G.cards) { const c = G.cards[id]; if (c.k === "coin" && !c.dn && free(G, c) && S.coinOf(c) === p && S.chain(G, c).length >= 3) { pile = c; break; } }
+    if (!pile) return false;
+    const cs = S.chain(G, pile); B.gave = G.day;
+    const hy = p === 0 ? 380 : 1240;
+    return move(G, cs[cs.length - 3].id, 0, 700 + (rand() - 0.5) * 300, hy + 120, "gift coins");
+  }
   function decide(G) {
     if (G.ph === "hold") return sellJunk(G, true);
     if (openPacks(G)) return true;
     if (good) { if (combat(G)) return true; } else if (rand() < 0.4 && combat(G)) return true;
-    if ((good || rand() < 0.5) && (helpPair(G) || helpBreed(G))) return true;
+    if ((good || rand() < 0.5) && (helpPair(G) || helpBreed(G) || giveCoins(G))) return true;
     if (good && equip(G)) return true;
     const fp = foodPlan(G);
     let ws = idle(G);

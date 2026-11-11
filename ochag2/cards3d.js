@@ -191,6 +191,8 @@ export class Cards3D {
         if (c.drag && c.drag !== me + 1) br = 0.92;
         icol[ci * 3] = br; icol[ci * 3 + 1] = br; icol[ci * 3 + 2] = br;
         if (enemy) { icol[ci * 3 + 1] = br * 0.93; icol[ci * 3 + 2] = br * 0.9; }
+        // монеты — в цвет кошелька (семьи-хозяина)
+        else if (c.k === "coin" && !G.solo) { const fc = this.fam[S.coinOf(c)]; icol[ci * 3] = br * (0.6 + 0.4 * fc.r); icol[ci * 3 + 1] = br * (0.6 + 0.4 * fc.g); icol[ci * 3 + 2] = br * (0.6 + 0.4 * fc.b); }
         ci++;
         c._dx = q0.x; c._dy = q0.y; c._Y = Y;
         // фигурки: верхняя карта — целиком; нижние «якоря» (природа/постройки/жители) — поменьше, в своей полоске
@@ -311,7 +313,8 @@ export class Cards3D {
     };
     if (topc.k === "coin") {
       const n = cs.filter((c) => c.k === "coin").length;
-      if (n > 1) { this.quads.push(X, Y + 0.003, Z + 0.33, 0.62, 0.3, UI.bar, 0x2b1d14, 0.8, 0); this.quads.push(X - 0.17, Y + 0.004, Z + 0.33, 0.18, 0.18, UI.icon.x, 0xffffff, 1, 0); num(n, X + 0.07, Z + 0.33, 0.2); }
+      const bg = G.solo ? 0x2b1d14 : parseInt(FAM[S.coinOf(topc)].d.slice(1), 16);
+      if (n > 1) { this.quads.push(X, Y + 0.003, Z + 0.33, 0.62, 0.3, UI.bar, bg, 0.9, 0); this.quads.push(X - 0.17, Y + 0.004, Z + 0.33, 0.18, 0.18, UI.icon.x, 0xffffff, 1, 0); num(n, X + 0.07, Z + 0.33, 0.2); }
       return;
     }
     const isP = d.c === "person" || d.c === "enemy";
