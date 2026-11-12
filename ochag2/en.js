@@ -24,7 +24,7 @@ window.I18N && I18N.add({
   "Сундуки, купленные тобой, на 1 монету дешевле. Продажа твоими руками — +1 монета.": "Chests you buy cost 1 coin less. Selling by your hand gives +1 coin.",
   // HUD
   "Жители": "Villagers", "Еда к ночи": "Food for the night", "Место для карт": "Card space", "Монеты": "Coins", "Мост": "Bridge", "Напарник": "Partner", "нет связи": "offline", "мс": "ms",
-  "Продать": "Sell", "Пауза": "Pause", "Цели": "Goals", "Книга рецептов": "Recipe book", "Звук": "Sound", "Музыка": "Music", "выкл": "off", "Графика": "Graphics", "Графика:": "Graphics:",
+  "Продать": "Sell", "Пауза": "Pause", "Отчёт о баге": "Bug report", "Отчёт скопирован. Вставь его в чат с Claude и напиши, что случилось.": "Report copied. Paste it into your chat with Claude and describe what happened.", "Выдели весь текст ниже, скопируй и пришли в чат с Claude.": "Select all the text below, copy it and send it to Claude.", "Скопировать ещё раз": "Copy again", "Скопировано": "Copied", "Цели": "Goals", "Книга рецептов": "Recipe book", "Звук": "Sound", "Музыка": "Music", "выкл": "off", "Графика": "Graphics", "Графика:": "Graphics:",
   "низкая": "low", "средняя": "medium", "высокая": "high", "(для плавности)": "(for smoothness)", " (для плавности)": " (for smoothness)", "В меню": "Menu", "сохранится": "saved", "Продолжить": "Resume",
   "Ссылка для друга ещё раз": "Send the link again", "Закрыть": "Close", "Понятно": "Got it", "д.": "d.",
   "Еда к ночи: есть / нужно. Еда на грядках и кострах не считается.": "Food for the night: have / need. Food on beds and fires doesn't count.",

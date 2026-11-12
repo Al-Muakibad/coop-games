@@ -71,13 +71,26 @@ class QuadPool {
   begin() { this.n = 0; }
   // tilt: наклон к камере (рад) — 0 лежит плоско
   push(X, Y, Z, w, h, uvr, col, a, tilt, rot) {
-    if (this.n >= this.cap) return;
+    if (this.n >= this.cap) this.grow();
     const i = this.n++;
     this.e.set(-Math.PI / 2 + (tilt || 0), 0, rot || 0, "XYZ"); this.q.setFromEuler(this.e);
     this.sv.set(w, h, 1); this.pv.set(X, Y, Z); this.m.compose(this.pv, this.q, this.sv);
     this.mesh.setMatrixAt(i, this.m);
     this.uvr.array.set(uvr, i * 4); this.al.array[i] = a == null ? 1 : a;
     this.c.set(col == null ? 0xffffff : col); this.mesh.instanceColor.setXYZ(i, this.c.r, this.c.g, this.c.b);
+  }
+  // пул кончился — удваиваем (раньше лишнее молча не рисовалось)
+  grow() {
+    const cap = this.cap * 2, old = this.mesh, g = old.geometry;
+    const u = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4); u.array.set(this.uvr.array); u.setUsage(THREE.DynamicDrawUsage);
+    const a = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1); a.array.set(this.al.array); a.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute("aUvr", u); g.setAttribute("aAl", a); this.uvr = u; this.al = a;
+    const m = new THREE.InstancedMesh(g, old.material, cap); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.instanceMatrix.array.set(old.instanceMatrix.array);
+    m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3); m.instanceColor.array.set(old.instanceColor.array); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false; m.renderOrder = old.renderOrder;
+    old.parent.add(m); old.parent.remove(old); old.dispose();
+    this.mesh = m; this.cap = cap;
   }
   end() { this.mesh.count = this.n; this.mesh.instanceMatrix.needsUpdate = true; this.uvr.needsUpdate = true; this.al.needsUpdate = true; this.mesh.instanceColor.needsUpdate = true; }
 }
@@ -113,6 +126,19 @@ export class Cards3D {
     this.fam = FAM.map((f) => new THREE.Color(f.c));
     this.enemyCol = {}; for (const k in ENEMY_TINT) this.enemyCol[k] = new THREE.Color(ENEMY_TINT[k]);
   }
+  // карт стало больше, чем мест в меше: расширяем. Иначе последние по порядку (только что тронутые!) карты не рисовались
+  growCards(need) {
+    let cap = this.cap; while (cap < need) cap *= 2;
+    if (cap === this.cap) return;
+    const old = this.mesh, g = old.geometry;
+    const c = new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2); c.array.set(this.cell.array); c.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute("aCell", c); this.cell = c;
+    const m = new THREE.InstancedMesh(g, old.material, cap); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    m.castShadow = old.castShadow; m.receiveShadow = old.receiveShadow; m.frustumCulled = false; m.renderOrder = old.renderOrder;
+    old.parent.add(m); old.parent.remove(old); old.dispose();
+    this.mesh = m; this.cap = cap;
+  }
   fig(name) { if (!this.figs[name]) { if (!KIT[name]) return null; this.figs[name] = new FigPool(this.scene, name, 16); } return this.figs[name]; }
   bump(id) { this.order.set(id, this.oc++); }
   ev(e) {
@@ -132,7 +158,10 @@ export class Cards3D {
     const T = this.time;
     const k = 1 - Math.exp(-dt * 13);
     const roots = [];
-    for (const id in G.cards) { const c = G.cards[id]; if (!c.dn) roots.push(c); }
+    let nAll = 0;
+    for (const id in G.cards) { nAll++; const c = G.cards[id]; if (!c.dn) roots.push(c); }
+    if (nAll > this.cap) { try { window.O2LOG && window.O2LOG.add("рисование: карт " + nAll + " > мест " + this.cap + " — расширяю"); } catch (_) {} this.growCards(nAll + 64); }
+    this.frame = (this.frame || 0) + 1;
     roots.sort((a, b) => (this.order.get(a.id) || 0) - (this.order.get(b.id) || 0));
     // стопки для рисования: то, что тащит этот игрок, отделяем от стопки сразу (у гостя — до ответа хозяина)
     const ldrag = local && local.drag;
@@ -194,7 +223,7 @@ export class Cards3D {
         // монеты — в цвет кошелька (семьи-хозяина)
         else if (c.k === "coin" && !G.solo) { const fc = this.fam[S.coinOf(c)]; icol[ci * 3] = br * (0.6 + 0.4 * fc.r); icol[ci * 3 + 1] = br * (0.6 + 0.4 * fc.g); icol[ci * 3 + 2] = br * (0.6 + 0.4 * fc.b); }
         ci++;
-        c._dx = q0.x; c._dy = q0.y; c._Y = Y;
+        c._dx = q0.x; c._dy = q0.y; c._Y = Y; c._f = this.frame;
         // фигурки: верхняя карта — целиком; нижние «якоря» (природа/постройки/жители) — поменьше, в своей полоске
         const top = j === cs.length - 1;
         const kind = CARDS[c.k].c;

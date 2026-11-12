@@ -316,6 +316,20 @@ function rolesCoop() {
   }
   $("roles").classList.remove("hidden");
 }
+/* ---------- журнал хода игры (log.js): кто что тронул, связь, сколько карт нарисовано ---------- */
+const TR = (m) => { try { window.O2LOG && window.O2LOG.add(m); } catch (_) {} };
+const cdesc = (c) => c ? c.id + ":" + c.k + (c.o != null ? "/o" + c.o : "") + (c.dn ? "/dn" + c.dn : "") + (c.up ? "/up" + c.up : "") + (c.drag ? "/d" + c.drag : "") : "∅";
+// карту тронули — через полсекунды проверяем, что она есть в игре и нарисована
+function watchCard(id, what) {
+  setTimeout(() => {
+    if (!G || !started) return;
+    const c = G.cards[id];
+    if (!c) { TR("  ↳ " + what + " " + id + " — карты больше нет в игре"); return; }
+    const f = cards && cards.frame;
+    if (c._f !== f) TR("!! " + what + " " + cdesc(c) + " НЕ НАРИСОВАНА: карт " + Object.keys(G.cards).length + ", в меше " + (cards.mesh.count) + "/" + cards.cap + " x" + Math.round(c.x) + " y" + Math.round(c.y));
+    else if (!isFinite(c.x) || !isFinite(c.y)) TR("!! " + what + " " + cdesc(c) + " координаты NaN");
+  }, 500);
+}
 function hostApi() {
   const pg = () => 1 - me;      // семья гостя
   return {
@@ -323,9 +337,10 @@ function hostApi() {
     intent: (t, d) => {
       if (t === "rl") { if (pendingRoles && !started) { const gi = 1 - (pendingRoles.hf || 0); if (d.r && pendingRoles.roles[1 - gi] !== d.r) pendingRoles.roles[gi] = d.r; if (d.name) partner.name = d.name; rolesCoop(); } return; }
       if (!G || !started) return;
-      if (t === "pk") { const r = S.pickI(G, pg(), d.i); if (r.err) room.send("nk", { i: d.i, w: r.err }); else { const c = G.cards[d.i]; if (c && d.x != null) { c.x = d.x; c.y = d.y; } } }
+      if (t !== "mv") TR("← гость " + t + " " + JSON.stringify(d).slice(0, 120));
+      if (t === "pk") { const r = S.pickI(G, pg(), d.i); if (r.err) TR("  ↳ отказ " + r.err + " " + cdesc(G.cards[d.i])); if (r.err) room.send("nk", { i: d.i, w: r.err }); else { const c = G.cards[d.i]; if (c && d.x != null) { c.x = d.x; c.y = d.y; } } }
       else if (t === "mv") { S.moveI(G, pg(), d.i, d.x, d.y); partner.cur = { x: d.x, y: d.y + CH / 2, t: clock, down: 1 }; }
-      else if (t === "dr") { const r = S.dropI(G, pg(), d.i, d.x, d.y, d.t); if (r.err) room.send("nk", { i: d.i, w: r.err }); }
+      else if (t === "dr") { const r = S.dropI(G, pg(), d.i, d.x, d.y, d.t); TR("  ↳ " + (r.err || r.res) + " " + cdesc(G.cards[d.i])); watchCard(d.i, "гость положил"); if (r.err) room.send("nk", { i: d.i, w: r.err }); }
       else if (t === "by") { const c = S.buyI(G, pg(), d.k, d.x, d.y); if (!c) room.send("nk", { w: "coins" }); }
       else if (t === "op") S.openI(G, pg(), d.i);
       else if (t === "sp") { S.speedI(G, pg(), d.s); }
@@ -333,8 +348,8 @@ function hostApi() {
     cursor: (d) => { partner.cur = { x: d.x, y: d.y, t: clock, down: d.d }; },
     ping: (d) => addPing(d.x, d.y, d.k, pg(), true),
     emote: (d) => showEmote(d.e, pg(), true),
-    peer: (on, p) => partnerConn(on, p),
-    resync: () => { if (started) netNote(L("Связь с напарником восстановлена"), "good"); },
+    peer: (on, p) => { TR("сеть: напарник " + (on ? "пришёл" : "ушёл") + (p && p.via ? " " + p.via : "")); partnerConn(on, p); },
+    resync: () => { TR("сеть: пересинхронизация (хозяин)"); if (started) netNote(L("Связь с напарником восстановлена"), "good"); },
   };
 }
 // гость возвращается в комнату хозяина: ждём, сколько нужно (хозяин может нажать «Продолжить» позже)
@@ -363,14 +378,14 @@ async function joinGame(id, copy, opened) {
     // семья гостя — противоположная хозяйской (хозяин сообщает свою в снимке)
     full: (g, d) => { const gf = d && d.hf === 1 ? 0 : 1; if (!started) { G = g; start("guest", g, gf); } else { G = g; ghost = null; if (me !== gf) me = gf; } },
     events: (list) => onEvents(list),
-    nack: (d) => { gs.release(true); if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "fcoin" ? L("Это монеты напарника — тратит их только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
+    nack: (d) => { TR("сеть: хозяин отказал " + JSON.stringify(d)); gs.release(true); if (drag && drag.id === d.i) cancelDrag(); if (ghost && ghost.id === d.i) ghost = null; toast(d.w === "foreign" ? L("Это житель напарника — его двигает только он") : d.w === "fcoin" ? L("Это монеты напарника — тратит их только он") : d.w === "busy" ? L("Эту карту уже держит напарник") : d.w === "coins" ? L("Не хватает монет") : L("Не вышло"), "bad"); play("error"); haptic("notify", "error"); },
     cursor: (d) => { partner.cur = { x: d.x, y: d.y, t: clock, down: d.d, bot: d.b }; },
     ping: (d) => addPing(d.x, d.y, d.k, 1 - me, true),
     emote: (d) => showEmote(d.e, 1 - me, true),
     lob: (d) => { if (started) return; partner.name = d.name || partner.name; pendingRoles = { roles: d.roles.slice(), saved: d.day ? { day: d.day } : null, hf: d.hf || 0 }; me = d.hf === 1 ? 0 : 1; rolesCoop(); },
     go: () => {},
-    peer: (on, p) => partnerConn(on, p),
-    resync: () => { if (started) netNote(L("Связь восстановлена — сверяем хутор"), "good"); },
+    peer: (on, p) => { TR("сеть: хозяин " + (on ? "на связи" : "пропал")); partnerConn(on, p); },
+    resync: () => { TR("сеть: пересинхронизация (гость)"); if (started) netNote(L("Связь восстановлена — сверяем хутор"), "good"); },
   });
   // хозяин мог ещё не подписаться — повторяем «я тут», пока не пришёл выбор ремёсел
   room.send("rl", { name: myName() });
@@ -382,6 +397,7 @@ async function joinGame(id, copy, opened) {
 function start(m, g, fam) {
   mode = m; G = g; started = true; ended = false; simAcc = 0; drag = null; ghost = null; waitPause = false; lastSave = performance.now();
   me = fam === 1 ? 1 : fam === 0 ? 0 : m === "guest" ? 1 : 0;
+  TR("==== старт: режим " + m + ", семья " + me + ", день " + G.day + ", мост " + G.bridge + ", карт " + Object.keys(G.cards).length + ", nid " + G.nid);
   for (const id in G.cards) if (G.cards[id].drag) G.cards[id].drag = 0;
   if (m === "bot") { bot = makeBot(1 - me, { skill: botSkill, seed: (Math.random() * 1e6) | 0 }); partner = { name: "🤖 " + L("Бот"), online: true, cur: null, bot: true }; }
   else bot = null;
@@ -527,8 +543,9 @@ function hitCard(sx, sy) {
 }
 function chainIds(c) { const s = new Set(); for (const q of S.chain(G, c)) s.add(q.id); return s; }
 function startDrag(id, sx, sy) {
-  const c = G.cards[id]; if (!c) return;
+  const c = G.cards[id]; if (!c) { TR("взял " + id + " — карты нет"); return; }
   const why = S.canTouch(G, me, c);
+  TR("взял " + cdesc(c) + (why ? " отказ:" + why : "") + " (" + mode + ")");
   if (why === "foreign") { toast(L("Это житель напарника — его двигает только он"), "bad"); play("error"); haptic("notify", "error"); return; }
   if (why === "busy") { toast(L("Эту карту уже держит напарник"), "bad"); play("error"); return; }
   if (why === "fcoin") { toast(L("Это монеты напарника — тратит их только он"), "bad"); play("error"); haptic("notify", "error"); return; }
@@ -582,6 +599,8 @@ function endDrag(e, cancel) {
   let tid = 0;
   if (sellHot) tid = -1;
   else if (hiT) tid = hiT.id;
+  TR("положил " + cdesc(c) + " → " + (tid === -1 ? "продажа" : tid ? cdesc(G.cards[tid]) : "стол") + " x" + Math.round(d.x) + " y" + Math.round(d.y));
+  watchCard(d.id, "положил");
   sellHot = false; const tgt = hiT; hiT = null;
   $("sell").classList.remove("hot");
   if (mode === "guest") {
@@ -626,6 +645,7 @@ function dropHint(id) {
 }
 function cancelDrag() { if (!drag) return; const d = drag; drag = null; hiT = null; sellHot = false; if (mode !== "guest") S.dropI(G, me, d.id, d.x, d.y, 0); else { const c = G.cards[d.id]; if (c) c.drag = 0; } }
 function tapCard(c) {
+  TR("тап " + cdesc(c)); watchCard(c.id, "тап");
   if (CARDS[c.k].c === "pack") {
     if (mode === "guest") gs.send("op", { i: c.id }); else S.openI(G, me, c.id);
     haptic("impact", "medium"); return;
@@ -924,12 +944,38 @@ function showHelp() {
     <button class="b primary" id="h-ok">${L("Понятно")}</button>`);
   $("h-ok").onclick = () => { hideDlg(); if (mode === "menu") showMenu(); };
 }
+// отчёт о баге: журнал + сжатый снимок хутора одной строкой — игрок копирует и присылает
+async function packSave() {
+  try {
+    const raw = new TextEncoder().encode(S.serialize(G));
+    const cs = new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip"));
+    const buf = new Uint8Array(await new Response(cs).arrayBuffer());
+    let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  } catch (e) { return "нет снимка: " + (e && e.message); }
+}
+async function bugReport() {
+  TR("== отчёт о баге (" + mode + ")");
+  window.O2LOG && window.O2LOG.flush();
+  const head = "ХУТОР-ОТЧЁТ v1 · " + new Date().toISOString() + " · режим " + mode + " · семья " + me + " · " + (navigator.userAgent.match(/\(([^)]+)\)/) || ["", ""])[1];
+  const txt = head + "\n---- журнал\n" + (window.O2LOG ? window.O2LOG.text().split("\n").slice(-600).join("\n") : "") + "\n---- снимок (gzip+base64)\n" + (G ? await packSave() : "") + "\n---- конец";
+  let ok = false;
+  try { await navigator.clipboard.writeText(txt); ok = true; } catch (_) {}
+  $("pausep").innerHTML = `<h2>🐞 ${L("Отчёт о баге")}</h2>
+    <p style="margin:6px 0 10px">${ok ? L("Отчёт скопирован. Вставь его в чат с Claude и напиши, что случилось.") : L("Выдели весь текст ниже, скопируй и пришли в чат с Claude.")}</p>
+    <textarea id="bug-t" readonly style="width:100%;height:150px;font-size:10px;border-radius:10px">${esc(txt.slice(0, 200000))}</textarea>
+    <button class="b" id="bug-c">📋 ${L("Скопировать ещё раз")}</button><button class="b ghost" id="bug-x">${L("Закрыть")}</button>`;
+  $("pause").classList.remove("hidden");
+  $("bug-c").onclick = async () => { try { await navigator.clipboard.writeText(txt); toast(L("Скопировано"), "good"); } catch (_) { const t = $("bug-t"); t.focus(); t.select(); try { document.execCommand("copy"); toast(L("Скопировано"), "good"); } catch (__) {} } };
+  $("bug-x").onclick = () => $("pause").classList.add("hidden");
+}
 function openPause() {
   $("pausep").innerHTML = `<h2>${L("Пауза")}</h2>
     <button class="b" id="p-goals">🎯 ${L("Цели")}</button><button class="b" id="p-book">📖 ${L("Книга рецептов")}</button><button class="b" id="p-help">❓ ${L("Как играть")}</button>
     <div class="b2"><button class="b" id="p-snd">${SET.snd ? "🔊 " + L("Звук") : "🔇 " + L("Звук")}</button><button class="b" id="p-mus">${SET.mus ? "🎵 " + L("Музыка") : "🎵 " + L("выкл")}</button></div>
     <button class="b" id="p-q">✨ ${L("Графика")}: ${[L("низкая"), L("средняя"), L("высокая")][quality]}</button>
     ${mode === "host" || mode === "guest" ? `<button class="b" id="p-inv">📨 ${L("Ссылка для друга ещё раз")}</button>` : ""}
+    <button class="b" id="p-bug">🐞 ${L("Отчёт о баге")}</button>
     <button class="b" id="p-menu">🏠 ${L("В меню")} · ${L("сохранится")}</button><button class="b ghost" id="p-x">${L("Продолжить")}</button>`;
   $("pause").classList.remove("hidden");
   $("p-goals").onclick = () => { $("pause").classList.add("hidden"); showGoals(); };
@@ -939,6 +985,7 @@ function openPause() {
   $("p-mus").onclick = () => { SET.mus = SET.mus ? 0 : 1; saveSet(); openPause(); };
   $("p-q").onclick = () => { quality = (quality + 2) % 3; qLock = true; applyQuality(); openPause(); };
   if ($("p-inv")) $("p-inv").onclick = () => { const link = Net.inviteLink(GAME, room.id); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(L("Заходи в мой хутор!"))}`); };
+  $("p-bug").onclick = () => { $("pause").classList.add("hidden"); bugReport(); };
   $("p-menu").onclick = () => toMenu();
   $("p-x").onclick = () => $("pause").classList.add("hidden");
 }
@@ -1216,6 +1263,12 @@ function loop(now) {
   if (fpsEl) { fpsC++; if (now - fpsT > 500) { fpsEl.textContent = `${Math.round(fpsC * 1000 / (now - fpsT))} fps · ${renderer.info.render.calls} dc · ${Math.round(renderer.info.render.triangles / 1000)}k tri · q${quality} · sim ${(simMs / Math.max(1, fpsC)).toFixed(2)}ms · ${G ? Object.keys(G.cards).length : 0} cards`; fpsC = 0; fpsT = now; simMs = 0; } }
 }
 
+// раз в 30 с — сводка в журнал
+setInterval(() => {
+  if (!G || !started || document.hidden) return;
+  const n = Object.keys(G.cards).length;
+  TR("сводка: " + mode + " день " + G.day + " мост " + G.bridge + " карт " + n + " нарисовано " + (cards ? cards.mesh.count + "/" + cards.cap : "?") + " подписей " + (cards ? cards.quads.n + "/" + cards.quads.cap : "?") + (room && room.peer ? " связь " + (room.via || "") + " " + (room.ping != null ? Math.round(room.ping) + "мс" : "") : mode === "host" || mode === "guest" ? " нет связи" : ""));
+}, 30000);
 /* ---------- для автотестов и отладки ---------- */
 window.__o2 = {
   get G() { return G; }, get mode() { return mode; }, get me() { return me; }, get started() { return started; }, get room() { return room; }, get hs() { return hs; }, get gs() { return gs; }, get partner() { return partner; },
