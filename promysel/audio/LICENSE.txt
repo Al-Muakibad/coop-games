@@ -1,0 +1,20 @@
+Звуки и музыка игры «Промысел» — записанные (не синтезированные) файлы с лицензией CC0 1.0 (общественное достояние):
+http://creativecommons.org/publicdomain/zero/1.0/
+Синтезированных звуков и MIDI в игре нет. Файлы обрезаны, выровнены по громкости, сведены в моно и сжаты в mp3.
+
+Скачано с OpenGameArt.org для «Промысла» (лицензия CC0 проверена на страницах):
+- splash, splash2 — «6 short water splashes», ezwa / qubodup (из pdsounds.org) — https://opengameart.org/content/6-short-water-splashes
+- splash3, plop, plop2 — «40 CC0 water / splash / slime SFX», rubberduck — https://opengameart.org/content/40-cc0-water-splash-slime-sfx
+- cash, cash2, cashpay, chip, chip2 — Kenney «Casino Audio» — https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips
+- knife, knife2, chopk, coins, drop, cloth, pot, door — Kenney «RPG Audio» — https://opengameart.org/content/50-rpg-sound-effects
+- step1–3 — «42 snow and gravel footsteps», Corsica_S / qubodup — https://opengameart.org/content/42-snow-and-gravel-footsteps
+- gull1, gull2 — «Solo Seagull Sound Effects», rango-mango — https://opengameart.org/content/solo-seagull-sound-effects
+- wave1, wave2 — «Beach Ocean Waves», qubodup (jasinski, freesound 18363) — https://opengameart.org/content/beach-ocean-waves
+- amb_wind — «Mild Wind Background Noise», bashar3a — https://opengameart.org/content/mild-wind-background-noise (вырезано 20 с)
+
+Музыка (CC0, OpenGameArt.org, живые инструменты и голос):
+- m_shanty — «A Sailor's Chant», Thimras — https://opengameart.org/content/a-sailors-chant
+- m_town — «Hot Springs Town», Kistol — https://opengameart.org/content/hot-springs-town
+
+Взято из ../../ochag2/audio этого же репозитория (CC0, источники перечислены в ../../ochag2/audio/LICENSE.txt):
+coin, coin2, levelup, upgrade, perk, build, click, select, confirm, error, open, whoosh, fire, bell, buy, close.
