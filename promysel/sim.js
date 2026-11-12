@@ -2,7 +2,7 @@
 // Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layout(G.mode).
 // Действия игроков — «операции» (op): поймать, положить, взять, заплатить, собрать выручку. Гость применяет их у себя сразу
 // и отправляет хозяину; хозяин проверяет и применяет у себя (см. coop.js).
-import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, upgCost, COOP, VS, BAYS, DIFF, SHORE, ROAD_Z } from "./data.js";
+import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, COOP, VS, BAYS, DIFF, SHORE, ROAD_Z } from "./data.js";
 
 const TAU = Math.PI * 2;
 const hyp = Math.hypot;
@@ -27,15 +27,15 @@ export function layout(mode) {
       e.zpad = { x: pad.x, z: pad.z, r: PAD_R };
       const side = (s, w, d) => (s === "n" ? [0, -d / 2 - 0.8] : s === "s" ? [0, d / 2 + 0.8] : s === "e" ? [w / 2 + 0.8, 0] : [-w / 2 - 0.8, 0]);
       if (e.k === "spot") e.zin = { x: e.x, z: e.z, r: def.r };
+      // вход и выход цеха — оба спереди (со стороны камеры): вход слева, выход справа
+      const fz = e.z + e.d / 2 + 0.95;
       if (e.k === "proc") {
-        const a = side(def.inS || "n", e.w, e.d), b = side(def.outS || "s", e.w, e.d);
-        const fx = (v) => ((def.inS === "e" || def.inS === "w") ? v * sg : v);
-        e.zin = { x: e.x + (def.inS === "e" || def.inS === "w" ? a[0] * sg : 0), z: e.z + a[1], r: 0.95 };
-        e.zout = { x: e.x + ((def.outS === "e" || def.outS === "w") ? b[0] * sg : 0), z: e.z + b[1], r: 0.95 };
-        void fx;
+        e.zin = { x: e.x - (e.w / 2 - 0.12) * sg, z: fz, r: 1.0 };
+        e.zout = { x: e.x + (e.w / 2 - 0.12) * sg, z: fz, r: 1.0 };
         e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2];
       }
-      if (e.k === "gen") { e.zout = { x: def.out[0] * sg, z: def.out[1], r: 0.95 }; e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; }
+      if (e.k === "gen") { e.zout = { x: e.x + (e.w / 2 - 0.25) * sg, z: fz, r: 1.0 }; e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; }
+      void side;
       if (e.k === "stall") {
         e.w = 2.6; e.d = 0.9;
         e.zin = { x: e.x - 0.45 * sg, z: e.z - 1.2, r: 1.0 };
@@ -44,7 +44,7 @@ export function layout(mode) {
         e.slots = []; for (let s = 0; s < 5; s++) e.slots.push({ x: e.x, z: e.z + 1.25 + s * 0.85 });
       }
       if (e.k === "dock") { e.zin = { x: e.x, z: e.z, r: 1.05 }; e.zcash = { x: e.x + 0.9 * sg, z: e.z + 1.5, r: 0.8 }; e.berth = { x: e.x - 2.7 * sg, z: e.z - 0.8 }; }
-      if (e.k === "board") { e.zin = { x: e.x - 0.5, z: e.z - 1.25, r: 1.0 }; e.zcash = { x: e.x + 0.85, z: e.z - 1.2, r: 0.8 }; e.box = [e.x - 1.1, e.z - 0.3, e.x + 1.1, e.z + 0.3]; }
+      if (e.k === "board") { e.zin = { x: e.x - 0.55, z: e.z + 1.35, r: 1.05 }; e.zcash = { x: e.x + 1.0, z: e.z + 1.3, r: 0.8 }; e.box = [e.x - 1.1, e.z - 0.3, e.x + 1.1, e.z + 0.3]; }
       if (e.k === "goal") e.box = [e.x - 1.1, e.z - 1.1, e.x + 1.1, e.z + 1.1];
       if (e.k === "pier") e.pier = { x: def.x0 * sg, z0: def.z0, z1: def.z1 };
       if (e.k === "spot") e.school = { x: def.sx * sg, z: def.sz };
@@ -56,6 +56,7 @@ export function layout(mode) {
     e.after = (e.def.after || []).map((id) => byId[e.team][id]).filter((v) => v != null);
     if (e.def.from) e.from = byId[e.team][e.def.from];
     if (e.def.to) e.to = e.def.to.map((id) => byId[e.team][id]).filter((v) => v != null);
+    if (e.def.of) e.tg = byId[e.team][e.def.of];
   }
   // забор рынка: от края до края, с проходами к очередям
   const fz = 11.95, fences = [];
@@ -114,7 +115,7 @@ export function newGame(o) {
 
 /* ---------- запросы ---------- */
 export const teamOf = (G, pi) => (G.mode === "vs" ? pi : 0);
-export function costMul(G) { return G.mode === "vs" ? 0.45 : BAYS[G.bay].mult * DIFF[G.diff].cost * (G.mode === "coop" ? 1.15 : 1); }
+export function costMul(G) { return G.mode === "vs" ? 0.38 : BAYS[G.bay].mult * DIFF[G.diff].cost * (G.mode === "coop" ? 1.15 : 1); }
 export function priceMul(G) { return G.mode === "vs" ? 2.5 : BAYS[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)); }
 export function capOf(G, team) { return UPG.bag.v(G.upg[team].bag) + (G.mode === "vs" ? 0 : 2 * (G.perks.p_cap || 0)); }
 export function speedOf(G, team) { return UPG.boots.v(G.upg[team].boots) * (G.mode === "vs" ? 1 : 1 + 0.08 * (G.perks.p_spd || 0)); }
@@ -125,6 +126,7 @@ export function padVisible(G, i) {
   const L = layout(G.mode), e = L.E[i], s = G.e[i];
   if (e.k === "spot" || e.k === "board") return false;
   if (e.k === "upg") { if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
+  else if (e.k === "supg") { if (!G.e[e.tg].o || (G.e[e.tg].lv || 0) >= SUPG.max) return false; }
   else if (s.o) return false;
   if (e.def.free) return false;
   for (const a of e.after) if (!G.e[a].o) return false;
@@ -133,6 +135,7 @@ export function padVisible(G, i) {
 export function padCost(G, i) {
   const L = layout(G.mode), e = L.E[i];
   if (e.k === "upg") return upgCost(e.def.u, G.upg[e.team][e.def.u], costMul(G));
+  if (e.k === "supg") { const t = L.E[e.tg]; return Math.round(Math.max(25, (t.def.cost || 50) * SUPG.k) * Math.pow(SUPG.mult, G.e[e.tg].lv || 0) * costMul(G) / 5) * 5; }
   return Math.round((e.def.cost || 0) * costMul(G) / 5) * 5 || 5;
 }
 // открыто ли автоматически (место лова на мостках открывается вместе с ними)
@@ -155,8 +158,10 @@ export function boxes(G) {
   boxCache = { key: L.key, bv: G.bv, g: G, list };
   return list;
 }
+// у берега можно заходить в воду по колено (0,6 м) — выход из моря широкий
+const WADE = 0.6;
 function inWater(G, L, x, z) {
-  if (z >= shoreZ(L, x)) return false;
+  if (z >= shoreZ(L, x) - WADE) return false;
   for (const e of L.E) {
     if (e.k === "spot" && !e.def.auto && hyp(x - e.zin.x, z - e.zin.z) < e.zin.r + 0.35) return false;   // отмель — можно зайти в воду
     if (e.k === "pier" && G.e[e.i].o && Math.abs(x - e.pier.x) < 0.95 && z > e.pier.z1 - 0.3 && z < e.pier.z0 + 0.5) return false;
@@ -164,22 +169,67 @@ function inWater(G, L, x, z) {
   }
   return true;
 }
+// круг против прямоугольника: прямоугольник «скруглён» на радиус — на углах соскальзываем, а не застреваем
+function hitBox(x, z, r, b) { const cx = clamp(x, b[0], b[2]), cz = clamp(z, b[1], b[3]); return hyp(x - cx, z - cz) < r - 1e-4; }
 function walkable(G, L, x, z, r, who) {
   const M = L.MAP;
   if (x < M.w[0] + 0.3 || x > M.w[1] - 0.3 || z > (who === "c" ? 26 : L.fz - 0.35) || z < M.d[0]) return false;
-  if (inWater(G, L, x, z)) return false;
-  for (const b of boxes(G)) if (x > b[0] - r && x < b[2] + r && z > b[1] - r && z < b[3] + r) return false;
+  if (who !== "c" && inWater(G, L, x, z)) return false;
+  if (who !== "c") for (const b of boxes(G)) if (hitBox(x, z, r, b)) return false;
   return true;
 }
-// шаг с упором в стены: если прямо нельзя — скользим вдоль
+export function canStand(G, x, z) { return walkable(G, layout(G.mode), x, z, 0.3, "p"); }
+// вытолкнуть точку из прямоугольников (скольжение вдоль стен и по углам)
+function pushOut(G, p, r) {
+  for (let it = 0; it < 3; it++) {
+    let moved = false;
+    for (const b of boxes(G)) {
+      const cx = clamp(p.x, b[0], b[2]), cz = clamp(p.z, b[1], b[3]), dx = p.x - cx, dz = p.z - cz, d = hyp(dx, dz);
+      if (d >= r) continue;
+      if (d > 1e-5) { p.x = cx + dx / d * r; p.z = cz + dz / d * r; }
+      else { const o = [p.x - b[0], b[2] - p.x, p.z - b[1], b[3] - p.z], m = Math.min(...o), k = o.indexOf(m); if (k === 0) p.x = b[0] - r; else if (k === 1) p.x = b[2] + r; else if (k === 2) p.z = b[1] - r; else p.z = b[3] + r; }
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+// вода: вернуть точку на ближайшую сушу/отмель/мостки
+function pullFromWater(G, L, p) {
+  if (!inWater(G, L, p.x, p.z)) return;
+  let best = null, bd = 1e9;
+  const cand = (x, z) => { if (inWater(G, L, x, z)) return; const d = hyp(x - p.x, z - p.z); if (d < bd) { bd = d; best = [x, z]; } };
+  cand(p.x, shoreZ(L, p.x) - WADE + 0.01);
+  for (const e of L.E) {
+    if (e.k === "spot" && !e.def.auto) { const R0 = e.zin.r + 0.34, dx = p.x - e.zin.x, dz = p.z - e.zin.z, d = hyp(dx, dz) || 1; cand(e.zin.x + dx / d * R0, e.zin.z + dz / d * R0); }
+    if (e.k === "pier" && G.e[e.i].o) cand(clamp(p.x, e.pier.x - 0.94, e.pier.x + 0.94), clamp(p.z, e.pier.z1 - 0.29, e.pier.z0 + 0.49));
+    if (e.k === "dock" && G.e[e.i].o) { const dx = p.x - e.x, dz = p.z - e.z, d = hyp(dx, dz) || 1; cand(e.x + dx / d * 1.29, e.z + dz / d * 1.29); }
+  }
+  if (best) { p.x = best[0]; p.z = best[1]; }
+}
+// шаг: двигаемся, потом выталкиваемся из стен и воды. Застрять нельзя: если всё равно внутри — ищем свободное место рядом
 function moveAgent(G, a, dx, dz, who) {
-  const L = layout(G.mode), r = 0.3;
-  if (!dx && !dz) return;
-  if (walkable(G, L, a.x + dx, a.z + dz, r, who)) { a.x += dx; a.z += dz; return; }
+  const L = layout(G.mode), r = who === "c" ? 0.25 : 0.3, M = L.MAP;
+  if (!dx && !dz) { if (who !== "c" && !walkable(G, L, a.x, a.z, r, who)) unstick(G, L, a, r, who); return; }
+  if (who === "c") { a.x += dx; a.z += dz; return; }
+  // пробуем прямо, а если упёрлись (угол, край воды) — чуть в сторону: берём вариант, что продвигает дальше всего
+  const len = hyp(dx, dz); let best = null, bp = -1;
+  for (const ang of [0, 0.6, -0.6, 1.1, -1.1]) {
+    const c = Math.cos(ang), sn = Math.sin(ang), ddx = dx * c - dz * sn, ddz = dx * sn + dz * c;
+    const p = { x: clamp(a.x + ddx, M.w[0] + 0.31, M.w[1] - 0.31), z: clamp(a.z + ddz, M.d[0], L.fz - 0.36) };
+    pullFromWater(G, L, p); pushOut(G, p, r); pullFromWater(G, L, p);
+    if (!walkable(G, L, p.x, p.z, r * 0.98, who)) continue;
+    const prog = ((p.x - a.x) * dx + (p.z - a.z) * dz) / len;
+    if (prog > bp + 1e-4) { bp = prog; best = p; }
+    if (ang === 0 && prog > len * 0.6) break;
+  }
+  if (best && bp > len * 0.05) { a.x = best.x; a.z = best.z; return; }
+  // запасной путь — по осям
   if (walkable(G, L, a.x + dx, a.z, r, who)) { a.x += dx; return; }
   if (walkable(G, L, a.x, a.z + dz, r, who)) { a.z += dz; return; }
-  // застряли (например, на месте только что поставленного здания) — выталкиваем
-  if (!walkable(G, L, a.x, a.z, r, who)) for (let k = 1; k <= 12; k++) { const ang = k * 2.4, d = 0.15 * k; const nx = a.x + Math.cos(ang) * d, nz = a.z + Math.sin(ang) * d; if (walkable(G, L, nx, nz, r, who)) { a.x = nx; a.z = nz; return; } }
+  if (!walkable(G, L, a.x, a.z, r, who)) unstick(G, L, a, r, who);
+}
+function unstick(G, L, a, r, who) {
+  for (let k = 1; k <= 40; k++) { const ang = k * 2.4, d = 0.12 * k; const nx = a.x + Math.cos(ang) * d, nz = a.z + Math.sin(ang) * d; if (walkable(G, L, nx, nz, r, who)) { a.x = nx; a.z = nz; return; } }
 }
 // отрезок пересекает прямоугольник (расширенный на m)?
 function segBox(ax, az, bx, bz, b, m) {
@@ -247,10 +297,24 @@ export function inZone(a, z, pad) { return z && hyp(a.x - z.x, a.z - z.z) < z.r 
    a — кто делает: "p0"/"p1" игрок, "h3" помощник. Возвращает true, если получилось. */
 function agentOf(G, a) { return a[0] === "p" ? G.pl[+a.slice(1)] : G.hp[+a.slice(1)]; }
 function capFor(G, a) { const ag = agentOf(G, a); return a[0] === "p" ? capOf(G, ag.team) : UPG.crew.v(G.upg[ag.team].crew); }
+// есть ли у команды открытое место, куда этот товар можно отнести (иначе его не берём)
+export function hasDest(G, team, it) {
+  const L = layout(G.mode);
+  for (const e of L.E) { if (G.mode === "vs" && e.team !== team) continue; const s = G.e[e.i]; if (!s.o) continue;
+    if (e.k === "proc" && e.rec.in.includes(it)) return true; if (e.k === "stall" && e.item === it) return true; if (e.k === "dock" && e.acc.includes(it)) return true; }
+  return !!(G.con && !G.con.end && G.con.it === it && G.mode !== "vs");
+}
+// чего не хватает, чтобы товар было куда нести (для подсказки)
+export function needFor(G, team, it) {
+  const L = layout(G.mode);
+  for (const e of L.E) { if (G.mode === "vs" && e.team !== team) continue; if (G.e[e.i].o) continue;
+    if ((e.k === "proc" && e.rec.in.includes(it)) || (e.k === "stall" && e.item === it) || (e.k === "dock" && e.acc.includes(it))) return e.i; }
+  return -1;
+}
 export function accepts(G, ei, it) {
   const L = layout(G.mode), e = L.E[ei], s = G.e[ei];
   if (!s.o) return false;
-  if (e.k === "proc") { const k = e.rec.in.indexOf(it); return k >= 0 && s.ib[k] < 18; }
+  if (e.k === "proc") { const k = e.rec.in.indexOf(it); return k >= 0 && s.ib[k] < 24 + SUPG.cap * (s.lv || 0); }
   if (e.k === "stall") return e.item === it && s.sh < 24;
   if (e.k === "dock") return e.acc.includes(it) && s.pile.length < e.def.cap;
   if (e.k === "board") return !!(G.con && G.con.it === it && G.con.got < G.con.n && !G.con.end);
@@ -278,6 +342,7 @@ export function applyOp(G, a, op) {
     }
     case "p": {
       if (!(e.k === "proc" || e.k === "gen") || !s.o || s.ob <= 0 || ag.st.length >= capFor(G, a)) return false;
+      if (!hasDest(G, team, e.k === "gen" ? e.item : e.rec.out)) return false;
       s.ob--; const it = e.k === "gen" ? e.item : e.rec.out; ag.st.push(it); G.ev.push({ t: "pick", a, e: ei, it }); return true;
     }
     case "m": {
@@ -301,6 +366,7 @@ function unlock(G, ei) {
   const L = layout(G.mode), e = L.E[ei], s = G.e[ei];
   s.p = 0;
   if (e.k === "upg") { G.upg[e.team][e.def.u]++; G.ev.push({ t: "upg", e: ei, u: e.def.u, lv: G.upg[e.team][e.def.u], team: e.team }); return; }
+  if (e.k === "supg") { const t = G.e[e.tg]; t.lv = (t.lv || 0) + 1; G.ev.push({ t: "supg", e: ei, of: e.tg, lv: t.lv, team: e.team }); return; }
   s.o = 1; G.bv++;
   if (e.k === "helper") G.hp.push({ e: ei, team: e.team, x: e.zpad.x, z: e.zpad.z, dir: 0, st: [], s: 0, tm: 0, xt: 0, mv: 0, tg: -1 });
   G.ev.push({ t: "open", e: ei, team: e.team });
@@ -352,6 +418,8 @@ export function proximityOps(G, pi, dt, loc) {
     // взять готовое
     if (!done && p.st.length < capOf(G, team)) for (const e of L.E) {
       if ((e.team !== team && G.mode === "vs") || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0 || !inZone(p, e.zout)) continue;
+      const it = e.k === "gen" ? e.item : e.rec.out;
+      if (!hasDest(G, team, it)) { loc.noDest = it; continue; }
       ops.push(["p", e.i]); done = true; break;
     }
     if (done) loc.xt = PLAYER.xferT;
@@ -359,6 +427,7 @@ export function proximityOps(G, pi, dt, loc) {
   // ловля
   if (loc.ct <= 0 && p.st.length < capOf(G, team)) for (const e of L.E) {
     if ((e.team !== team && G.mode === "vs") || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin)) continue;
+    if (!hasDest(G, team, e.item)) { loc.noDest = e.item; continue; }
     ops.push(["c", e.i]); loc.ct = catchOf(G, team); break;
   }
   return ops;
@@ -378,13 +447,13 @@ export function step(G, dt, opt) {
   }
   for (const e of L.E) {
     const s = G.e[e.i]; if (!s.o) continue;
-    if (e.k === "spot") { if (s.f < SCHOOL.max) { s.rt += dt; const per = SCHOOL.regen / (1 + 0.6 * helpersAt(G, e.i)); while (s.rt > per && s.f < SCHOOL.max) { s.rt -= per; s.f++; } } else s.rt = 0; }
+    if (e.k === "spot") { if (s.f < SCHOOL.max) { s.rt += dt; const per = SCHOOL.regen / (1 + 0.9 * helpersAt(G, e.i) + (s.f < 8 ? 1 : 0)); while (s.rt > per && s.f < SCHOOL.max) { s.rt -= per; s.f++; } } else s.rt = 0; }
     else if (e.k === "proc") {
-      const ready = s.ib.every((n) => n > 0) && s.ob < 30;
-      if (ready) { s.tm += dt; if (s.tm >= e.rec.t) { s.tm = 0; for (let k = 0; k < s.ib.length; k++) s.ib[k]--; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.rec.out }); } }
+      const ready = s.ib.every((n) => n > 0) && s.ob < 30 + SUPG.cap * (s.lv || 0);
+      if (ready) { s.tm += dt; if (s.tm >= e.rec.t / (1 + SUPG.speed * (s.lv || 0))) { s.tm = 0; for (let k = 0; k < s.ib.length; k++) s.ib[k]--; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.rec.out }); } }
       else s.tm = Math.max(0, s.tm - dt);
     } else if (e.k === "gen") {
-      if (s.ob < e.def.cap) { s.tm += dt; if (s.tm >= e.def.t) { s.tm = 0; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.item }); } }
+      if (s.ob < e.def.cap + SUPG.cap * (s.lv || 0)) { s.tm += dt; if (s.tm >= e.def.t / (1 + SUPG.speed * (s.lv || 0))) { s.tm = 0; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.item }); } }
     } else if (e.k === "dock") stepDock(G, e, s, dt);
   }
   stepHelpers(G, dt);
@@ -480,7 +549,8 @@ function stepCustomers(G, dt) {
   // кого сколько хотят (по товару)
   const wantN = new Array(NIT).fill(0);
   for (const c of G.cu) if (c.s < 4) wantN[c.w]++;
-  const items = [...new Set(stalls.map((e) => e.item))];
+  const canMake = (it) => L.E.some((e) => G.e[e.i].o && ((e.k === "spot" && e.item === it) || (e.k === "proc" && e.rec.out === it) || (e.k === "gen" && e.item === it)));
+  const items = [...new Set(stalls.map((e) => e.item))].filter(canMake);
   G.spT = (G.spT || 0) - dt;
   if (items.length && G.spT <= 0) {
     const free = items.filter((it) => wantN[it] < (G.mode === "vs" ? 16 : 13));
@@ -589,13 +659,13 @@ export function offline(G, sec) {
 /* ---------- прогресс ---------- */
 export function progress(G, team) {
   const L = layout(G.mode); let n = 0, o = 0;
-  for (const e of L.E) { if (e.team !== (team || 0) || e.k === "upg" || e.def.free || e.def.auto || e.k === "board") continue; n++; if (G.e[e.i].o) o++; }
+  for (const e of L.E) { if (e.team !== (team || 0) || e.k === "upg" || e.k === "supg" || e.def.free || e.def.auto || e.k === "board") continue; n++; if (G.e[e.i].o) o++; }
   return { n, o };
 }
 // следующая цель для подсказки: доступная площадка подешевле
 export function nextPad(G, team) {
   const L = layout(G.mode); let best = -1, bc = 1e18;
-  for (const e of L.E) { if (e.team !== team || !padVisible(G, e.i)) continue; const c = padCost(G, e.i) - G.e[e.i].p; const w = c * (e.k === "upg" ? 1.6 : 1); if (w < bc) { bc = w; best = e.i; } }
+  for (const e of L.E) { if (e.team !== team || !padVisible(G, e.i)) continue; const c = padCost(G, e.i) - G.e[e.i].p; const w = c * (e.k === "upg" || e.k === "supg" ? 1.6 : 1); if (w < bc) { bc = w; best = e.i; } }
   return best;
 }
 

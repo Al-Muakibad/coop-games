@@ -65,10 +65,10 @@
   #vs .vr span { width: 54px; text-align: right; font-family: "Rubik"; font-size: 13px; }
   #vtime { font-family: "Rubik"; font-size: 16px; }
   #hint { left: 50%; transform: translateX(-50%); bottom: calc(18px + var(--sab)); z-index: 5; background: rgba(16, 34, 54, .8); color: #fff; border-radius: 18px; padding: 8px 14px; font-weight: 900; font-size: 15px;
-    display: flex; align-items: center; gap: 8px; max-width: 92vw; border: 1px solid var(--line); transition: opacity .3s; white-space: nowrap; }
+    display: flex; align-items: center; gap: 8px; max-width: 92vw; width: max-content; border: 1px solid var(--line); transition: opacity .3s; white-space: normal; line-height: 1.2; font-size: 14px; }
   #hint img { width: 30px; height: 30px; margin: -4px 0; }
   #hint.fade { opacity: 0; }
-  #tip { left: 50%; transform: translateX(-50%); top: calc(124px + var(--sat)); background: var(--glass2); color: var(--cream); border-radius: 18px; padding: 8px 14px; text-align: center; border: 1px solid var(--line);
+  #tip { left: 50%; transform: translateX(-50%); top: calc(168px + var(--sat)); background: var(--glass2); color: var(--cream); border-radius: 18px; padding: 8px 14px; text-align: center; border: 1px solid var(--line);
     max-width: 88vw; opacity: 0; transition: opacity .2s; font-weight: 800; font-size: 13px; }
   #tip.show { opacity: 1; }
   #tip b { display: block; font-size: 16px; color: #fff; } #tip .c { color: var(--gold); font-family: "Rubik"; } #tip .no { color: #ffb0a6; }
@@ -149,7 +149,7 @@
   <div class="row" id="row2">
     <div class="chip" id="prog"><span id="prog-t">Тихая бухта</span><div class="bar"><i id="prog-i"></i></div><b id="prog-n">0/30</b></div>
   </div>
-  <div class="row"><div class="chip hidden" id="con"></div><div class="chip hidden" id="vs"></div></div>
+  <div class="row"><div class="chip btn hidden" id="con"></div><div class="chip hidden" id="vs"></div></div>
 </div>
 <div class="hud hidden" id="hint"></div>
 <div class="hud" id="tip"></div>

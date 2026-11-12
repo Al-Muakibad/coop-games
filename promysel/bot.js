@@ -25,7 +25,7 @@ export function makeBot(pi, opt) {
     let pad = -1, pc = 1e18;
     for (const e of mine) {
       if (!padVisible(G, e.i)) continue;
-      const c = padCost(G, e.i) - G.e[e.i].p, w = c * (e.k === "upg" ? (e.def.u === "bag" ? 1.2 : 1.7) : 1);
+      const c = padCost(G, e.i) - G.e[e.i].p, w = c * (e.k === "upg" ? (e.def.u === "bag" ? 1.2 : 1.6) : e.k === "supg" ? 1.3 : 1);
       if (w < pc) { pc = w; pad = e.i; }
     }
     const padNeed = pad >= 0 ? padCost(G, pad) - G.e[pad].p : 1e18;

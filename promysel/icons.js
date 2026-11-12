@@ -67,6 +67,9 @@ function drawFlat() {
   [c, x] = cv(); out(x); x.fillStyle = "#2f5d7c"; x.beginPath(); x.moveTo(12, 70); x.lineTo(116, 70); x.lineTo(100, 100); x.lineTo(26, 100); x.closePath(); x.fill(); x.stroke(); x.fillStyle = "#f2efe6"; rr(x, 52, 40, 36, 30, 4); x.fill(); x.stroke(); x.fillStyle = "#c9433a"; x.fillRect(64, 20, 10, 20); ICON.dock = c;
   // доска заказов
   [c, x] = cv(); out(x); x.fillStyle = "#c08a58"; rr(x, 16, 24, 96, 70, 6); x.fill(); x.stroke(); x.fillStyle = "#f7f1e1"; for (let i = 0; i < 3; i++) { x.save(); x.translate(34 + i * 30, 58); x.rotate((i - 1) * 0.12); x.fillRect(-11, -20, 22, 34); x.restore(); } x.fillStyle = "#7c5233"; x.fillRect(26, 92, 8, 26); x.fillRect(94, 92, 8, 26); ICON.board = c;
+  // ускорение цеха: шестерёнка со стрелкой
+  [c, x] = cv(); out(x); x.fillStyle = "#9fb3c4"; x.beginPath(); for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, r = i % 2 ? 44 : 54; x.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); } x.closePath(); x.fill(); x.stroke(); x.fillStyle = "#5d6b77"; x.beginPath(); x.arc(64, 64, 18, 0, 7); x.fill();
+  x.fillStyle = "#7ed957"; x.beginPath(); x.moveTo(84, 10); x.lineTo(120, 44); x.lineTo(98, 44); x.lineTo(98, 70); x.lineTo(70, 70); x.lineTo(70, 44); x.lineTo(48, 44); x.closePath(); x.fill(); x.stroke(); ICON.speed = c;
   // звезда, стрелка «сюда», замок
   [c, x] = cv(); out(x); x.fillStyle = "#f2c14e"; x.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 22 : 50; x.lineTo(64 + Math.cos(a) * r, 66 + Math.sin(a) * r); } x.closePath(); x.fill(); x.stroke(); ICON.star = c;
 }

@@ -386,6 +386,7 @@ function setupInput() {
   addEventListener("keyup", (e) => { keys[e.code] = 0; });
   $("b-menu").onclick = () => openPause();
   $("partner").onclick = () => partnerMenu();
+  $("con").onclick = () => { focusBoard(2.4); play("click"); };
 }
 function stick() {
   let x = joy.x, z = joy.y;
@@ -532,17 +533,22 @@ function onEvents(list, remote) {
       }
       case "ship": play(e.s === "in" ? "bell" : "gull1", { vol: vol(en.x, en.z, 0.8) }); if (e.s === "in" && (G.mode !== "vs" || en.team === G.pl[me].team)) toast("🚢 " + L("Судно у причала — неси консервы и ящики"), ""); break;
       case "contract":
-        if (e.s === "new") { play("bell", { vol: 0.6 }); toast("📋 " + L("Новый заказ на доске!"), "gold"); }
+        if (e.s === "new") {
+          play("bell", { vol: 0.6 });
+          const c = G.con; if (c) toast("📋 " + L("Заказ") + ": " + L(ITEMS[c.it].n) + " ×" + c.n + " — " + L("неси к доске заказов"), "gold", 4);
+          if (!G.cdone) focusBoard(2.4);       // первый заказ — покажем, где доска
+        }
         else if (e.s === "done") { play("levelup"); banner(L("Заказ выполнен!") + " +" + fmt(e.amt), L("Награда — у доски заказов"), "gold"); haptic("notify", "success", true); }
         else { play("error"); toast(L("Заказ сорван — не успели"), "bad"); }
         break;
       case "switch": { const to = Lr.E[e.e]; if (G.mode === "vs") { if (to.team === G.pl[me].team) toast("😊 " + L("Покупатель перешёл к тебе"), "good"); else toast("💢 " + L("Покупатель ушёл к сопернику"), "bad"); } break; }
       case "goal": onGoal(e); break;
+      case "supg": { const z = en.zpad, mine = G.mode !== "vs" || e.team === G.pl[me].team; if (camNear(z.x, z.z, 14)) view.burst(z.x, 0.4, z.z, "gold", 22); if (mine) { play("upgrade", { vol: 0.8 }); toast(`⚙ ${entName(Lr.E[e.of])} — ${L("ур.")}${e.lv}: ${L("быстрее и вмещает больше")}`, "gold"); } break; }
     }
   }
 }
 function upgText(u, lv) { const v = UPG[u].v(lv); if (u === "bag" || u === "crew") return v + " " + L("мест"); if (u === "boots" || u === "crewspd") return L("скорость") + " +" + Math.round((v / UPG[u].v(0) - 1) * 100) + "%"; if (u === "net") return L("ловля") + " +" + Math.round((UPG[u].v(0) / v - 1) * 100) + "%"; return ""; }
-function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); return L(e.def.n || e.id); }
+function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layout(G.mode).E[e.tg]); return L(e.def.n || e.id); }
 function entDesc(e) {
   if (e.k === "proc") return e.rec.in.map((i) => L(ITEMS[i].n)).join(" + ") + " → " + L(ITEMS[e.rec.out].n);
   if (e.k === "helper") { if (e.def.role === "cashier") return L("Сам собирает выручку с прилавков"); const s = S.layout(G.mode).E[e.from], to = e.to.map((i) => entName(S.layout(G.mode).E[i])).join(" / "); return (s.k === "spot" ? L("Ловит") + ": " + L(ITEMS[s.item].n) : L("Носит") + ": " + L(ITEMS[s.k === "gen" ? s.item : s.rec.out].n)) + " → " + to; }
@@ -551,6 +557,7 @@ function entDesc(e) {
   if (e.k === "pier") return L("В конце мостков ловится лосось");
   if (e.k === "dock") return L("Судно увозит консервы и ящики улова — платит щедро");
   if (e.k === "goal") return G.mode === "vs" ? L("Зажги первым — победа") : L("Маяк зажжён — бухта пройдена");
+  if (e.k === "supg") { const lv = G.e[e.tg].lv || 0; return L("Работает быстрее и вмещает больше") + ": " + L("ур.") + lv + " → " + (lv + 1); }
   if (e.k === "upg") { const lv = G.upg[e.team][e.def.u]; return L(UPG[e.def.u].d) + ": " + upgText(e.def.u, lv) + " → " + upgText(e.def.u, lv + 1); }
   return "";
 }
@@ -599,6 +606,14 @@ function bayDone() {
   }));
 }
 
+// взять нельзя: некуда нести — объясняем, что открыть
+let noDestT = -99;
+function noDest(it) {
+  if (clock - noDestT < 4) return; noDestT = clock;
+  const team = G.pl[me].team, ni = S.needFor(G, team, it), Lr = S.layout(G.mode);
+  toast("✋ " + L("Некуда нести") + " «" + L(ITEMS[it].n) + "»" + (ni >= 0 ? " — " + L("сначала открой") + " «" + entName(Lr.E[ni]) + "»" : ""), "bad", 3.5);
+  play("error", { vol: 0.4 }); haptic("notify", "warning");
+}
 /* ---------- деньги и подписи на экране ---------- */
 const floats = [];
 function floatText(x, y, z, txt, cls) {
@@ -668,14 +683,24 @@ function updHud(force) {
   } else { ve.classList.add("hidden"); $("row2").classList.remove("hidden"); }
 }
 // подсказка: что делать дальше (и куда показывает стрелка)
-let hintTarget = null, tipE = -1;
+let hintTarget = null, tipE = -1, guideForce = false;
+// камера ненадолго показывает доску заказов
+function focusBoard(sec) { if (!G || G.mode === "vs") return; const Lr = S.layout(G.mode), bi = Lr.byId[0].board; if (bi == null) return; const e = Lr.E[bi]; cam.focus = { x: e.x, z: e.z + 0.5, t: sec || 2.2 }; }
 function computeHint() {
   const Lr = S.layout(G.mode), p = G.pl[me], team = p.team, cap = S.capOf(G, team);
   const mine = (e) => G.mode !== "vs" || e.team === team;
   // площадка рядом — подсказка о ней
-  let near = -1, nd = 2.6;
+  let near = -1, nd = 1.5;
   for (const e of Lr.E) { if (!mine(e) || !S.padVisible(G, e.i)) continue; const d = Math.hypot(p.x - e.zpad.x, p.z - e.zpad.z); if (d < nd) { nd = d; near = e.i; } }
   tipE = near;
+  guideForce = false;
+  // заказ: несёшь нужное — к доске; пока ни одного не сдали — всегда показываем дорогу к доске
+  const bi = G.mode !== "vs" ? Lr.byId[0].board : null, con = G.con && !G.con.end ? G.con : null;
+  if (con && bi != null && G.e[bi].o) {
+    const be = Lr.E[bi];
+    if (p.st.includes(con.it)) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Неси") + " «" + L(ITEMS[con.it].n) + "» " + L("к доске заказов"), t: be.zin }; }
+    if (!G.cdone && !p.st.length) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
+  }
   const np = S.nextPad(G, team);
   let cashSum = 0, cashE = null, cd = 1e9;
   for (const e of Lr.E) if (mine(e) && e.zcash && G.e[e.i].o && G.e[e.i].cash > 0) { cashSum += G.e[e.i].cash; const d = Math.hypot(p.x - e.zcash.x, p.z - e.zcash.z); if (d < cd) { cd = d; cashE = e; } }
@@ -689,7 +714,7 @@ function computeHint() {
   if (cashSum > 0 && cashE && (cashSum > 40 * S.priceMul(G) || p.st.length === 0 && cd < 6)) return { ic: "cash", tx: L("Забери выручку"), t: cashE.zcash };
   // готовое на выходе цеха
   let out = null, od = 1e9;
-  for (const e of Lr.E) { if (!mine(e) || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0) continue; const d = Math.hypot(p.x - e.zout.x, p.z - e.zout.z); if (d < od) { od = d; out = e; } }
+  for (const e of Lr.E) { if (!mine(e) || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0 || !S.hasDest(G, team, e.k === "gen" ? e.item : e.rec.out)) continue; const d = Math.hypot(p.x - e.zout.x, p.z - e.zout.z); if (d < od) { od = d; out = e; } }
   if (out && p.st.length < cap) return { ic: ITEMS[out.k === "gen" ? out.item : out.rec.out].id, tx: L("Забери") + ": " + L(ITEMS[out.k === "gen" ? out.item : out.rec.out].n), t: out.zout };
   const spot = Lr.E.find((e) => mine(e) && e.k === "spot" && G.e[e.i].o && e.item === IT.herring);
   if (spot && p.st.length < cap) return { ic: "herring", tx: S.inZone(p, spot.zin) ? L("Стой в воде — рыба прыгает в короб") : L("Иди на отмель ловить рыбу"), t: spot.zin };
@@ -712,7 +737,7 @@ function tipShow(html) { const t = $("tip"); if (!html) { t.classList.remove("sh
 // метка у края экрана, если цель за кадром
 let edgeEl = null, tagEl = null;
 function drawOverlay() {
-  const showGuide = G && hintTarget && (S.progress(G, G.pl[me].team).o < 7 || idleT > 4);
+  const showGuide = G && hintTarget && (guideForce || S.progress(G, G.pl[me].team).o < 7 || idleT > 4);
   const p = view.disp.p[me];
   if (showGuide && p) view.guide({ x: p.x, z: p.z }, hintTarget); else view.guide(null);
   if (showGuide && hintTarget) {
@@ -858,10 +883,13 @@ function loop(now) {
     ctx = { me, cam, local: role === "guest" ? gloc : { x: G.pl[me].x, z: G.pl[me].z, dir: G.pl[me].dir }, hot: tipE, remoteK: role === "guest" ? 10 : 16 };
     // камера: за игроком, чуть вперёд по ходу
     const d = view.disp.p[me];
-    const tx = (d ? d.x : p.x), tz = (d ? d.z : p.z) - 0.8;
+    let tx = (d ? d.x : p.x), tz = (d ? d.z : p.z) - 0.8;
+    if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
     cam.x += (tx - cam.x) * Math.min(1, dt * 5); cam.z += (tz - cam.z) * Math.min(1, dt * 5);
     cam.dist += (camDist() + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
     hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); netWatch(); }
+    const nd = role === "guest" ? gtm : G.pl[me];
+    if (nd.noDest != null) { noDest(nd.noDest); nd.noDest = null; }
     saveT += dt; if (saveT > 5) { saveT = 0; save(false); }
     // шаги по снегу
     if (G.pl[me].mv) { stepSnd += dt * (2.2 + G.pl[me].mv); if (stepSnd > 1) { stepSnd = 0; play(["step1", "step2", "step3"][(Math.random() * 3) | 0], { vol: 0.16, gap: 0.15 }); } }
@@ -873,6 +901,7 @@ function loop(now) {
     ctx = { me: 0, cam, local: null, hot: -1 };
   }
   const g = started && G ? G : demo;
+  if (started && G) world.sync(G, true);     // постройки — ровно те, что открыты (у гостя тоже)
   if (window.__noRender) return;     // автотесты: мир считается, картинка — нет
   world.update(dt, g);
   view.update(g, dt, ctx);

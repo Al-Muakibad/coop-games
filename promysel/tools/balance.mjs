@@ -25,6 +25,7 @@ for (let t = 0; t < minutes * 60; t += dt) {
       const en = L.E[e.e];
       log.push({ t: G.t, team: e.team, what: e.t === "upg" ? `${UPG[e.u].n} ур.${e.lv}` : en.def.n || en.id, cost: 0 });
     }
+    if (e.t === "supg") log.push({ t: G.t, team: e.team, what: `${L.E[e.of].def.n}: ускорение ур.${e.lv}` });
     if (e.t === "goal") log.push({ t: G.t, team: e.team, what: "*** МАЯК / ПОБЕДА ***" });
     if (e.t === "contract" && e.s !== "new") log.push({ t: G.t, team: 0, what: e.s === "done" ? `заказ выполнен +${e.amt}` : "заказ провален" });
   }

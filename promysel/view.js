@@ -72,6 +72,7 @@ export class View {
     this.flyers = []; this.pend = new Map();
     this.buildParticles(); this.buildRings(); this.buildBubbles(); this.buildSnow(); this.buildGuide();
     this.pads = new Map();
+    this.labels = new Map(); this.usedLabels = new Set();
     this.schools = new Map();
   }
   dispose() { this.scene.remove(this.root); this.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map) o.material.map.dispose(); }); for (const p of this.pads.values()) p.tex.dispose(); }
@@ -197,7 +198,36 @@ export class View {
     const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 2; this.root.add(mesh);
     p = { mesh, u, tex, c, key: "", pop: 0 }; this.pads.set(ei, p); return p;
   }
+  // табличка на земле в зоне: что сюда класть (белая, стрелка вниз) или что отсюда забирать (жёлтая, стрелка вверх)
+  label(key, z, icons, kind, txt) {
+    this.usedLabels.add(key);
+    let l = this.labels.get(key);
+    const sig = icons.join(",") + kind + txt;
+    if (!l) {
+      const c = document.createElement("canvas"); c.width = c.height = 256;
+      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      const g = new THREE.PlaneGeometry(1.55, 1.55); g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.renderOrder = 3; this.root.add(m);
+      l = { m, c, tex, sig: "" }; this.labels.set(key, l);
+    }
+    if (l.sig !== sig) {
+      l.sig = sig; const x = l.c.getContext("2d"); x.clearRect(0, 0, 256, 256);
+      const col = kind === "out" ? "rgba(255, 211, 77, .92)" : kind === "cash" ? "rgba(126, 217, 87, .9)" : "rgba(255, 255, 255, .9)";
+      x.fillStyle = "rgba(15, 33, 51, .55)"; x.beginPath(); x.arc(128, 128, 118, 0, 7); x.fill();
+      x.lineWidth = 10; x.strokeStyle = col; x.beginPath(); x.arc(128, 128, 112, 0, 7); x.stroke();
+      const n = icons.length, sz = n > 1 ? 92 : 120;
+      icons.forEach((ic, i) => { const im = ICON[ic]; if (im) x.drawImage(im, 128 - (n * sz) / 2 + i * sz, n > 1 ? 52 : 34, sz, sz); });
+      // стрелка: вниз — положить, вверх — забрать
+      x.fillStyle = col; x.beginPath();
+      if (kind === "out") { x.moveTo(128, 150); x.lineTo(158, 182); x.lineTo(98, 182); } else { x.moveTo(98, 160); x.lineTo(158, 160); x.lineTo(128, 192); }
+      x.closePath(); x.fill();
+      x.font = "900 30px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff"; x.fillText(txt, 128, 216);
+      l.tex.needsUpdate = true;
+    }
+    l.m.visible = true; l.m.position.set(z.x, this.groundY(z.x, z.z) + 0.06, z.z);
+  }
   padIcon(e) {
+    if (e.k === "supg") return ICON.speed;
     if (e.k === "upg") return ICON[{ bag: "bag", boots: "boots", net: "net", crew: "crate2", crewspd: "skis" }[e.def.u]];
     if (e.k === "helper") return e.def.role === "cashier" ? ICON.cashier : ICON.helper;
     if (e.k === "stall") return ICON.stall;
@@ -212,6 +242,7 @@ export class View {
     const x = p.c.getContext("2d"); x.clearRect(0, 0, 256, 256);
     const ic = this.padIcon(e); if (ic) { x.drawImage(ic, 64, 26, 128, 128); }
     if (e.k === "stall" && ICON[ITEMS[e.item].id]) x.drawImage(ICON[ITEMS[e.item].id], 136, 86, 70, 70);
+    if (e.k === "supg") { const t = this.L.E[e.tg]; const it = t.k === "gen" ? t.item : t.rec.out; if (ICON[ITEMS[it].id]) x.drawImage(ICON[ITEMS[it].id], 150, 92, 64, 64); }
     if (e.k === "helper") { const src = e.from != null ? this.L.E[e.from] : null; const it = src ? (src.k === "spot" ? src.item : src.k === "gen" ? src.item : src.rec.out) : null; if (it != null && ICON[ITEMS[it].id]) x.drawImage(ICON[ITEMS[it].id], 150, 92, 64, 64); }
     x.font = "900 58px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.lineWidth = 12; x.strokeStyle = "rgba(20,30,45,.85)"; x.lineJoin = "round";
     const s = fmt(cost); x.strokeText(s, 128, 200); x.fillStyle = "#ffffff"; x.fillText(s, 128, 200);
@@ -391,7 +422,7 @@ export class View {
     const p = this.pilePos(base, Math.max(0, n - 1 + (extra || 0)), it, cols, rows);
     return new THREE.Vector3(p.x, p.y + 0.1, p.z);
   }
-  inBase(e, k) { const b = this.pileSpot(e, "in"); const nIn = e.rec.in.length; if (nIn > 1) { const ax = Math.abs(e.zin.z - e.z) > Math.abs(e.zin.x - e.x); return ax ? { x: b.x + (k - 0.5) * 1.5, z: b.z, y: 0 } : { x: b.x, z: b.z + (k - 0.5) * 1.5, y: 0 }; } return b; }
+  inBase(e, k) { const b = this.pileSpot(e, "in"); const nIn = e.rec.in.length; if (nIn > 1) { const ax = Math.abs(e.zin.z - e.z) > Math.abs(e.zin.x - e.x); return ax ? { x: b.x + (k - 0.5) * 0.9, z: b.z, y: 0 } : { x: b.x, z: b.z + (k - 0.5) * 0.9, y: 0 }; } return b; }
   drawEnts(G, dt, ctx) {
     const L = this.L, t = this.t;
     let rn = 0;
@@ -409,7 +440,7 @@ export class View {
       // площадка
       if (padVisible(G, e.i)) {
         const p = this.padMesh(e.i); usedPads.add(e.i);
-        const cost = padCost(G, e.i), lv = e.k === "upg" ? G.upg[e.team][e.def.u] + 1 : 0;
+        const cost = padCost(G, e.i), lv = e.k === "upg" ? G.upg[e.team][e.def.u] + 1 : e.k === "supg" ? (G.e[e.tg].lv || 0) + 1 : 0;
         const key = cost + "|" + lv;
         if (p.key !== key) { this.drawPad(p, e, cost, lv ? tr("ур.") + lv : ""); p.key = key; p.pop = 0.001; }
         if (p.pop > 0) { p.pop += dt; if (p.pop > 0.5) p.pop = 0; }
@@ -429,17 +460,17 @@ export class View {
       } else if (e.k === "proc") {
         for (let k = 0; k < e.rec.in.length; k++) this.drawPile(this.inBase(e, k), e.rec.in[k], s.ib[k], "e" + e.i + "i" + k, 3, 2);
         this.drawPile(this.pileSpot(e, "out"), e.rec.out, s.ob, "e" + e.i + "o", 3, 2);
-        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team)); }
+        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team)); this.label("i" + e.i, e.zin, e.rec.in.map((i) => ITEMS[i].id), "in", tr("СЮДА")); this.label("o" + e.i, e.zout, [ITEMS[e.rec.out].id], "out", tr("ЗАБРАТЬ")); }
         // работа: подпрыгивает, дымит
         const w = this.world.ents[e.i];
         if (w && w.grp.children[0]) { const busy = s.tm > 0; w.grp.children[0].scale.y = busy ? 1 + Math.sin(t * 18) * 0.012 : 1; if (busy && e.def.model === "smokehouse" && Math.random() < dt * 6) this.burst(e.x + (e.w / 2 - 0.55) * 1, 3.0, e.z, "smoke", 1); if (busy && e.def.model === "cannery" && Math.random() < dt * 5) this.burst(e.x - e.w / 2 + 0.5, 3.2, e.z - 0.2, "smoke", 1); }
       } else if (e.k === "gen") {
         this.drawPile(this.pileSpot(e, "out"), e.item, s.ob, "e" + e.i + "o", 3, 2);
-        if (mine) ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team));
+        if (mine) { ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team)); this.label("o" + e.i, e.zout, [ITEMS[e.item].id], "out", tr("ЗАБРАТЬ")); }
       } else if (e.k === "stall") {
         this.drawPile(this.pileSpot(e, "shelf"), e.item, s.sh, "e" + e.i + "s", 4, 2);
         this.drawCash(e, s.cash, G);
-        if (mine) { ring(e.zin, WHITE, carry.includes(e.item)); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); }
+        if (mine) { ring(e.zin, WHITE, carry.includes(e.item)); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); this.label("i" + e.i, e.zin, [ITEMS[e.item].id], "in", tr("СЮДА")); }
       } else if (e.k === "dock") {
         const base = this.pileSpot(e, "dock");
         for (let i = 0; i < Math.min(s.pile.length - this.pendOf("e" + e.i + "d"), 40); i++) { const it = s.pile[i]; const p = this.pilePos(base, i, it, 3, 3); EU.set(0, Math.PI / 2, 0); Q.setFromEuler(EU); M4.compose(P.set(p.x, p.y, p.z), Q, S1); this.items[it].push(M4); }
@@ -447,14 +478,16 @@ export class View {
         // груз на судне
         const sh = this.world.ents[e.i].grp.userData.ship;
         if (sh && sh.visible) { sh.updateMatrixWorld(); for (let i = 0; i < Math.min(s.load.length, 24); i++) { const it = s.load[i]; P.set(((i % 3) - 1) * 0.5, 0.66 + Math.floor(i / 9) * 0.3, -0.3 - (Math.floor(i / 3) % 3) * 0.45); P.applyMatrix4(sh.matrixWorld); EU.set(0, Math.PI / 2, 0); Q.setFromEuler(EU); M4.compose(P, Q, S1); this.items[it].push(M4); } }
-        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); }
+        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); this.label("i" + e.i, e.zin, e.acc.map((i) => ITEMS[i].id), "in", tr("СЮДА")); }
       } else if (e.k === "board") {
         this.drawCash(e, s.cash, G);
-        if (mine && G.con && !G.con.end) { ring(e.zin, WHITE, carry.includes(G.con.it)); this.bubble(e.x, 2.55 + Math.sin(t * 3) * 0.05, e.z, BUB["i_" + ITEMS[G.con.it].id], 0.9); }
+        if (mine && G.con && !G.con.end) { ring(e.zin, WHITE, true, 1.15); this.bubble(e.x, 2.65 + Math.sin(t * 3) * 0.08, e.z, BUB["i_" + ITEMS[G.con.it].id], 1.1); this.label("i" + e.i, e.zin, [ITEMS[G.con.it].id], "in", tr("ЗАКАЗ")); }
         if (s.cash > 0) ring(e.zcash, GRN, true, 0.85);
       }
     }
     for (const [ei, p] of this.pads) if (!usedPads.has(ei)) p.mesh.visible = false;
+    for (const [k, l] of this.labels) if (!this.usedLabels.has(k)) l.m.visible = false;
+    this.usedLabels.clear();
     this.rings.count = rn; this.discs.count = rn; this.rings.instanceMatrix.needsUpdate = true; this.rings.instanceColor.needsUpdate = true; this.discs.instanceMatrix.needsUpdate = true; this.discs.instanceColor.needsUpdate = true;
   }
   // выручка: пачки стопками (сколько пачек — по сумме)

@@ -207,6 +207,14 @@ export class World {
         const t = new THREE.CanvasTexture(ICON[ITEMS[e.item].id]); t.colorSpace = THREE.SRGBColorSpace;
         const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); sg.position.set(0, 2.95, -0.95); sg.rotation.x = -0.15; sg.scale.setScalar(1.15); grp.add(sg); grp.userData.sign = sg;
       }
+      if (e.k === "board") {
+        // вывеска «ЗАКАЗЫ» над доской
+        const c = document.createElement("canvas"); c.width = 512; c.height = 160; const x = c.getContext("2d");
+        x.fillStyle = "#c9433a"; x.beginPath(); x.roundRect ? x.roundRect(8, 8, 496, 144, 40) : x.rect(8, 8, 496, 144); x.fill(); x.lineWidth = 10; x.strokeStyle = "#fff"; x.stroke();
+        x.font = "900 86px Rubik, Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff"; x.fillText((window.I18N ? I18N.t("ЗАКАЗЫ") : "ЗАКАЗЫ"), 256, 84);
+        const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+        const sg = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.69), new THREE.MeshBasicMaterial({ map: t, transparent: true })); sg.position.set(0, 2.55, 0.1); sg.rotation.x = -0.2; grp.add(sg);
+      }
       if (e.k === "dock") {
         const ship = new THREE.Mesh(BUILD.ship(), mat); ship.castShadow = true; ship.position.set(e.berth.x - e.x, 0, e.berth.z - e.z); grp.add(ship); grp.userData.ship = ship;
       }
