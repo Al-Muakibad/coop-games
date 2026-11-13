@@ -43,7 +43,7 @@ try { const q = localStorage.getItem("pm_q"); if (q != null && QS.get("q") == nu
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 140);
 let W = 1, H = 1, DPR = 1;
-const cam = { x: -6, z: -2, dist: 30, pitch: 0.96, shake: 0 };
+const cam = { x: -6, z: -2, dist: 30, pitch: 0.9, shake: 0 };
 function resize() {
   W = innerWidth; H = innerHeight;
   DPR = Math.min(devicePixelRatio || 1, [1, 1.5, 2][quality]);
@@ -54,7 +54,7 @@ addEventListener("resize", resize);
 // расстояние камеры: в портрете по ширине видно ~12 м, в альбоме по высоте ~14 м
 function camDist() {
   const vf = camera.fov * Math.PI / 180, a = camera.aspect;
-  const byW = 5.7 / (Math.tan(vf / 2) * a), byH = 7.2 / Math.tan(vf / 2);
+  const byW = 4.9 / (Math.tan(vf / 2) * a), byH = 6.4 / Math.tan(vf / 2);
   return Math.max(16, Math.min(40, a < 1 ? byW : byH));
 }
 function placeCamera(dt) {

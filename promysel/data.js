@@ -4,7 +4,7 @@
 
 export const SHORE = -7.2;
 // поворот камеры вокруг вертикали: берег идёт по диагонали экрана, как у диорамы
-export const YAW = 0.62;           // линия берега
+export const YAW = 0;           // линия берега
 export const ROAD_Z = 20.5;          // дорога, откуда приходят покупатели
 
 // товары. price — цена одной штуки у прилавка (в бухте 1); ship — сколько платит судно (только для экспорта)
@@ -52,7 +52,7 @@ export const STALL_LV = { max: 3, mult: 1.25, cost: [0, 2.2, 5, 11] };    // м�
 export const COOP = {
   w: [-14.5, 14.5], d: [-18, 21.5], start: [-9, -4.8], deco: [],
   // таблички зон улучшений (без столкновений)
-  signs: [{ t: "СНАРЯЖЕНИЕ", x: -10.7, z: -0.55, c: "#3aa0c8" }, { t: "АРТЕЛЬ", x: -11.8, z: 4.25, c: "#5f8f6f" }],
+  signs: [{ t: "СНАРЯЖЕНИЕ", x: -10.7, z: 2.02, w: 3.2, c: "#3aa0c8" }, { t: "АРТЕЛЬ", x: -12.9, z: 4.72, w: 1.9, c: "#5f8f6f" }],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель", item: "herring", x: -9.4, z: -9.7, r: 2.8, sx: -9.4, sz: -12, free: 1 },
     { id: "stall_fish", k: "stall", n: "Прилавок: сельдь", item: "herring", x: -10.2, z: 6.8, free: 1, cost: 60 },
@@ -65,8 +65,8 @@ export const COOP = {
     { id: "net", k: "upg", u: "net", x: -8.5, z: 0.65, after: ["table1"] },
     { id: "su_table1", k: "supg", of: "table1", x: -12.0, z: -5.75, after: ["table1"] },
     { id: "fisher1", k: "helper", n: "Рыбак", role: "fisher", from: "spot1", to: ["table1", "stall_fish"], x: -5.6, z: -5.75, cost: 100, after: ["runner1"] },
-    { id: "crew", k: "upg", u: "crew", x: -12.9, z: 3.0, after: ["fisher0"] },
-    { id: "crewspd", k: "upg", u: "crewspd", x: -10.7, z: 3.0, after: ["fisher0"] },
+    { id: "crew", k: "upg", u: "crew", x: -12.9, z: 3.4, after: ["fisher0"] },
+    { id: "crewspd", k: "upg", u: "crewspd", x: -10.7, z: 3.4, after: ["fisher0"] },
     { id: "stall_smoked", k: "stall", n: "Прилавок: копчёности", item: "smoked", x: -2, z: 6.8, cost: 200, after: ["fisher1"] },
     { id: "smoke", k: "proc", n: "Коптильня", model: "smokehouse", x: -3.4, z: -3.4, w: 2.8, d: 2.3, rec: { in: ["fillet", "log"], out: "smoked", t: 0.8 }, cost: 280, after: ["stall_smoked"] },
     { id: "wood", k: "gen", n: "Дровяник", model: "woodshed", x: -0.6, z: 1.4, w: 2.4, d: 2, item: "log", t: 1.0, cap: 20, cost: 340, after: ["smoke"] },
@@ -110,7 +110,7 @@ export const COOP = {
    Координаты — для левой базы (команда 0, x < 0). Правая — зеркально по x. */
 export const VS = {
   w: [-15, 15], d: [-18, 21.5], start: [-7, -4.8], deco: [],
-  signs: [{ t: "СНАРЯЖЕНИЕ", x: -7.5, z: 4.6, c: "#3aa0c8" }],
+  signs: [{ t: "СНАРЯЖЕНИЕ", x: -7.5, z: 4.5, w: 3.2, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель", item: "herring", x: -7.0, z: -9.7, r: 2.5, sx: -7.0, sz: -12, free: 1 },
     { id: "stall_fish", k: "stall", n: "Прилавок: сельдь", item: "herring", x: -2.8, z: 6.8, free: 1, cost: 40 },

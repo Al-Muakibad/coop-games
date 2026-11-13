@@ -2,6 +2,7 @@
 // Каждая модель — одна геометрия с цветами в вершинах. У одежды есть «маска»: её красим цветом конкретного человека.
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), EU = new THREE.Euler(), V1 = new THREE.Vector3(), V2 = new THREE.Vector3();
 const C = new THREE.Color();
@@ -9,7 +10,8 @@ function hash(n) { const s = Math.sin(n * 127.1 + 31.7) * 43758.5453; return s -
 
 // построитель: складываем фигуры, потом сливаем в одну геометрию
 export class Build {
-  constructor() { this.parts = []; this.seed = 1; }
+  // round — коробки со скруглёнными рёбрами; ao — снизу темнее (как тень в местах касания)
+  constructor(opt) { this.parts = []; this.seed = 1; this.round = !!(opt && opt.round); this.ao = !!(opt && opt.ao); }
   add(g, col, o) {
     o = o || {};
     g = g.index ? g.toNonIndexed() : g;
@@ -31,12 +33,20 @@ export class Build {
     this.parts.push(g);
     return this;
   }
-  box(w, h, d, col, o) { return this.add(new THREE.BoxGeometry(w, h, d), col, o); }
+  box(w, h, d, col, o) {
+    const m = Math.min(w, h, d);
+    if (this.round && m > 0.07) return this.add(new RoundedBoxGeometry(w, h, d, 1, Math.min(0.07, m * 0.28)), col, o);
+    return this.add(new THREE.BoxGeometry(w, h, d), col, o);
+  }
   cyl(rt, rb, h, seg, col, o) { return this.add(new THREE.CylinderGeometry(rt, rb, h, seg || 8), col, o); }
   cone(r, h, seg, col, o) { return this.add(new THREE.ConeGeometry(r, h, seg || 7), col, o); }
   sph(r, det, col, o) { return this.add(new THREE.IcosahedronGeometry(r, det || 0), col, o); }
   ball(r, col, o) { return this.add(new THREE.SphereGeometry(r, r < 0.06 ? 5 : 8, r < 0.06 ? 4 : 6), col, o); }
-  geo() { const g = mergeGeometries(this.parts, false); g.computeVertexNormals(); g.computeBoundingSphere(); return g; }
+  geo() {
+    const g = mergeGeometries(this.parts, false); g.computeVertexNormals(); g.computeBoundingSphere();
+    if (this.ao) { const p = g.attributes.position, c = g.attributes.color; for (let i = 0; i < p.count; i++) { const y = p.getY(i), k = 0.7 + 0.3 * Math.min(1, Math.max(0, y / 0.6)) + Math.max(0, y - 1.6) * 0.03; c.setXYZ(i, c.getX(i) * k, c.getY(i) * k, c.getZ(i) * k); } }
+    return g;
+  }
 }
 
 /* ---------- палитра ---------- */
@@ -124,7 +134,7 @@ export function fenceGeo(len, h) {
   const b = new Build(); h = h || 0.85;
   const n = Math.max(1, Math.round(len / 0.27));
   for (let i = 0; i <= n; i++) {
-    const x = -len / 2 + (len * i) / n, hh = h * (0.92 + ((i * 37) % 7) * 0.02), c = i % 2 ? "#c9774a" : "#bb6b42";
+    const x = -len / 2 + (len * i) / n, hh = h, c = i % 2 ? "#c9774a" : "#bf6f45";
     b.cyl(0.13, 0.135, hh, 8, c, { p: [x, hh / 2, 0], jit: 0.04 });
     b.add(new THREE.SphereGeometry(0.13, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), "#d98c5c", { p: [x, hh, 0], s: [1, 0.55, 1], jit: 0.03 });
     b.add(new THREE.SphereGeometry(0.11, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2), PAL.snow, { p: [x, hh + 0.04, 0], s: [1, 0.45, 1], jit: 0.02 });
@@ -161,50 +171,50 @@ function logWall(b, w, h, d, col) {
 }
 // w, d — размер места на карте
 export const BUILD = {
-  table: (w, d) => { const b = new Build(); b.box(w, 0.12, d, PAL.woodL, { p: [0, 0.78, 0] }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.12, 0.78, 0.12, PAL.wood2, { p: [sx * (w / 2 - 0.15), 0.39, sz * (d / 2 - 0.12)] });
+  table: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w, 0.12, d, PAL.woodL, { p: [0, 0.78, 0] }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.12, 0.78, 0.12, PAL.wood2, { p: [sx * (w / 2 - 0.15), 0.39, sz * (d / 2 - 0.12)] });
     b.box(w * 0.42, 0.06, d * 0.6, "#e9d6b4", { p: [-w * 0.18, 0.87, 0] }); b.box(0.36, 0.03, 0.07, PAL.metal, { p: [-w * 0.12, 0.915, 0.12], r: [0, 0.4, 0], jit: 0 }); b.box(0.12, 0.04, 0.05, PAL.dark, { p: [-w * 0.26, 0.915, 0.04], r: [0, 0.4, 0] });
     b.box(w * 0.98, 0.04, 0.08, PAL.snow, { p: [0, 0.86, -d / 2 + 0.03], jit: 0.03 }); b.box(0.5, 0.3, 0.4, "#5a7d99", { p: [w / 2 - 0.35, 0.15, d / 2 + 0.3] }); return b.geo(); },
   table2: (w, d) => { const g = BUILD.table(w, d); return g; },
-  woodshed: (w, d) => { const b = new Build(); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.14, 1.5, 0.14, PAL.wood2, { p: [sx * (w / 2 - 0.12), 0.75, sz * (d / 2 - 0.12)] });
+  woodshed: (w, d) => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.14, 1.5, 0.14, PAL.wood2, { p: [sx * (w / 2 - 0.12), 0.75, sz * (d / 2 - 0.12)] });
     for (let i = 0; i < 4; i++) for (let j = 0; j < 6 - (i % 2); j++) b.cyl(0.12, 0.12, d * 0.8, 6, i % 2 ? PAL.wood : "#8b5d38", { p: [-w / 2 + 0.35 + j * 0.27 + (i % 2) * 0.13, 0.13 + i * 0.22, -0.05], r: [Math.PI / 2, 0, 0] });
     gable(b, w + 0.3, d + 0.2, 0.7, PAL.roofB, 1.5); b.box(0.12, 0.7, 0.12, PAL.dark, { p: [w / 2 - 0.4, 0.35, d / 2 + 0.2] }); b.box(0.5, 0.06, 0.06, PAL.metal, { p: [w / 2 - 0.4, 0.7, d / 2 + 0.2] }); return b.geo(); },
-  smokehouse: (w, d) => { const b = new Build(); logWall(b, w - 0.3, 1.5, d - 0.4, PAL.wood); gable(b, w + 0.2, d + 0.1, 0.9, PAL.roofR, 1.5);
+  smokehouse: (w, d) => { const b = new Build({ round: true, ao: true }); logWall(b, w - 0.3, 1.5, d - 0.4, PAL.wood); gable(b, w + 0.2, d + 0.1, 0.9, PAL.roofR, 1.5);
     b.box(0.5, 1.4, 0.5, PAL.stone, { p: [w / 2 - 0.55, 2.1, 0] }); b.box(0.56, 0.12, 0.56, PAL.snow, { p: [w / 2 - 0.55, 2.82, 0], jit: 0.02 });
     b.box(0.6, 0.9, 0.05, PAL.wood2, { p: [0, 0.45, d / 2 - 0.17] }); b.box(0.45, 0.35, 0.05, "#ffb35a", { p: [-0.75, 0.9, d / 2 - 0.17], jit: 0 }); b.box(0.45, 0.35, 0.05, "#ffb35a", { p: [-0.75, 0.9, -d / 2 + 0.17], jit: 0 }); return b.geo(); },
-  caviar: (w, d) => { const b = new Build(); b.box(w - 0.4, 1.3, d - 0.4, "#e6d8c2", { p: [0, 0.65, 0] }); b.box(w - 0.3, 0.25, d - 0.3, PAL.wood2, { p: [0, 0.12, 0] });
+  caviar: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.4, 1.3, d - 0.4, "#e6d8c2", { p: [0, 0.65, 0] }); b.box(w - 0.3, 0.25, d - 0.3, PAL.wood2, { p: [0, 0.12, 0] });
     gable(b, w + 0.1, d, 0.8, "#d65a4a", 1.3); b.box(0.55, 0.85, 0.05, "#7a4d2e", { p: [0.3, 0.42, d / 2 - 0.19] }); b.box(0.4, 0.32, 0.05, "#bfe6f5", { p: [-0.55, 0.85, d / 2 - 0.19], jit: 0 });
     b.cyl(0.18, 0.18, 0.25, 9, "#ff6a3d", { p: [-0.55, 1.75, d / 2 - 0.25] }); b.cyl(0.19, 0.19, 0.07, 9, PAL.gold, { p: [-0.55, 1.9, d / 2 - 0.25] }); return b.geo(); },
-  cannery: (w, d) => { const b = new Build(); b.box(w - 0.2, 1.7, d - 0.3, "#a9b6c2", { p: [0, 0.85, 0] }); for (let i = 0; i < 4; i++) b.box(0.05, 1.6, d - 0.25, "#8796a3", { p: [-w / 2 + 0.4 + i * (w - 0.8) / 3, 0.8, 0], jit: 0 });
+  cannery: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.2, 1.7, d - 0.3, "#a9b6c2", { p: [0, 0.85, 0] }); for (let i = 0; i < 4; i++) b.box(0.05, 1.6, d - 0.25, "#8796a3", { p: [-w / 2 + 0.4 + i * (w - 0.8) / 3, 0.8, 0], jit: 0 });
     b.box(w, 0.15, d, PAL.dark, { p: [0, 1.75, 0] }); b.box(w * 0.9, 0.12, d * 0.85, PAL.snow, { p: [0, 1.88, 0], jit: 0.03 }); b.cyl(0.22, 0.26, 1.4, 8, "#7d4b3a", { p: [-w / 2 + 0.5, 2.4, -0.2] }); b.cyl(0.25, 0.25, 0.1, 8, PAL.snow, { p: [-w / 2 + 0.5, 3.1, -0.2] });
     b.box(0.8, 1.0, 0.05, "#5d6b77", { p: [0.4, 0.5, d / 2 - 0.13] }); b.box(1.2, 0.3, 0.05, "#3b78b5", { p: [0.4, 1.35, d / 2 - 0.13], jit: 0 }); return b.geo(); },
-  icehouse: (w, d) => { const b = new Build(); b.box(w - 0.3, 1.2, d - 0.3, "#c7dce8", { p: [0, 0.6, 0] }); for (let i = 0; i < 6; i++) b.box(0.42, 0.3, 0.06, "#e4f3fb", { p: [-w / 2 + 0.5 + (i % 3) * 0.75, 0.3 + Math.floor(i / 3) * 0.55, d / 2 - 0.14] });
+  icehouse: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.3, 1.2, d - 0.3, "#c7dce8", { p: [0, 0.6, 0] }); for (let i = 0; i < 6; i++) b.box(0.42, 0.3, 0.06, "#e4f3fb", { p: [-w / 2 + 0.5 + (i % 3) * 0.75, 0.3 + Math.floor(i / 3) * 0.55, d / 2 - 0.14] });
     b.sph(1, 1, "#d7ecf6", { p: [0, 1.2, 0], s: [w * 0.55, 0.75, d * 0.55], jit: 0.04 }); b.sph(1, 1, PAL.snow, { p: [0, 1.35, 0], s: [w * 0.48, 0.65, d * 0.48], jit: 0.03 }); b.box(0.6, 0.9, 0.06, PAL.roofB, { p: [0, 0.45, d / 2 - 0.12] }); return b.geo(); },
-  icehole: (w, d) => { const b = new Build(); b.cyl(w * 0.45, w * 0.5, 0.08, 12, "#a7d7ec", { p: [0, 0.04, 0], s: [1, 1, d / w] }); b.cyl(w * 0.24, w * 0.24, 0.09, 10, "#2c6f93", { p: [0, 0.05, 0], s: [1, 1, d / w], jit: 0.02 });
+  icehole: (w, d) => { const b = new Build({ round: true, ao: true }); b.cyl(w * 0.45, w * 0.5, 0.08, 12, "#a7d7ec", { p: [0, 0.04, 0], s: [1, 1, d / w] }); b.cyl(w * 0.24, w * 0.24, 0.09, 10, "#2c6f93", { p: [0, 0.05, 0], s: [1, 1, d / w], jit: 0.02 });
     for (let i = 0; i < 5; i++) b.box(0.32, 0.28, 0.32, "#c7ecfb", { p: [-w * 0.42 + i * 0.22, 0.14 + (i % 2) * 0.28, d * 0.38], jit: 0.12 }); b.box(0.06, 1.1, 0.06, PAL.wood2, { p: [w * 0.3, 0.55, -d * 0.3], r: [0, 0, 0.25] }); b.box(0.5, 0.05, 0.14, PAL.metal, { p: [w * 0.42, 1.0, -d * 0.3], r: [0, 0, 0.25] }); return b.geo(); },
-  lighthouse: () => { const b = new Build(); b.cyl(1.2, 1.4, 0.5, 10, PAL.stone, { p: [0, 0.25, 0] }); for (let i = 0; i < 5; i++) b.cyl(0.9 - i * 0.1, 0.95 - i * 0.1, 0.9, 10, i % 2 ? "#f4f1ea" : "#c9433a", { p: [0, 0.95 + i * 0.9, 0] });
+  lighthouse: () => { const b = new Build({ round: true, ao: true }); b.cyl(1.2, 1.4, 0.5, 10, PAL.stone, { p: [0, 0.25, 0] }); for (let i = 0; i < 5; i++) b.cyl(0.9 - i * 0.1, 0.95 - i * 0.1, 0.9, 10, i % 2 ? "#f4f1ea" : "#c9433a", { p: [0, 0.95 + i * 0.9, 0] });
     b.cyl(0.62, 0.62, 0.1, 10, PAL.dark, { p: [0, 5.0, 0] }); b.cyl(0.45, 0.45, 0.7, 8, "#ffe9a6", { p: [0, 5.4, 0], jit: 0 }); b.cone(0.62, 0.6, 8, "#c9433a", { p: [0, 6.05, 0] }); b.ball(0.12, PAL.gold, { p: [0, 6.4, 0] }); return b.geo(); },
-  stall: (col) => { const b = new Build(); const w = 2.6, d = 0.9;
+  stall: (col) => { const b = new Build({ round: true, ao: true }); const w = 2.6, d = 0.9;
     b.box(w, 0.9, d, PAL.woodL, { p: [0, 0.45, 0] }); b.box(w * 0.92, 0.42, 0.04, col, { p: [0, 0.5, d / 2 + 0.02] }); b.box(w * 0.92, 0.06, 0.05, "#f4efe4", { p: [0, 0.74, d / 2 + 0.03], jit: 0 }); b.box(w + 0.1, 0.08, d + 0.1, PAL.wood2, { p: [0, 0.93, 0] }); for (let i = 0; i < 5; i++) b.box(0.04, 0.85, 0.02, PAL.wood2, { p: [-w / 2 + 0.3 + i * 0.5, 0.45, d / 2 + 0.005], jit: 0 });
     for (const sx of [-1, 1]) b.box(0.1, 2.3, 0.1, PAL.wood2, { p: [sx * (w / 2 - 0.05), 1.15, -0.18] });
     // навес — над продавцом (сзади), чтобы сверху была видна полка с товаром
     for (let i = 0; i < 6; i++) { const x = -w / 2 + w / 12 + i * w / 6; b.box(w / 6, 0.06, 0.95, i % 2 ? "#f4efe4" : col, { p: [x, 2.05, -0.62], r: [-0.42, 0, 0], jit: 0.02 }); b.box(w / 6, 0.2, 0.03, i % 2 ? "#f4efe4" : col, { p: [x, 2.14, -0.18], jit: 0.02 }); }
     b.box(w + 0.05, 0.05, 0.7, PAL.snow, { p: [0, 2.13, -0.7], r: [-0.42, 0, 0], jit: 0.02 }); b.box(1.1, 0.42, 0.06, "#f8f0dc", { p: [0, 2.5, -1.0] }); return b.geo(); },
-  board: () => { const b = new Build(); for (const sx of [-1, 1]) b.box(0.12, 1.9, 0.12, PAL.wood2, { p: [sx * 0.95, 0.95, 0] }); b.box(2.0, 1.1, 0.1, PAL.woodL, { p: [0, 1.25, 0] }); b.box(2.15, 0.1, 0.25, PAL.wood2, { p: [0, 1.85, 0] }); b.box(2.1, 0.1, 0.3, PAL.snow, { p: [0, 1.93, 0], jit: 0.02 });
+  board: () => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 1]) b.box(0.12, 1.9, 0.12, PAL.wood2, { p: [sx * 0.95, 0.95, 0] }); b.box(2.0, 1.1, 0.1, PAL.woodL, { p: [0, 1.25, 0] }); b.box(2.15, 0.1, 0.25, PAL.wood2, { p: [0, 1.85, 0] }); b.box(2.1, 0.1, 0.3, PAL.snow, { p: [0, 1.93, 0], jit: 0.02 });
     for (let i = 0; i < 4; i++) b.box(0.42, 0.5, 0.02, "#f7f1e1", { p: [-0.7 + i * 0.47, 1.25 + (i % 2) * 0.08, 0.06], r: [0, 0, (i - 1.5) * 0.06] }); return b.geo(); },
-  dock: () => { const b = new Build(); b.box(2.6, 0.2, 2.6, PAL.plank, { p: [0, 0.1, 0] }); for (let i = 0; i < 7; i++) b.box(2.62, 0.02, 0.03, PAL.wood2, { p: [0, 0.205, -1.2 + i * 0.4], jit: 0 });
+  dock: () => { const b = new Build({ round: true, ao: true }); b.box(2.6, 0.2, 2.6, PAL.plank, { p: [0, 0.1, 0] }); for (let i = 0; i < 7; i++) b.box(2.62, 0.02, 0.03, PAL.wood2, { p: [0, 0.205, -1.2 + i * 0.4], jit: 0 });
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.cyl(0.12, 0.12, 0.6, 6, PAL.wood2, { p: [sx * 1.2, 0.2, sz * 1.2] }); b.box(0.15, 2.2, 0.15, PAL.dark, { p: [-1.0, 1.1, -1.0] }); b.box(1.8, 0.12, 0.12, PAL.dark, { p: [-1.75, 2.15, -1.0] }); b.cyl(0.015, 0.015, 0.9, 4, PAL.rope, { p: [-2.5, 1.7, -1.0], jit: 0 }); return b.geo(); },
-  ship: () => { const b = new Build(); b.box(1.7, 0.7, 4.2, "#2f5d7c", { p: [0, 0.2, 0] }); b.cone(0.86, 1.2, 4, "#2f5d7c", { p: [0, 0.2, -2.6], r: [Math.PI / 2, Math.PI / 4, 0], s: [1, 1, 0.58] }); b.box(1.76, 0.12, 4.25, "#e9e4d8", { p: [0, 0.6, 0] });
+  ship: () => { const b = new Build({ round: true, ao: true }); b.box(1.7, 0.7, 4.2, "#2f5d7c", { p: [0, 0.2, 0] }); b.cone(0.86, 1.2, 4, "#2f5d7c", { p: [0, 0.2, -2.6], r: [Math.PI / 2, Math.PI / 4, 0], s: [1, 1, 0.58] }); b.box(1.76, 0.12, 4.25, "#e9e4d8", { p: [0, 0.6, 0] });
     b.box(1.2, 1.0, 1.2, "#f2efe6", { p: [0, 1.1, 1.0] }); b.box(1.3, 0.12, 1.3, "#c9433a", { p: [0, 1.66, 1.0] }); b.box(1.0, 0.25, 0.05, "#bfe6f5", { p: [0, 1.25, 0.38], jit: 0 }); b.cyl(0.12, 0.14, 0.8, 7, "#c9433a", { p: [0, 2.0, 1.3] }); b.box(0.08, 2.0, 0.08, PAL.dark, { p: [0, 1.6, -0.9] }); b.box(1.2, 0.06, 0.06, PAL.dark, { p: [0, 2.3, -0.9] }); return b.geo(); },
-  pier: (len) => { const b = new Build(); b.box(1.8, 0.16, len, PAL.plank, { p: [0, 0.32, 0] }); const n = Math.round(len / 0.45); for (let i = 0; i < n; i++) b.box(1.82, 0.02, 0.03, PAL.wood2, { p: [0, 0.405, -len / 2 + 0.2 + i * 0.45], jit: 0 });
+  pier: (len) => { const b = new Build({ round: true, ao: true }); b.box(1.8, 0.16, len, PAL.plank, { p: [0, 0.32, 0] }); const n = Math.round(len / 0.45); for (let i = 0; i < n; i++) b.box(1.82, 0.02, 0.03, PAL.wood2, { p: [0, 0.405, -len / 2 + 0.2 + i * 0.45], jit: 0 });
     for (let i = 0; i <= Math.round(len / 1.8); i++) for (const sx of [-1, 1]) b.cyl(0.1, 0.1, 1.2, 6, PAL.wood2, { p: [sx * 0.85, -0.1, -len / 2 + i * 1.8] }); for (let i = 0; i < 6; i++) b.ball(0.1, PAL.snow, { p: [(hash(i) - 0.5) * 1.4, 0.4, -len / 2 + hash(i + 7) * len], s: [1.4, 0.4, 1.4] }); return b.geo(); },
-  sign: () => { const b = new Build(); b.box(0.1, 1.4, 0.1, PAL.wood2, { p: [0, 0.7, 0] }); b.box(1.2, 0.55, 0.08, PAL.woodL, { p: [0, 1.25, 0] }); b.box(1.25, 0.08, 0.15, PAL.snow, { p: [0, 1.56, 0], jit: 0.02 }); return b.geo(); },
-  gear: () => { const b = new Build(); logWall(b, 2.6, 1.2, 1.2, PAL.wood); gable(b, 3.0, 1.6, 0.8, PAL.roofB, 1.2);
+  sign: () => { const b = new Build({ round: true, ao: true }); b.box(0.1, 1.4, 0.1, PAL.wood2, { p: [0, 0.7, 0] }); b.box(1.2, 0.55, 0.08, PAL.woodL, { p: [0, 1.25, 0] }); b.box(1.25, 0.08, 0.15, PAL.snow, { p: [0, 1.56, 0], jit: 0.02 }); return b.geo(); },
+  gear: () => { const b = new Build({ round: true, ao: true }); logWall(b, 2.6, 1.2, 1.2, PAL.wood); gable(b, 3.0, 1.6, 0.8, PAL.roofB, 1.2);
     b.box(0.08, 1.3, 0.08, PAL.woodL, { p: [-1.1, 0.65, 0.72], r: [0.25, 0, 0.1] }); b.box(0.08, 1.3, 0.08, PAL.woodL, { p: [-0.95, 0.65, 0.72], r: [0.25, 0, 0.05] });
     b.box(1.0, 0.7, 0.04, "#e0c58e", { p: [0.4, 0.75, 0.64], jit: 0.15 }); b.box(0.9, 0.36, 0.06, "#f8f0dc", { p: [0, 1.75, 0.82] }); b.box(0.3, 0.3, 0.3, PAL.woodL, { p: [1.1, 0.15, 0.85] }); return b.geo(); },
-  hut: () => { const b = new Build(); logWall(b, 1.6, 1.2, 1.3, PAL.wood); gable(b, 2.0, 1.6, 0.8, PAL.roofG, 1.2); b.box(0.5, 0.8, 0.05, PAL.wood2, { p: [0, 0.4, 0.68] }); return b.geo(); },
-  barrel: () => { const b = new Build(); b.cyl(0.24, 0.24, 0.55, 9, PAL.wood, { p: [0, 0.27, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.12, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.42, 0] }); b.cyl(0.2, 0.2, 0.06, 9, PAL.snow, { p: [0, 0.56, 0], jit: 0.02 }); return b.geo(); },
-  crates: () => { const b = new Build(); b.box(0.6, 0.5, 0.6, PAL.woodL, { p: [0, 0.25, 0] }); b.box(0.5, 0.42, 0.5, PAL.wood, { p: [0.55, 0.21, 0.1], r: [0, 0.3, 0] }); b.box(0.45, 0.4, 0.45, PAL.woodL, { p: [0.15, 0.7, 0.05], r: [0, -0.2, 0] }); b.box(0.46, 0.08, 0.46, PAL.snow, { p: [0.15, 0.93, 0.05], r: [0, -0.2, 0], jit: 0.02 }); return b.geo(); },
-  boat: () => { const b = new Build(); b.box(0.9, 0.35, 2.2, "#b9573f", { p: [0, 0.1, 0] }); b.cone(0.46, 0.6, 4, "#b9573f", { p: [0, 0.1, -1.35], r: [Math.PI / 2, Math.PI / 4, 0], s: [1, 1, 0.55] }); b.box(0.75, 0.05, 2.0, PAL.woodL, { p: [0, 0.28, 0] }); b.box(0.85, 0.06, 0.15, PAL.wood2, { p: [0, 0.32, 0.3] }); return b.geo(); },
+  hut: () => { const b = new Build({ round: true, ao: true }); logWall(b, 1.6, 1.2, 1.3, PAL.wood); gable(b, 2.0, 1.6, 0.8, PAL.roofG, 1.2); b.box(0.5, 0.8, 0.05, PAL.wood2, { p: [0, 0.4, 0.68] }); return b.geo(); },
+  barrel: () => { const b = new Build({ round: true, ao: true }); b.cyl(0.24, 0.24, 0.55, 9, PAL.wood, { p: [0, 0.27, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.12, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.42, 0] }); b.cyl(0.2, 0.2, 0.06, 9, PAL.snow, { p: [0, 0.56, 0], jit: 0.02 }); return b.geo(); },
+  crates: () => { const b = new Build({ round: true, ao: true }); b.box(0.6, 0.5, 0.6, PAL.woodL, { p: [0, 0.25, 0] }); b.box(0.5, 0.42, 0.5, PAL.wood, { p: [0.55, 0.21, 0.1], r: [0, 0.3, 0] }); b.box(0.45, 0.4, 0.45, PAL.woodL, { p: [0.15, 0.7, 0.05], r: [0, -0.2, 0] }); b.box(0.46, 0.08, 0.46, PAL.snow, { p: [0.15, 0.93, 0.05], r: [0, -0.2, 0], jit: 0.02 }); return b.geo(); },
+  boat: () => { const b = new Build({ round: true, ao: true }); b.box(0.9, 0.35, 2.2, "#b9573f", { p: [0, 0.1, 0] }); b.cone(0.46, 0.6, 4, "#b9573f", { p: [0, 0.1, -1.35], r: [Math.PI / 2, Math.PI / 4, 0], s: [1, 1, 0.55] }); b.box(0.75, 0.05, 2.0, PAL.woodL, { p: [0, 0.28, 0] }); b.box(0.85, 0.06, 0.15, PAL.wood2, { p: [0, 0.32, 0.3] }); return b.geo(); },
 };
 // цвет навеса прилавка по товару
 export const STALL_COL = { herring: "#4f8fc0", fillet: "#e2735c", smoked: "#c98432", steak: "#e65d4f", caviar: "#d4483a" };

@@ -191,11 +191,15 @@ export class World {
     const hut = BUILD.hut(), crates = BUILD.crates(), barrel = BUILD.barrel(), boat = BUILD.boat();
     const deco = [[hut, -18, 25, 0.2], [hut, 17.5, 25.5, -0.3], [hut, 23, 14, -1.2], [hut, -23, 12, 1.4], [crates, -14.6, -5.5, 0.4], [barrel, 14.4, 5.5, 0], [barrel, 14.6, 6.4, 0], [crates, 14.2, 10.6, -0.5], [boat, -15.6, -8.0, 0.5], [boat, 17, -9, -0.4]];
     for (const sgn of L.MAP.signs || []) for (let t = 0; t < L.teams; t++) {
-      const c = document.createElement("canvas"); c.width = 512; c.height = 96; const x = c.getContext("2d");
-      x.fillStyle = sgn.c; x.beginPath(); if (x.roundRect) x.roundRect(4, 4, 504, 88, 44); else x.rect(4, 4, 504, 88); x.fill(); x.lineWidth = 6; x.strokeStyle = "rgba(255,255,255,.9)"; x.stroke();
-      x.font = "900 54px Rubik, Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff"; x.fillText(window.I18N ? I18N.t(sgn.t) : sgn.t, 256, 52);
+      // табличка-лента по ширине ряда: текст подгоняем, чтобы не обрезался
+      const w = sgn.w || 3, hgt = 0.46, CW = 640, CH = Math.round(CW * hgt / w);
+      const c = document.createElement("canvas"); c.width = CW; c.height = CH; const x = c.getContext("2d");
+      x.fillStyle = sgn.c; x.beginPath(); if (x.roundRect) x.roundRect(3, 3, CW - 6, CH - 6, (CH - 6) / 2); else x.rect(3, 3, CW - 6, CH - 6); x.fill(); x.lineWidth = 5; x.strokeStyle = "rgba(255,255,255,.95)"; x.stroke();
+      const txt = window.I18N ? I18N.t(sgn.t) : sgn.t; let fs = Math.round(CH * 0.62);
+      x.font = `900 ${fs}px Rubik, Nunito, Arial, sans-serif`; while (x.measureText(txt).width > CW - CH * 0.9 && fs > 10) { fs--; x.font = `900 ${fs}px Rubik, Nunito, Arial, sans-serif`; }
+      x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff"; x.fillText(txt, CW / 2, CH / 2 + 2);
       const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 4;
-      const g = new THREE.PlaneGeometry(3.4, 0.64); g.rotateX(-Math.PI / 2);
+      const g = new THREE.PlaneGeometry(w, hgt); g.rotateX(-Math.PI / 2);
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tx, transparent: true, depthWrite: false })); m.renderOrder = 2;
       m.position.set(sgn.x * (t ? -1 : 1), this.height(sgn.x, sgn.z) + 0.05, sgn.z); m.rotation.y = YAW; this.root.add(m);
     }
@@ -218,9 +222,10 @@ export class World {
       if (e.k === "pier") { const len = e.pier.z0 - e.pier.z1 + 0.8; geo = BUILD.pier(len); grp.position.set(e.pier.x, 0, (e.pier.z0 + e.pier.z1) / 2); }
       else grp.position.set(e.x, y, e.z);
       if (geo) { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.rotation.y = ry; grp.add(m); }
+      if (e.box || e.k === "stall") { const bw = (e.w || 2.6) + 0.9, bd = (e.d || 0.9) + 0.9; const sh = new THREE.Mesh(this.aoGeo || (this.aoGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), this.aoMat()); sh.scale.set(bw, 1, bd); sh.position.y = 0.025; sh.renderOrder = 1; grp.add(sh); }
       if (e.k === "stall" && ICON[ITEMS[e.item].id]) {
         const t = new THREE.CanvasTexture(ICON[ITEMS[e.item].id]); t.colorSpace = THREE.SRGBColorSpace;
-        const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); sg.position.set(0, 2.95, -0.95); sg.rotation.x = -0.15; sg.scale.setScalar(1.15); grp.add(sg); grp.userData.sign = sg;
+        const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); sg.position.set(0, 2.5, -0.96); sg.scale.setScalar(0.5); grp.add(sg);
       }
       if (e.k === "board") {
         // вывеска «ЗАКАЗЫ» над доской
@@ -237,6 +242,15 @@ export class World {
       this.ents[e.i] = { e, grp, open: false, pop: 0 };
     }
   }
+  // мягкое тёмное пятно под постройкой (вместо запечённой окклюзии)
+  aoMat() {
+    if (this._ao) return this._ao;
+    const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d");
+    x.filter = "blur(12px)"; x.fillStyle = "rgba(25, 35, 70, .5)"; if (x.roundRect) { x.beginPath(); x.roundRect(22, 22, 84, 84, 18); x.fill(); } else x.fillRect(22, 22, 84, 84);
+    const t = new THREE.CanvasTexture(c);
+    this._ao = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false });
+    return this._ao;
+  }
   // показать открытые места; anim — с «прыжком»
   sync(G, anim) {
     for (const w of this.ents) {
@@ -252,7 +266,6 @@ export class World {
     this.time += dt;
     this.wu.uTime.value = this.time;
     for (const w of this.ents) {
-      if (w.grp.userData.sign) w.grp.userData.sign.position.y = 2.85 + Math.sin(this.time * 2 + w.e.i) * 0.06;
       if (w.pop > 0) { w.pop += dt; const t = Math.min(1, w.pop / 0.55); const s = t < 1 ? 1 + Math.sin(t * Math.PI) * 0.25 * (1 - t) + (1 - Math.pow(1 - t, 3)) - 1 : 1; w.grp.scale.setScalar(Math.max(0.01, t < 1 ? Math.min(1.2, (1 - Math.pow(1 - t, 3)) * (1 + Math.sin(t * Math.PI) * 0.22)) : 1)); if (t >= 1) { w.pop = 0; w.grp.scale.setScalar(1); } void s; }
       // судно у причала
       if (w.e.k === "dock" && w.grp.userData.ship && G) {

@@ -208,17 +208,19 @@ export class View {
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `uniform sampler2D uTex; uniform float uProg, uTime, uOk, uHot, uGold; varying vec2 vUv;
         float box(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q,0.0)) + min(max(q.x,q.y),0.0) - r; }
-        void main(){ vec2 p = vUv - 0.5; float d = box(p, vec2(0.47), 0.1);
-          if (d > 0.0) discard;
-          vec3 base = mix(vec3(0.16,0.25,0.36), vec3(0.42,0.3,0.08), uGold);
-          vec3 fill = mix(vec3(0.33,0.78,0.42), vec3(0.98,0.78,0.25), uGold);
-          vec3 c = base; float a = 0.72;
-          if (vUv.y < uProg) { c = fill; a = 0.9; }
-          float edge = smoothstep(-0.035, -0.012, d);
+        void main(){ vec2 p = vUv - 0.5; float d = box(p, vec2(0.44), 0.11);
+          // мягкая тень плитки (чуть ниже по экрану)
+          float ds = box(p + vec2(0.0, 0.025), vec2(0.44), 0.11);
+          if (d > 0.0) { float sh = (1.0 - smoothstep(0.0, 0.05, ds)) * 0.28; if (sh < 0.01) discard; gl_FragColor = vec4(0.1, 0.13, 0.22, sh); return; }
+          vec3 base = mix(vec3(0.93,0.96,1.0), vec3(1.0,0.95,0.82), uGold);
+          vec3 fill = mix(vec3(0.42,0.82,0.45), vec3(0.98,0.78,0.25), uGold);
+          vec3 c = base * (0.94 + 0.06 * vUv.y); float a = 0.9;
+          if (vUv.y < uProg) { c = fill * (0.92 + 0.08 * vUv.y); a = 0.95; }
+          float edge = smoothstep(-0.03, -0.012, d);
           float dash = step(0.5, fract((atan(p.y, p.x) / 6.2832) * 24.0 - uTime * (0.4 + uHot)));
-          vec3 ec = mix(vec3(1.0), mix(vec3(0.62,1.0,0.6), vec3(1.0,0.86,0.4), uGold), uOk);
-          c = mix(c, ec, edge * mix(0.55, 1.0, dash)); a = mix(a, 1.0, edge);
-          c += vec3(0.12) * uHot * (0.5 + 0.5 * sin(uTime * 10.0));
+          vec3 ec = mix(vec3(0.55,0.68,0.82), mix(vec3(0.3,0.75,0.35), vec3(0.95,0.7,0.2), uGold), uOk);
+          c = mix(c, ec, edge * mix(0.6, 1.0, dash * uOk + (1.0 - uOk))); a = mix(a, 1.0, edge);
+          c += vec3(0.1) * uHot * (0.5 + 0.5 * sin(uTime * 10.0));
           vec4 t = texture2D(uTex, vUv); c = mix(c, t.rgb, t.a);
           gl_FragColor = vec4(c, a);
           #include <colorspace_fragment>
@@ -274,9 +276,9 @@ export class View {
     if (e.k === "stall" && ICON[ITEMS[e.item].id]) x.drawImage(ICON[ITEMS[e.item].id], 136, 86, 70, 70);
     if (e.k === "supg") { const t = this.L.E[e.tg]; const it = t.k === "gen" ? t.item : t.rec.out; if (ICON[ITEMS[it].id]) x.drawImage(ICON[ITEMS[it].id], 150, 92, 64, 64); }
     if (e.k === "helper") { const src = e.from != null ? this.L.E[e.from] : null; const it = src ? (src.k === "spot" ? src.item : src.k === "gen" ? src.item : src.rec.out) : null; if (it != null && ICON[ITEMS[it].id]) x.drawImage(ICON[ITEMS[it].id], 150, 92, 64, 64); }
-    x.font = "900 58px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.lineWidth = 12; x.strokeStyle = "rgba(20,30,45,.85)"; x.lineJoin = "round";
-    const s = fmt(cost); x.strokeText(s, 128, 200); x.fillStyle = "#ffffff"; x.fillText(s, 128, 200);
-    if (lvl) { x.font = "900 34px Nunito, Arial, sans-serif"; x.strokeText(lvl, 206, 36); x.fillStyle = "#ffe08a"; x.fillText(lvl, 206, 36); }
+    x.font = "900 56px Rubik, Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.lineWidth = 8; x.strokeStyle = "rgba(255,255,255,.9)"; x.lineJoin = "round";
+    const s = fmt(cost); x.strokeText(s, 128, 202); x.fillStyle = "#17324d"; x.fillText(s, 128, 202);
+    if (lvl) { x.font = "900 30px Nunito, Arial, sans-serif"; x.fillStyle = "#3aa0c8"; if (x.roundRect) { x.beginPath(); x.roundRect(160, 18, 76, 40, 20); x.fill(); } x.fillStyle = "#fff"; x.fillText(lvl, 198, 39); }
     p.tex.needsUpdate = true;
   }
   /* ---------- летящие предметы ---------- */
