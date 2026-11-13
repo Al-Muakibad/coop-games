@@ -2,7 +2,7 @@
 // Постройки спрятаны, пока место не открыто; при открытии — «выпрыгивают».
 import * as THREE from "three";
 import { layout, shoreZ } from "./sim.js";
-import { ITEMS } from "./data.js";
+import { ITEMS, YAW } from "./data.js";
 import { ICON } from "./icons.js";
 import { BUILD, PAL, STALL_COL, pineGeo, rockGeo, driftGeo, fenceGeo, lampGeo, Build } from "./art.js";
 
@@ -12,7 +12,7 @@ const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a)
 
 // темы бухт: цвет неба, воды, тумана, свет
 export const THEMES = [
-  { sky: "#9fd3f2", sky2: "#cfe6f5", fog: "#cfe4f2", deep: "#1d6a94", mid: "#2b8db3", shal: "#5fc2d8", sun: "#fff0d6", hemi: "#dbeeff", ground: "#6f86a3", sunI: 1.85 },
+  { sky: "#9fd3f2", sky2: "#d6e6f5", fog: "#d3e2f1", deep: "#1a56b8", mid: "#2a76d2", shal: "#55aee8", sun: "#ffefd6", hemi: "#e4eeff", ground: "#8a98b8", sunI: 1.95 },
   { sky: "#86b9e8", sky2: "#d8e8f7", fog: "#cfe0f2", deep: "#1b5684", mid: "#2a78a8", shal: "#5fb5d8", sun: "#eaf2ff", hemi: "#dce9ff", ground: "#8094b0", sunI: 2.1 },
   { sky: "#f2c7a0", sky2: "#fde9d6", fog: "#f1e0d2", deep: "#25607e", mid: "#357f9c", shal: "#71bccc", sun: "#ffdcb0", hemi: "#fff0e2", ground: "#9a8f9e", sunI: 2.2 },
   { sky: "#6f8fd0", sky2: "#c8d6f2", fog: "#bfcde8", deep: "#173f6c", mid: "#245d90", shal: "#4f9cc8", sun: "#e6eeff", hemi: "#cfdcff", ground: "#7686a8", sunI: 1.9 },
@@ -64,7 +64,7 @@ export class World {
     const L = this.L, X0 = -34, X1 = 34, Z0 = -40, Z1 = 42;
     const g = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, 120, 146); g.rotateX(-Math.PI / 2); g.translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
-    const SNOW = new THREE.Color("#e9f0f7"), SNOW2 = new THREE.Color("#d2deea"), SAND = new THREE.Color("#cbbba0"), PEB = new THREE.Color("#a99d8c"), BED = new THREE.Color("#5d7f8c"), TRAMP = new THREE.Color("#cdd6df"), ROAD = new THREE.Color("#b3bcc6");
+    const SNOW = new THREE.Color("#f1f5fb"), SNOW2 = new THREE.Color("#d3e0f0"), SAND = new THREE.Color("#cbbba0"), PEB = new THREE.Color("#a99d8c"), BED = new THREE.Color("#5d7f8c"), TRAMP = new THREE.Color("#cdd6df"), ROAD = new THREE.Color("#b3bcc6"), DECK = new THREE.Color();
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
@@ -72,11 +72,13 @@ export class World {
       const sh = shoreZ(L, x), d = z - sh;
       c.copy(SNOW).lerp(SNOW2, vnoise(x * 0.35 + 5, z * 0.35) * 0.8);
       if (d < 1.4) c.lerp(SAND, sstep(1.4, 0.2, d)); if (d < 0.2) c.lerp(PEB, sstep(0.2, -0.6, d)); if (d < -0.6) c.lerp(BED, sstep(-0.6, -2, d));
-      // рынок и толпа — утоптанный снег, дорога
-      if (z > 4.6 && z < 18.6 && x > -14 && x < 14) c.lerp(TRAMP, 0.55 * sstep(4.6, 6, z) * sstep(18.6, 17.5, z));
+      // толпа — утоптанный снег, дорога
+      if (z > 12 && z < 18.6 && x > -14 && x < 14) c.lerp(TRAMP, 0.45 * sstep(12, 13, z) * sstep(18.6, 17.5, z));
       if (Math.abs(z - 20.6) < 1.6) c.lerp(ROAD, sstep(1.6, 0.9, Math.abs(z - 20.6)) * (0.8 + vnoise(x * 2, z * 3) * 0.2));
-      // тропинки между цехами
-      if (z > -5 && z < 5 && x > -14 && x < 14) c.lerp(TRAMP, 0.35 * vnoise(x * 0.4, z * 0.4));
+      // настил промысла: тёплые доски от берега до забора рынка, края скруглены
+      const M = L.MAP, ex = Math.max(M.w[0] - x, 0, x - M.w[1]), ez = Math.max(sh + 1.0 - z, 0, z - (L.fz - 0.05));
+      const dk = 1 - sstep(0.0, 0.35, Math.hypot(ex, ez));
+      if (dk > 0) { const pl = (Math.abs(((z * 2.2) % 1 + 1) % 1 - 0.5) < 0.04 ? 0.84 : 1) * (0.95 + vnoise(x * 0.7, z * 3) * 0.1); DECK.setRGB(0.85 * pl, 0.53 * pl, 0.4 * pl); c.lerp(DECK, dk); }
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -114,8 +116,9 @@ export class World {
           float w = nz(vW.xz * vec2(1.6, 2.8) + vec2(uTime * 0.3, uTime * 0.12)) * nz(vW.xz * 2.6 - uTime * 0.22);
           c += vec3(0.1, 0.13, 0.15) * smoothstep(0.3, 0.42, w) * (1.0 - smoothstep(0.42, 0.6, w));
           float lines = smoothstep(0.92, 1.0, sin(vW.z * 2.2 + nz(vW.xz * 0.5) * 6.0 + uTime * 0.9)) * 0.08; c += vec3(lines);
-          float f = 1.0 - smoothstep(0.0, 0.42 + 0.12 * sin(vW.x * 1.7 + uTime * 2.0), d);   // пена у берега
-          c = mix(c, vec3(0.95, 0.98, 1.0), f * 0.85);
+          float f = 1.0 - smoothstep(0.05, 0.75 + 0.18 * sin(vW.x * 1.3 + uTime * 1.6), d);   // пена у берега
+          float f2 = smoothstep(0.9, 1.0, sin(d * 9.0 - uTime * 2.2)) * (1.0 - smoothstep(0.6, 2.2, d)) * 0.5;
+          c = mix(c, vec3(0.94, 0.97, 1.0), clamp(f * 0.9 + f2, 0.0, 1.0));
           float fogF = smoothstep(fogNear, fogFar, vFogDepth); c = mix(c, fogColor, fogF);
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>
@@ -135,7 +138,7 @@ export class World {
     const pines = [], pines2 = [], rocks = [], drifts = [], lamps = [];
     const R = (i, k) => hash(i * 3.17 + k, i * 1.31 - k);
     // лес по бокам и позади рынка
-    for (let i = 0; i < 330; i++) {
+    for (let i = 0; i < 260; i++) {
       const x = -34 + R(i, 1) * 68, z = -8 + R(i, 2) * 50;
       const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3;
       if (inside) continue;
@@ -159,7 +162,7 @@ export class World {
       rocks.push({ x, z, s: 0.4 + R(i, 16) * 0.6, r: R(i, 17) * 6 });
     }
     // скалы за краем карты (море по бокам)
-    for (let i = 0; i < 40; i++) { const sx = R(i, 18) > 0.5 ? 1 : -1; const x = sx * (16 + R(i, 19) * 14), z = -24 + R(i, 20) * 18; if (z > shoreZ(L, x) - 1) continue; rocks.push({ x, z, s: 1.2 + R(i, 21) * 2, r: R(i, 22) * 6, y: -0.4 }); }
+    for (let i = 0; i < 40; i++) { const sx = R(i, 18) > 0.5 ? 1 : -1; const x = sx * (16 + R(i, 19) * 14), z = -24 + R(i, 20) * 18; if (z > shoreZ(L, x) - 1) continue; rocks.push({ x, z, s: 0.8 + R(i, 21) * 1.0, r: R(i, 22) * 6, y: -0.3 }); }
     // сугробы в игровой зоне по краям
     for (let i = 0; i < 40; i++) { const x = M.w[0] + R(i, 23) * (M.w[1] - M.w[0]), z = -6 + R(i, 24) * 28; if (Math.abs(x) < M.w[1] - 1.2 && z < 19) continue; drifts.push({ x, z, s: 0.6 + R(i, 25) * 0.9, r: R(i, 26) * 6 }); }
     for (let x = -26; x <= 26; x += 6.5) { lamps.push({ x, z: 19.0 }); }
@@ -175,6 +178,9 @@ export class World {
     const pb = new Build(); pb.sph(0.12, 0, PAL.stone, { p: [0, 0.04, 0], s: [1.3, 0.7, 1] }); pb.sph(0.08, 0, PAL.stone2, { p: [0.16, 0.03, 0.06], s: [1.2, 0.7, 1] }); pb.sph(0.1, 0, PAL.snow, { p: [0.02, 0.09, 0], s: [1.2, 0.35, 1], jit: 0.02 });
     add(tb.geo(), tufts, false); add(pb.geo(), pebbles, false);
     add(pineGeo(0), pines, true); add(pineGeo(1), pines2, true); add(rockGeo(), rocks, true); add(driftGeo(), drifts, false); add(lampGeo(), lamps, true);
+    // частокол по краям настила (за край карты всё равно не пройти)
+    const zs = Math.max(shoreZ(L, M.w[0]), shoreZ(L, M.w[1])) + 1.2, flen = L.fz - zs;
+    for (const sx of [M.w[0] - 0.25, M.w[1] + 0.25]) { const m = new THREE.Mesh(fenceGeo(flen), mat); m.position.set(sx, 0, zs + flen / 2); m.rotation.y = Math.PI / 2; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
     // заборы рынка
     for (const f of [...L.fences, ...L.div]) {
       const len = Math.max(f[2] - f[0], f[3] - f[1]), along = f[2] - f[0] >= f[3] - f[1];
@@ -191,7 +197,7 @@ export class World {
       const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 4;
       const g = new THREE.PlaneGeometry(3.4, 0.64); g.rotateX(-Math.PI / 2);
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tx, transparent: true, depthWrite: false })); m.renderOrder = 2;
-      m.position.set(sgn.x * (t ? -1 : 1), this.height(sgn.x, sgn.z) + 0.05, sgn.z); this.root.add(m);
+      m.position.set(sgn.x * (t ? -1 : 1), this.height(sgn.x, sgn.z) + 0.05, sgn.z); m.rotation.y = YAW; this.root.add(m);
     }
     for (const d of L.deco) { const m = new THREE.Mesh(BUILD[d.m](), mat); m.position.set(d.x, 0, d.z); m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
     // бочки и ящики у мест — для уюта (вне зон)

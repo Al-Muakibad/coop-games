@@ -1,7 +1,7 @@
 // «Промысел» — всё, что движется: люди (одна отрисовка на часть тела для всех), стопки на спине, кучи у цехов, косяки рыбы,
 // летящие предметы, деньги, площадки покупки с заполнением, пузыри над покупателями, частицы, снег, стрелка-подсказка.
 import * as THREE from "three";
-import { ITEMS, IT, UPG, PAD_R } from "./data.js";
+import { ITEMS, IT, UPG, PAD_R, YAW } from "./data.js";
 import { layout, padVisible, padCost, accepts, capOf, itemPrice } from "./sim.js";
 import { torsoGeo, legGeo, armGeo, packGeo, ITEM_GEO, ITEM_H, schoolFishGeo, Build, PAL } from "./art.js";
 import { ICON, BUB, bubbleAtlas } from "./icons.js";
@@ -30,6 +30,24 @@ vColor = vec3(1.0); vColor *= color; vColor *= mix(vec3(1.0), aCoat, aMask.x); v
   };
   m.customProgramCacheKey = () => "pmChar";
   return m;
+}
+// рыба: хвост виляет в шейдере (фаза — от места рыбы), без лишних расчётов на процессоре
+function fishMat(u) {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uT = u;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform float uT;").replace("#include <begin_vertex>", `vec3 transformed = position;
+float ph = instanceMatrix[3].x * 2.7 + instanceMatrix[3].z * 1.9;
+transformed.z += sin(uT * 12.0 + ph + position.x * 10.0) * 0.06 * clamp(0.25 - position.x, 0.0, 0.6) * 2.2;`);
+  };
+  m.customProgramCacheKey = () => "pmFish";
+  return m;
+}
+// мягкое пятно тени под ногами — «окклюзия» в местах касания
+function blobTex() {
+  const c = document.createElement("canvas"); c.width = c.height = 64; const x = c.getContext("2d");
+  const g = x.createRadialGradient(32, 32, 2, 32, 32, 31); g.addColorStop(0, "rgba(20,30,60,.55)"); g.addColorStop(0.6, "rgba(20,30,60,.22)"); g.addColorStop(1, "rgba(20,30,60,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); return t;
 }
 class Pool {
   constructor(parent, geo, mat, cap, opt) {
@@ -65,7 +83,19 @@ export class View {
     this.arm = new Pool(this.root, armGeo(), cm, 240, { tint: 1 });
     this.pack = new Pool(this.root, packGeo(), fm, 40);
     this.items = ITEM_NAMES.map((n) => new Pool(this.root, ITEM_GEO[n](), fm, n === "cash" ? 500 : 420, { receive: true }));
-    this.fish = [new Pool(this.root, schoolFishGeo(0), fm, 80, { shadow: false }), new Pool(this.root, schoolFishGeo(1), fm, 60, { shadow: false })];
+    this.fu = { value: 0 };
+    const fsm = fishMat(this.fu);
+    this.fish = [new Pool(this.root, schoolFishGeo(0), fsm, 120, { shadow: false }), new Pool(this.root, schoolFishGeo(1), fsm, 80, { shadow: false })];
+    // пятна-тени
+    const bg = new THREE.PlaneGeometry(1, 1); bg.rotateX(-Math.PI / 2);
+    this.blobs = new THREE.InstancedMesh(bg, new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }), 220);
+    this.blobs.frustumCulled = false; this.blobs.renderOrder = 1; this.blobs.count = 0; this.root.add(this.blobs); this.blobN = 0;
+    // сети ловцов: обруч, сетка, два шеста
+    this.nets = [0, 1].map(() => { const g = new THREE.Group(); const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 6, 28), new THREE.MeshLambertMaterial({ color: "#e0c58e" })); ring.rotation.x = Math.PI / 2; g.add(ring);
+      const mesh = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20), new THREE.MeshLambertMaterial({ color: "#f3e7c7", transparent: true, opacity: 0.45, side: THREE.DoubleSide })); mesh.rotation.x = -Math.PI / 2; mesh.position.y = -0.08; g.add(mesh);
+      for (const s of [-1, 1]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.15, 5), new THREE.MeshLambertMaterial({ color: "#a06a3b" })); pole.position.set(s * 0.45, 0.32, 0.55); pole.rotation.x = -0.75; g.add(pole); }
+      g.visible = false; this.root.add(g); return g; });
+    this.popK = new Map();
     this.disp = { p: [], h: [], c: new Map() };
     this.coats = { p: PCOL.map((c) => ({ coat: new THREE.Color(c.coat), hat: new THREE.Color(c.hat) })), h: { coat: new THREE.Color(HCOL.coat), hat: new THREE.Color(HCOL.hat) },
       c: CUST.map((c, i) => ({ coat: new THREE.Color(c), hat: new THREE.Color(CHAT[(i * 3 + 1) % CHAT.length]) })) };
@@ -195,7 +225,7 @@ export class View {
         }`,
     });
     const g = new THREE.PlaneGeometry(PAD_R * 2.1, PAD_R * 2.1); g.rotateX(-Math.PI / 2);
-    const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 2; this.root.add(mesh);
+    const mesh = new THREE.Mesh(g, m); mesh.renderOrder = 2; mesh.rotation.y = YAW; this.root.add(mesh);
     p = { mesh, u, tex, c, key: "", pop: 0 }; this.pads.set(ei, p); return p;
   }
   // табличка на земле в зоне: что сюда класть (белая, стрелка вниз) или что отсюда забирать (жёлтая, стрелка вверх)
@@ -207,7 +237,7 @@ export class View {
       const c = document.createElement("canvas"); c.width = c.height = 256;
       const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
       const g = new THREE.PlaneGeometry(1.55, 1.55); g.rotateX(-Math.PI / 2);
-      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.renderOrder = 3; this.root.add(m);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })); m.renderOrder = 3; m.rotation.y = YAW; this.root.add(m);
       l = { m, c, tex, sig: "" }; this.labels.set(key, l);
     }
     if (l.sig !== sig) {
@@ -278,6 +308,7 @@ export class View {
     this.t += dt;
     const L = this.L, t = this.t;
     this.torso.begin(); this.leg.begin(); this.arm.begin(); this.pack.begin(); for (const p of this.items) p.begin(); for (const f of this.fish) f.begin();
+    this.fu.value = this.t; this.blobN = 0;
     this.bN = 0;
     // игроки
     for (let i = 0; i < G.pl.length; i++) {
@@ -285,6 +316,19 @@ export class View {
       if (ctx.local && i === ctx.me) { d.x = ctx.local.x; d.z = ctx.local.z; d.dir = angLerp(d.dir, ctx.local.dir, Math.min(1, dt * 16)); }
       else { const k = Math.min(1, dt * (ctx.remoteK || 14)); d.x = lerp(d.x, p.x, k); d.z = lerp(d.z, p.z, k); if (p.mv) d.dir = angLerp(d.dir, p.dir, Math.min(1, dt * 12)); }
       this.person(d, this.coats.p[G.mode === "vs" ? p.team : i], dt, p.st, "p" + i, true, G, 1.0);
+      // в зоне лова — в руках большая сеть, в ней бьётся улов
+      let fishing = false; for (const e of this.L.E) if (e.k === "spot" && G.e[e.i].o && Math.hypot(d.x - e.zin.x, d.z - e.zin.z) < e.zin.r + 0.1) fishing = true;
+      d.netK = lerp(d.netK || 0, fishing ? 1 : 0, Math.min(1, dt * 7));
+      const net = this.nets[i];
+      if (net) {
+        net.visible = d.netK > 0.03;
+        if (net.visible) {
+          const k = d.netK, ox = Math.sin(d.dir) * 0.95, oz = Math.cos(d.dir) * 0.95;
+          net.position.set(d.x + ox, -0.02 + Math.sin(this.t * 3) * 0.02, d.z + oz); net.rotation.y = d.dir + Math.sin(this.t * 1.7) * 0.06; net.scale.setScalar(k * (1 + Math.sin(this.t * 5) * 0.02));
+          const nf = Math.min(7, this.pendOf("p" + i) + 2);
+          for (let j = 0; j < nf; j++) { const a = j * 2.4 + this.t * (j % 2 ? 2 : -1.6), r = 0.12 + (j % 3) * 0.13; EU.set(0, a + Math.PI / 2, Math.sin(this.t * 14 + j) * 0.4); Q.setFromEuler(EU); M4.compose(P.set(net.position.x + Math.cos(a) * r * k, 0.02 + Math.abs(Math.sin(this.t * 7 + j)) * 0.12, net.position.z + Math.sin(a) * r * k), Q, SV.setScalar(1.6 * k)); this.fish[0].push(M4); }
+        }
+      }
     }
     // помощники
     for (let i = 0; i < G.hp.length; i++) {
@@ -302,6 +346,7 @@ export class View {
       const col = this.coats.c[c.sk % this.coats.c.length] || this.coats.c[(c.id * 7) % this.coats.c.length];
       // в руках — купленное
       const hold = d.hold || (d.hold = []); hold.length = 0; const gotV = Math.max(0, c.g - this.pendOf("c" + c.id)); for (let j = 0; j < gotV; j++) hold.push(c.w);
+      if (c.s === 4 && c.mood === 1 && !d.hopped) { d.hopped = 1; d.hop = 0.7; }
       this.person(d, col, dt, hold, "c" + c.id, false, G, 0.95);
       // пузырь: что хочет / настроение
       if (c.s !== 4 || d.mood) {
@@ -335,6 +380,7 @@ export class View {
     sp.needsUpdate = true;
     this.torso.end(); this.leg.end(); this.arm.end(); this.pack.end(); for (const p of this.items) p.end(); for (const f of this.fish) f.end();
     this.bPos.needsUpdate = true; this.bCell.needsUpdate = true; this.bub.geometry.instanceCount = this.bN;
+    this.blobs.count = this.blobN; if (this.blobN) this.blobs.instanceMatrix.needsUpdate = true;
   }
   near(d, c, r) { return Math.abs(d.x - c.x) < r && Math.abs(d.z - c.z) < r * 1.4; }
   groundY(x, z) { return Math.max(this.world.height(x, z), -0.42); }
@@ -348,7 +394,13 @@ export class View {
     // наклон стопки: пружина от разгона
     const acc = (d.sp - (d.psp || 0)) / Math.max(dt, 1e-3); d.psp = d.sp;
     d.lv += (-acc * 0.012 - d.lean * 30) * dt; d.lv *= Math.pow(0.04, dt); d.lean += d.lv * dt * 10; d.lean = Math.max(-0.35, Math.min(0.35, d.lean));
-    const y0 = this.groundY(d.x, d.z) + (moving ? Math.abs(Math.sin(d.ph)) * 0.06 : Math.sin(this.t * 2 + d.x) * 0.008);
+    let y0 = this.groundY(d.x, d.z) + (moving ? Math.abs(Math.sin(d.ph)) * 0.06 : Math.sin(this.t * 2 + d.x) * 0.008);
+    if (d.hop > 0) { d.hop = Math.max(0, d.hop - dt); y0 += Math.abs(Math.sin(d.hop * 9)) * 0.25 * Math.min(1, d.hop * 2); }
+    // стопка: на остановке приседает и пружинит
+    if ((d.psq || 0) > 1.6 && d.sp < 0.7) d.sqv = (d.sqv || 0) - 1.6;
+    d.psq = d.sp;
+    d.sqv = ((d.sqv || 0) + (-(d.sq || 0) * 70 - (d.sqv || 0) * 7) * dt); d.sq = Math.max(-0.22, Math.min(0.18, (d.sq || 0) + d.sqv * dt));
+    if (this.blobN < 220) { M4.compose(P.set(d.x, this.groundY(d.x, d.z) + 0.03, d.z), Q.identity(), SV.set(0.95 * scale, 1, 0.95 * scale)); this.blobs.setMatrixAt(this.blobN++, M4); }
     const sw = moving ? Math.sin(d.ph) * 0.65 * Math.min(1, d.sp / 3) : 0;
     EU.set(0, d.dir, 0); Q.setFromEuler(EU); SV.setScalar(scale);
     M5.compose(P.set(d.x, y0, d.z), Q, SV);
@@ -372,9 +424,10 @@ export class View {
       const k = (h - 0.5) / 1.4;
       const wob = Math.sin(this.t * 4 + i * 0.5 + d.x) * 0.01 * i * (moving ? 1 : 0.3);
       EU.set(0, Math.PI / 2 + (i % 2 ? 0.08 : -0.06), 0); Q.setFromEuler(EU);
-      M4.compose(P.set(bx + wob, h, bz - d.lean * k * k * 0.6 * (pack ? 1 : -1)), Q, S1); M4.premultiply(M5);
+      const sq = 1 + (d.sq || 0) * Math.min(1, i / 6 + 0.3);
+      M4.compose(P.set(bx + wob, h, bz - d.lean * k * k * 0.6 * (pack ? 1 : -1)), Q, SV.set(1 + (1 - sq) * 0.5, sq, 1 + (1 - sq) * 0.5)); M4.premultiply(M5);
       this.items[it].push(M4);
-      h += ih;
+      h += ih * sq;
     }
     d.top = h;
   }
@@ -406,9 +459,12 @@ export class View {
   }
   drawPile(base, it, n, key, cols, rows) {
     const show = Math.max(0, n - this.pendOf(key));
+    let pk = this.popK.get(key); if (!pk) { pk = { n: show, t: 0 }; this.popK.set(key, pk); }
+    if (show > pk.n) pk.t = 0.32; pk.n = show; pk.t = Math.max(0, pk.t - 1 / 60);
     for (let i = 0; i < Math.min(show, 60); i++) {
       const p = this.pilePos(base, i, it, cols, rows);
-      EU.set(0, Math.PI / 2 + ((i * 7) % 5 - 2) * 0.04, 0); Q.setFromEuler(EU); M4.compose(P.set(p.x, p.y, p.z), Q, S1); this.items[it].push(M4);
+      const pop = i === show - 1 && pk.t > 0 ? 1 + Math.sin((1 - pk.t / 0.32) * Math.PI) * 0.35 : 1;
+      EU.set(0, Math.PI / 2 + ((i * 7) % 5 - 2) * 0.04, 0); Q.setFromEuler(EU); M4.compose(P.set(p.x, p.y, p.z), Q, SV.setScalar(pop)); this.items[it].push(M4);
     }
   }
   // мировая точка следующего места в куче (куда прилетит предмет)
@@ -495,29 +551,38 @@ export class View {
   drawCash(e, cash, G) {
     if (!(cash > 0)) return;
     const n = this.cashBundles(G, cash), base = this.pileSpot(e, "cash");
-    for (let i = 0; i < n; i++) { const col = i % 4, layer = Math.floor(i / 4); EU.set(0, (col % 2 ? 0.1 : -0.08) + Math.PI / 2, 0); Q.setFromEuler(EU); M4.compose(P.set(base.x + ((col % 2) - 0.5) * 0.27, this.groundY(base.x, base.z) + layer * 0.1, base.z + (Math.floor(col / 2) - 0.5) * 0.45), Q, S1); this.items[CASH].push(M4); }
+    // столбики до 24 пачек, потом рядом второй
+    const key = "cash" + e.i; let pk = this.popK.get(key); if (!pk) { pk = { n, t: 0 }; this.popK.set(key, pk); } if (n > pk.n) pk.t = 0.3; pk.n = n; pk.t = Math.max(0, pk.t - 1 / 60);
+    for (let i = 0; i < n; i++) { const col = Math.floor(i / 24), layer = i % 24; const pop = i === n - 1 && pk.t > 0 ? 1 + Math.sin((1 - pk.t / 0.3) * Math.PI) * 0.4 : 1;
+      EU.set(0, Math.PI / 2 + Math.sin(i * 1.7) * 0.05, 0); Q.setFromEuler(EU); M4.compose(P.set(base.x + (col - 0.5 * Math.min(1, Math.floor((n - 1) / 24))) * 0.48, this.groundY(base.x, base.z) + layer * 0.1, base.z), Q, SV.setScalar(pop)); this.items[CASH].push(M4); }
   }
   // косяк: рыбы ходят кругами вокруг центра; рядом с ловцом подплывают к нему
   drawSchool(e, n, dt, G, ctx) {
+    const N = 40;
     let sc = this.schools.get(e.i);
-    if (!sc) { sc = { fish: [], jt: 0 }; for (let i = 0; i < 26; i++) sc.fish.push({ a: Math.random() * 6.28, r: 0.4 + Math.random() * 1.6, sp: 0.5 + Math.random() * 0.5, y: Math.random(), ph: Math.random() * 6 }); this.schools.set(e.i, sc); }
+    if (!sc) { sc = { fish: [], jt: 0 }; for (let i = 0; i < N; i++) sc.fish.push({ a: Math.random() * 6.28, r: 0.3 + Math.random() * 2.2, sp: 0.35 + Math.random() * 0.5, y: Math.random(), ph: Math.random() * 6, ox: 0, oz: 0, big: i % 11 === 3 }); this.schools.set(e.i, sc); }
     const pool = this.fish[e.item === IT.salmon ? 1 : 0];
-    // центр косяка тянется к ловцам в зоне
-    let tx = e.school.x, tz = e.school.z, cnt = 0;
-    const pull = (a) => { if (Math.hypot(a.x - e.zin.x, a.z - e.zin.z) < e.zin.r + 0.2) { tx += a.x; tz += a.z; cnt++; } };
-    for (const p of G.pl) pull(p); for (const h of G.hp) pull(h);
-    if (cnt) { tx = (tx + e.school.x * 0) / (cnt + 1); tz = tz / (cnt + 1); tx = (tx * (cnt + 1) - e.school.x) / cnt * 0.75 + e.school.x * 0.25; tz = (tz * (cnt + 1) - e.school.z) / cnt * 0.75 + e.school.z * 0.25; }
-    sc.cx = lerp(sc.cx == null ? tx : sc.cx, tx, Math.min(1, dt * 1.2)); sc.cz = lerp(sc.cz == null ? tz : sc.cz, tz, Math.min(1, dt * 1.2));
-    const show = Math.min(26, n);
+    // косяк держится у места лова и тянется к ловцам; рядом с сетью рыбы разбегаются
+    let tx = e.school.x, tz = e.school.z, cnt = 0, sx = 0, sz = 0;
+    const cat = [];
+    const pull = (a) => { if (Math.hypot(a.x - e.zin.x, a.z - e.zin.z) < e.zin.r + 0.2) { sx += a.x; sz += a.z; cnt++; } if (Math.hypot(a.x - e.school.x, a.z - e.school.z) < 5) cat.push(a); };
+    for (const p of this.disp.p) if (p) pull(p); for (const h of G.hp) pull(h);
+    if (cnt) { tx = e.school.x * 0.3 + (sx / cnt) * 0.7; tz = e.school.z * 0.3 + (sz / cnt) * 0.7; }
+    const k = 1 - Math.exp(-dt * 1.1); sc.cx = sc.cx == null ? tx : lerp(sc.cx, tx, k); sc.cz = sc.cz == null ? tz : lerp(sc.cz, tz, k);
+    const show = Math.min(N, Math.round(n * N / 40));
     for (let i = 0; i < show; i++) {
-      const f = sc.fish[i]; f.a += f.sp * dt * (i % 2 ? 1 : -1);
-      const x = sc.cx + Math.cos(f.a) * f.r * 1.3, z = sc.cz + Math.sin(f.a) * f.r;
-      const dir = f.a + (i % 2 ? Math.PI / 2 : -Math.PI / 2);
-      EU.set(0, -dir, Math.sin(this.t * 8 + f.ph) * 0.15); Q.setFromEuler(EU); M4.compose(P.set(x, -0.02 + f.y * 0.03 + Math.sin(this.t * 3 + f.ph) * 0.02, z), Q, SV.setScalar(1.9)); pool.push(M4);
+      const f = sc.fish[i]; f.a += f.sp * dt * (i % 3 ? 1 : -1) * (1 + Math.sin(this.t * 0.3 + f.ph) * 0.3);
+      let x = sc.cx + Math.cos(f.a) * f.r * 1.4, z = sc.cz + Math.sin(f.a) * f.r * 0.9;
+      // испуг: уплываем от ловца, потом плавно возвращаемся
+      for (const a of cat) { const dx = x + f.ox - (a.x + Math.sin(a.dir || 0) * 0.9), dz = z + f.oz - (a.z + Math.cos(a.dir || 0) * 0.9), d = Math.hypot(dx, dz); if (d < 1.3 && d > 0.01) { f.ox += dx / d * (1.3 - d) * dt * 6; f.oz += dz / d * (1.3 - d) * dt * 6; } }
+      f.ox *= Math.pow(0.35, dt); f.oz *= Math.pow(0.35, dt);
+      x += f.ox; z += f.oz;
+      const dir = f.a + (i % 3 ? Math.PI / 2 : -Math.PI / 2);
+      EU.set(0, -dir, 0); Q.setFromEuler(EU); M4.compose(P.set(x, -0.03 + f.y * 0.03 + Math.sin(this.t * 3 + f.ph) * 0.015, z), Q, SV.setScalar(f.big ? 3.1 : 1.8 + f.y * 0.4)); pool.push(M4);
     }
     // иногда рыба выпрыгивает
     sc.jt -= dt;
-    if (sc.jt <= 0 && show > 3) { sc.jt = 0.8 + Math.random() * 1.6; const a = Math.random() * 6.28, r = Math.random() * 1.5; const x = sc.cx + Math.cos(a) * r, z = sc.cz + Math.sin(a) * r; this.fly(e.item, { x, y: -0.1, z }, { x: x + 0.6, y: -0.1, z: z + 0.2 }, { dur: 0.6, h: 0.9, s: 0.8 }); this.burst(x, 0.02, z, "splash", 5); }
+    if (sc.jt <= 0 && show > 3) { sc.jt = 0.7 + Math.random() * 1.4; const a = Math.random() * 6.28, r = Math.random() * 1.8; const x = sc.cx + Math.cos(a) * r, z = sc.cz + Math.sin(a) * r; this.fly(e.item, { x, y: -0.1, z }, { x: x + 0.7, y: -0.1, z: z + 0.25 }, { dur: 0.6, h: 0.9, s: 0.9 }); this.burst(x, 0.02, z, "splash", 6); }
   }
 }
 

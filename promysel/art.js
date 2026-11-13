@@ -104,26 +104,31 @@ export function schoolFishGeo(salmon) {
 }
 
 /* ---------- природа ---------- */
+// ель под снегом: пухлые ярусы, сверху почти белые, снизу — сине-зелёная тень
 export function pineGeo(v) {
   const b = new Build();
-  b.cyl(0.12, 0.16, 0.6, 6, PAL.trunk, { p: [0, 0.3, 0] });
+  b.cyl(0.13, 0.17, 0.6, 7, "#8a5a3c", { p: [0, 0.3, 0] });
   const lv = v ? 4 : 3;
   for (let i = 0; i < lv; i++) {
-    const r = 1.05 - i * 0.24, y = 0.55 + i * 0.52;
-    b.cone(r, 0.95, 7, i % 2 ? PAL.pine2 : PAL.pine, { p: [0, y + 0.45, 0], r: [0, i * 0.5, 0] });
-    b.cone(r * 0.82, 0.32, 7, PAL.snow, { p: [0, y + 0.82, 0], r: [0, i * 0.5, 0], jit: 0.03 });
+    const r = 1.15 - i * 0.26, y = 0.5 + i * 0.55;
+    b.cone(r, 0.9, 8, i % 2 ? "#4f7f86" : "#47757f", { p: [0, y + 0.42, 0], r: [0, i * 0.4, 0], jit: 0.05 });
+    b.cone(r * 0.94, 0.62, 8, i % 2 ? "#e8f0f8" : "#dde8f4", { p: [0, y + 0.66, 0], r: [0, i * 0.4, 0], jit: 0.04 });
   }
+  b.sph(0.12, 1, "#eef4fa", { p: [0, 0.5 + lv * 0.55 + 0.32, 0], s: [1, 0.8, 1], jit: 0.02 });
   return b.geo();
 }
 export function rockGeo() { const b = new Build(); b.sph(0.55, 0, PAL.stone, { p: [0, 0.22, 0], s: [1.2, 0.7, 1] }); b.sph(0.45, 0, PAL.snow, { p: [0.05, 0.42, 0], s: [1.05, 0.35, 0.9], jit: 0.03 }); return b.geo(); }
 export function driftGeo() { const b = new Build(); b.sph(0.6, 1, PAL.snow, { p: [0, 0, 0], s: [1.3, 0.45, 1], jit: 0.04 }); return b.geo(); }
-export function fenceGeo(len) {
-  const b = new Build();
-  const n = Math.max(1, Math.round(len / 1.4));
-  for (let i = 0; i <= n; i++) { const x = -len / 2 + (len * i) / n; b.cyl(0.07, 0.08, 0.75, 6, PAL.wood2, { p: [x, 0.37, 0] }); b.cyl(0.075, 0.075, 0.06, 6, PAL.snow, { p: [x, 0.77, 0], jit: 0.02 }); }
-  b.cyl(0.06, 0.06, len, 6, PAL.wood, { p: [0, 0.58, 0], r: [0, 0, Math.PI / 2] });
-  b.cyl(0.06, 0.06, len, 6, PAL.wood, { p: [0, 0.3, 0], r: [0, 0, Math.PI / 2] });
-  b.box(len, 0.04, 0.1, PAL.snow, { p: [0, 0.65, 0], jit: 0.02 });
+// частокол: плотные круглые брёвна со скруглёнными верхушками и шапкой снега
+export function fenceGeo(len, h) {
+  const b = new Build(); h = h || 0.85;
+  const n = Math.max(1, Math.round(len / 0.27));
+  for (let i = 0; i <= n; i++) {
+    const x = -len / 2 + (len * i) / n, hh = h * (0.92 + ((i * 37) % 7) * 0.02), c = i % 2 ? "#c9774a" : "#bb6b42";
+    b.cyl(0.13, 0.135, hh, 8, c, { p: [x, hh / 2, 0], jit: 0.04 });
+    b.add(new THREE.SphereGeometry(0.13, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), "#d98c5c", { p: [x, hh, 0], s: [1, 0.55, 1], jit: 0.03 });
+    b.add(new THREE.SphereGeometry(0.11, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2), PAL.snow, { p: [x, hh + 0.04, 0], s: [1, 0.45, 1], jit: 0.02 });
+  }
   return b.geo();
 }
 export function lampGeo() { const b = new Build(); b.cyl(0.05, 0.06, 1.7, 6, PAL.dark, { p: [0, 0.85, 0] }); b.box(0.22, 0.24, 0.22, "#ffd98a", { p: [0, 1.8, 0], jit: 0 }); b.cone(0.2, 0.16, 4, PAL.dark, { p: [0, 2.0, 0], r: [0, Math.PI / 4, 0] }); b.cone(0.16, 0.08, 4, PAL.snow, { p: [0, 2.07, 0], r: [0, Math.PI / 4, 0], jit: 0.02 }); return b.geo(); }

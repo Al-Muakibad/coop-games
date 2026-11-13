@@ -2,7 +2,7 @@
 // HUD, события → эффекты и звук, сохранения, кнопка «Назад».
 import * as THREE from "three";
 import * as S from "./sim.js";
-import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, recText } from "./data.js";
+import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, recText, YAW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
@@ -43,7 +43,7 @@ try { const q = localStorage.getItem("pm_q"); if (q != null && QS.get("q") == nu
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 140);
 let W = 1, H = 1, DPR = 1;
-const cam = { x: -6, z: -2, dist: 30, pitch: 0.9, shake: 0 };
+const cam = { x: -6, z: -2, dist: 30, pitch: 0.96, shake: 0 };
 function resize() {
   W = innerWidth; H = innerHeight;
   DPR = Math.min(devicePixelRatio || 1, [1, 1.5, 2][quality]);
@@ -54,13 +54,14 @@ addEventListener("resize", resize);
 // расстояние камеры: в портрете по ширине видно ~12 м, в альбоме по высоте ~14 м
 function camDist() {
   const vf = camera.fov * Math.PI / 180, a = camera.aspect;
-  const byW = 4.9 / (Math.tan(vf / 2) * a), byH = 6.4 / Math.tan(vf / 2);
+  const byW = 5.7 / (Math.tan(vf / 2) * a), byH = 7.2 / Math.tan(vf / 2);
   return Math.max(16, Math.min(40, a < 1 ? byW : byH));
 }
 function placeCamera(dt) {
   const d = cam.dist;
   const sx = cam.shake > 0 ? (Math.random() - 0.5) * cam.shake : 0; cam.shake = Math.max(0, cam.shake - dt * 2);
-  camera.position.set(cam.x + sx, Math.sin(cam.pitch) * d, cam.z + Math.cos(cam.pitch) * d);
+  const h = Math.cos(cam.pitch) * d;
+  camera.position.set(cam.x + sx + Math.sin(YAW) * h, Math.sin(cam.pitch) * d, cam.z + Math.cos(YAW) * h);
   camera.lookAt(cam.x + sx, 0, cam.z);
   if (world) world.follow(cam.x, cam.z);
 }
@@ -392,11 +393,13 @@ function stick() {
   let x = joy.x, z = joy.y;
   const kx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0), kz = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0);
   if (kx || kz) { x = kx; z = kz; }
-  if (window.__auto) { x = window.__auto.x; z = window.__auto.z; }
+  if (window.__auto) { const a = window.__auto, n = Math.hypot(a.x, a.z); return n < 0.05 ? { x: 0, z: 0 } : n > 1 ? { x: a.x / n, z: a.z / n } : { x: a.x, z: a.z }; }   // автопилот уже в мировых осях
   const m = Math.hypot(x, z); if (m > 1) { x /= m; z /= m; }
   // мёртвая зона и плавный разгон
   if (m < 0.12) return { x: 0, z: 0 };
-  return { x, z };
+  // экран → мир: камера повёрнута на YAW
+  const c = Math.cos(YAW), s = Math.sin(YAW);
+  return { x: x * c + z * s, z: -x * s + z * c };
 }
 
 /* ---------- такт игры ---------- */
@@ -871,8 +874,9 @@ let fpsT = 0, fpsC = 0;
 window.__perf = { frames: [] };
 const TFPS = +QS.get("tfps") || 0;
 function loop(now) {
-  if (TFPS) setTimeout(() => loop(performance.now()), 1000 / TFPS); else requestAnimationFrame(loop);
-  const rdt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
+  // запись ролика: кадры идут строго по шагу, не по часам (window.__manual + __pm.frame)
+  if (!loop.forced) { if (TFPS) setTimeout(() => loop(performance.now()), 1000 / TFPS); else requestAnimationFrame(loop); if (window.__manual) return; }
+  const rdt = loop.forced || Math.min(0.1, (now - (last || now)) / 1000); last = now;
   const dt = Math.min(0.05, rdt);
   clock += dt;
   if (document.hidden) return;
@@ -884,9 +888,9 @@ function loop(now) {
     ctx = { me, cam, local: role === "guest" ? gloc : { x: G.pl[me].x, z: G.pl[me].z, dir: G.pl[me].dir }, hot: tipE, remoteK: role === "guest" ? 10 : 16 };
     // камера: за игроком, чуть вперёд по ходу
     const d = view.disp.p[me];
-    let tx = (d ? d.x : p.x), tz = (d ? d.z : p.z) - 0.8;
+    let tx = (d ? d.x : p.x) - Math.sin(YAW) * 0.8, tz = (d ? d.z : p.z) - Math.cos(YAW) * 0.8;
     if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
-    cam.x += (tx - cam.x) * Math.min(1, dt * 5); cam.z += (tz - cam.z) * Math.min(1, dt * 5);
+    const ce = 1 - Math.exp(-dt * 3.6); cam.x += (tx - cam.x) * ce; cam.z += (tz - cam.z) * ce;
     cam.dist += (camDist() + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
     hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); netWatch(); }
     const nd = role === "guest" ? gtm : G.pl[me];
@@ -940,7 +944,8 @@ window.__pm = {
   tp: (x, z) => { if (role === "guest") { gloc.x = x; gloc.z = z; } G.pl[me].x = x; G.pl[me].z = z; },
   ff: (sec) => { if (role === "guest") return; for (let t = 0; t < sec; t += 1 / 30) { if (bot) { const b = bot.tick(G, 1 / 30); S.movePlayer(G, bot.pi, b.x, b.z, 1 / 30); } S.step(G, 1 / 30); } const evs = G.ev; G.ev = []; if (hs) hs.events(evs.filter((e) => e.t === "open" || e.t === "upg")); world.sync(G, false); },
   autoBot: (on) => { window.__autoBot = on ? makeBot(me, { seed: 11 }) : null; },
-  quality: (q) => { quality = q; qLock = true; applyQuality(); }, banner, toast, menu: () => toMenu(), save: () => save(true),
+  quality: (q) => { quality = q; qLock = true; applyQuality(); }, banner, toast,
+  frame: (dt) => { loop.forced = dt; try { loop(performance.now()); } finally { loop.forced = 0; } }, menu: () => toMenu(), save: () => save(true),
 };
 // автопилот для тестов: бот ведёт своего игрока
 setInterval(() => { if (window.__autoBot && G && started) { const b = window.__autoBot.tick(G, 0.05); window.__auto = b; } else if (!window.__autoBot) window.__auto = null; }, 50);
