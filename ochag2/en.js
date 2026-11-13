@@ -271,4 +271,6 @@ window.I18N && I18N.add({
   "Из такой стопки ничего не выйдет": "This stack won't make anything",
   "— не ресурс: поставь на него жителя": "is not a resource: put a villager on it",
   "Рецепты — в книге 📖": "Recipes are in the book 📖",
+  " с": " s",
+  "Показать мост": "Show the bridge",
 });

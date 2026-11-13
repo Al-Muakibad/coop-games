@@ -24,7 +24,24 @@ function dec(a, c) {
   if (a[16] >= 0) c.mhp = a[16]; c.fx = a[17]; c.br = a[18]; c.n = a[19];
   return c;
 }
-const sigOf = (e) => { const s = e.slice(); s[12] = 0; return s.join(","); };
+// изменилась ли карта с прошлой отправки. Полоска работы (rt) идёт у гостя сама; координаты карт внутри стопки гость
+// считает сам (layout); лежащие карты сдвинувшиеся меньше POSQ пикселей не шлём — «дрожь» кучек монет давала 80+ карт в каждом пакете
+const POSQ = 8;
+function changed(e, L, c) {
+  for (let i = 1; i < e.length; i++) {
+    if (i === 12) continue;
+    if (i === 2 || i === 3) { if (c.dn) continue; if (!c.drag && Math.abs(e[i] - L[i]) < POSQ) continue; }
+    if (e[i] !== L[i]) return true;
+  }
+  return false;
+}
+// полный снимок без служебных полей отрисовки (было ~97 КБ на 500 карт, стало ~42 КБ)
+function compact(G) {
+  const o = JSON.parse(S.serialize(G));
+  for (const id in o.cards) { const c = o.cards[id]; for (const k in c) if (k[0] === "_" || k === "dirty" || k === "h") delete c[k]; c.x = Math.round(c.x); c.y = Math.round(c.y); if (c.rt) c.rt = Math.round(c.rt * 10) / 10; }
+  delete o._claims; delete o._carry; delete o._plans; delete o._miss;
+  return JSON.stringify(o);
+}
 function meta(G) { return [G.day, Math.round(G.t * 10), PH.indexOf(G.ph), Math.round(G.nt * 10), G.spd, G.q, G.bridge, G.won ? 1 : 0, G.lost ? 1 : 0, G.season || 0, Math.round((G.hold || 0) * 10), G.nid]; }
 function unmeta(G, m) { G.day = m[0]; G.t = m[1] / 10; G.ph = PH[m[2]] || "day"; G.nt = m[3] / 10; G.spd = m[4]; G.q = m[5]; G.bridge = m[6]; G.won = m[7] ? G.won || "bridge" : 0; G.lost = m[8]; G.season = m[9]; G.hold = m[10] / 10; G.nid = m[11]; }
 const RARE = ["kn", "f", "st", "bought", "pl", "solo", "open", "fights", "lastNight", "wonDay", "ht", "sett"];
@@ -34,7 +51,8 @@ export class HostSync {
   constructor(room, api) {
     this.room = room; this.api = api;          // api: {G(), intent(type, data), peer(on), cursor(d), ping(d), emote(d)}
     this.last = new Map(); this.seq = 0; this.evq = []; this.t = 0; this.tf = 0; this.rareSig = ""; this.rt = 0; this.on = true;
-    this.stat = { tx: 0, bytes: 0, full: 0 };
+    this.ver = new Map(); this.dels = []; this.delFloor = 0;     // для догонялки: когда карта менялась последний раз, какие удалены
+    this.stat = { tx: 0, bytes: 0, full: 0, catchup: 0 };
     const R = room;
     this.ack = 0;
     const I = (t) => R.on(t, (d) => { if (!this.on) return; api.intent(t, d || {}); if (d && d.q && t === "dr") this.ack = Math.max(this.ack, d.q); });
@@ -42,7 +60,8 @@ export class HostSync {
     R.on("cu", (d) => api.cursor && api.cursor(d));
     R.on("pg", (d) => api.ping && api.ping(d, 1));
     R.on("em", (d) => api.emote && api.emote(d, 1));
-    R.on("rf", () => this.full());
+    // гость пропустил пакеты: шлём только то, что менялось после его последнего (раньше — весь мир, 60–100 КБ, и на сервере это шло лавиной)
+    R.on("rf", (d) => { if (d && d.since != null) this.catchup(d.since); else this.full(); });
     R.on("peer", (p) => { api.peer && api.peer(true, p); });
     R.on("peer-left", (p) => { api.peer && api.peer(false, p); });
     // гость нас «терял» (связь рвалась в одну сторону) — шлём ему мир целиком
@@ -53,26 +72,39 @@ export class HostSync {
   full() {
     const G = this.api.G(); if (!G || !this.room.peer) return;
     this.last.clear();
-    for (const id in G.cards) this.last.set(+id, sigOf(enc(G.cards[id])));
+    const s = ++this.seq;
+    for (const id in G.cards) { this.last.set(+id, enc(G.cards[id])); this.ver.set(+id, s); }
     this.rareSig = "";
-    this.send("f", { s: ++this.seq, g: S.serialize(G), k: this.ack, hf: this.api.fam ? this.api.fam() : 0 });
+    this.send("f", { s, g: compact(G), k: this.ack, hf: this.api.fam ? this.api.fam() : 0 });
     this.stat.full++; this.tf = 0;
+  }
+  catchup(since) {
+    const G = this.api.G(); if (!G || !this.room.peer) return;
+    if (since < this.delFloor || since > this.seq) return this.full();
+    const c = [], x = [];
+    for (const [id, v] of this.ver) if (v > since && G.cards[id]) c.push(enc(G.cards[id]));
+    for (const d of this.dels) if (d[1] > since) x.push(d[0]);
+    const rare = {}; for (const k of RARE) rare[k] = G[k];
+    this.send("u", { s: this.seq, m: meta(G), k: this.ack, c, x, r: rare });
+    this.stat.catchup++;
   }
   tick(dt) {
     if (!this.room.peer) return;
     this.t += dt; this.tf += dt; this.rt += dt;
-    if (this.tf > 8) { this.full(); return; }
-    if (this.t < 0.1) return;
+    if (this.tf > 60) { this.full(); return; }          // страховочный полный снимок — редко; пропуски чинит догонялка
+    // через сервер (брокер) — 5 пакетов в секунду, напрямую — 10
+    if (this.t < (this.room.link === "p2p" ? 0.1 : 0.2)) return;
     this.t = 0;
     const G = this.api.G(); if (!G) return;
     const c = [], x = [];
-    const seen = new Set();
+    const seq = ++this.seq;
     for (const id in G.cards) {
-      const e = enc(G.cards[id]); const s = sigOf(e); seen.add(+id);
-      if (this.last.get(+id) !== s) { this.last.set(+id, s); c.push(e); }
+      const cc = G.cards[id], e = enc(cc), L = this.last.get(+id);
+      if (!L || changed(e, L, cc)) { this.last.set(+id, e); this.ver.set(+id, seq); c.push(e); }
     }
-    for (const id of this.last.keys()) if (!seen.has(id)) { x.push(id); this.last.delete(id); }
-    const msg = { s: ++this.seq, m: meta(G), k: this.ack };
+    if (this.last.size > c.length) for (const id of this.last.keys()) if (!G.cards[id]) { x.push(id); this.last.delete(id); this.ver.delete(id); this.dels.push([id, seq]); }
+    if (this.dels.length > 3000) { const cut = this.dels.splice(0, 1000); this.delFloor = cut[cut.length - 1][1]; }
+    const msg = { s: seq, m: meta(G), k: this.ack };
     if (c.length) msg.c = c; if (x.length) msg.x = x;
     if (this.evq.length) { msg.e = this.evq; this.evq = []; }
     if (this.rt > 0.5) {
@@ -95,6 +127,7 @@ export class GuestSync {
     R.on("f", (d) => {
       this.stat.fulls++; this.lastRx = Date.now();
       const G = S.deserialize(d.g); if (!G) return;
+      this.gapAt = 0;
       if (this.txn && d.k >= this.txn.q && this.txn.dropped) { this.txn = null; this.hold.clear(); this.pend.clear(); }
       for (const id in G.cards) { const c = G.cards[id]; const old = this.G && this.G.cards[id]; if (old && old._dx != null) { c._dx = old._dx; c._dy = old._dy; } }
       this.G = G; this.seq = d.s; api.full && api.full(G, d);
@@ -102,18 +135,30 @@ export class GuestSync {
     R.on("d", (d) => {
       this.stat.rx++; this.lastRx = Date.now();
       if (!this.G) { this.ask(); return; }
-      if (d.s !== this.seq + 1) { this.stat.gaps++; if (d.s > this.seq + 1) this.ask(); if (d.s <= this.seq) return; }
+      if (d.s <= this.seq) return;
+      // пропуск: применяем этот пакет и просим у хозяина только то, что поменялось после нашего последнего
+      if (d.s !== this.seq + 1) { this.stat.gaps++; this.askSince(this.seq); }
       this.seq = d.s;
-      const G = this.G;
+      this.apply(d);
+    });
+    R.on("u", (d) => { this.stat.catchups = (this.stat.catchups || 0) + 1; this.lastRx = Date.now(); this.gapAt = 0; if (this.G) this.apply(d, true); });
+    this.R = R;
+    R.on("nk", (d) => api.nack && api.nack(d));
+    this.rest(R, api);
+  }
+  apply(d, catchup) {
+      const G = this.G, api = this.api;
       unmeta(G, d.m);
       const done = this.txn && this.txn.dropped && d.k != null && d.k >= this.txn.q;
       if (done) { for (const [id, a] of this.pend) if (G.cards[id]) dec(a, G.cards[id]); this.txn = null; this.hold.clear(); this.pend.clear(); }
       if (d.c) for (const a of d.c) { if (this.hold.has(a[0])) { this.pend.set(a[0], a); continue; } const c = G.cards[a[0]] || (G.cards[a[0]] = {}); dec(a, c); }
       if (d.x) for (const id of d.x) { delete G.cards[id]; this.hold.delete(id); this.pend.delete(id); }
       if (d.r) for (const k in d.r) G[k] = d.r[k];
-      if (d.e && api.events) api.events(d.e);
-    });
-    R.on("nk", (d) => api.nack && api.nack(d));
+      // координаты карт в стопках считаем сами (хозяин их не шлёт)
+      for (const id in G.cards) { const c = G.cards[id]; if (!c.dn && c.up) S.layout(G, c); }
+      if (!catchup && d.e && api.events) api.events(d.e);
+  }
+  rest(R, api) {
     R.on("cu", (d) => api.cursor && api.cursor(d));
     R.on("pg", (d) => api.ping && api.ping(d, 0));
     R.on("em", (d) => api.emote && api.emote(d, 0));
@@ -137,6 +182,7 @@ export class GuestSync {
     if (ask) { this.askT = 0; this.ask(); }
   }
   ask() { const now = Date.now(); if (now - this.askT < 1500) return; this.askT = now; this.room.send("rf", {}); }
+  askSince(since) { const now = Date.now(); if (now - (this.askS || 0) < 700) return; this.askS = now; this.room.send("rf", { since }); }
   send(t, d, fast) { if (fast) this.room.sendFast(t, d); else this.room.send(t, d); }
   // между снимками: время дня и полоски работы идут сами
   extrapolate(dt) {

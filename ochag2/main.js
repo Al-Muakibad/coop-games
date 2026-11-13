@@ -163,7 +163,7 @@ const SLOT_UI = {
 };
 function showMenu() {
   mode = "menu"; started = false; ended = false; G = null; drag = null; partner = { name: "", online: false, cur: null }; bot = null; waitPause = false;
-  closeConfirm(false); clearPairs(); netNote("");
+  closeConfirm(false); clearPairs(); netNote(""); siteSc = null; if ($("sitep")) $("sitep").classList.add("hidden");
   hideAll(); $("top").classList.add("hidden"); $("bot").classList.add("hidden");
   $("menu").classList.remove("hidden"); $("title").classList.remove("hidden");
   const sv = {}; for (const k of SV.SLOTS) sv[k] = SV.peek(k);
@@ -515,7 +515,8 @@ function panBy(dx, dy) {
 let curT = 0;
 function sendCursor(sx, sy, down) {
   if (!started || mode === "solo" || mode === "bot") return;
-  const now = performance.now(); if (down && now - curT < 70) return; curT = now;
+  // через сервер курсор — 4 раза в секунду (каждый — отдельное сообщение брокеру), напрямую — ~14
+  const now = performance.now(); if (down && now - curT < (room && room.link === "p2p" ? 70 : 250)) return; curT = now;
   const p = s2w(sx, sy, 0); if (!p) return;
   const d = { x: Math.round(p.x), y: Math.round(p.y), d: down ? 1 : 0 };
   if (mode === "host" && room && room.peer) room.sendFast("cu", d); else if (mode === "guest" && gs) gs.send("cu", d, true);
@@ -567,7 +568,7 @@ function startDrag(id, sx, sy) {
 function moveDrag(sx, sy) {
   const p = s2w(sx, sy, LIFT); if (!p) return;
   drag.x = p.x + drag.ox; drag.y = p.y + drag.oy; drag.sx = sx; drag.sy = sy;
-  if (mode === "guest") { const now = performance.now(); if (now - drag.mvT > 50) { drag.mvT = now; gs.send("mv", { i: drag.id, x: Math.round(drag.x), y: Math.round(drag.y) }, true); } S.moveI(G, me, drag.id, drag.x, drag.y); }
+  if (mode === "guest") { const now = performance.now(); if (now - drag.mvT > (room && room.link === "p2p" ? 50 : 120)) { drag.mvT = now; gs.send("mv", { i: drag.id, x: Math.round(drag.x), y: Math.round(drag.y) }, true); } S.moveI(G, me, drag.id, drag.x, drag.y); }
   else S.moveI(G, me, drag.id, drag.x, drag.y);
   // зона продажи
   const sr = $("sell").getBoundingClientRect();
@@ -859,8 +860,10 @@ function updHud(force) {
   const pdot = pt.querySelector(".pd"); pdot.style.background = FAM[1 - me].c; pdot.style.boxShadow = partner.online ? "0 0 8px " + FAM[1 - me].c : "none";
   setText($("ptx"), partner.name || L("Напарник"));
   let net = "";
-  if (room && partner.online) net = (room.link === "p2p" ? "⚡ " + L("напрямую") : "📶 " + L("через сервер")) + (room.rtt ? " " + room.rtt + L("мс") : "");
+  const png = room ? (room.ping != null ? room.ping : room.rtt) : 0;
+  if (room && partner.online) net = (room.link === "p2p" ? "⚡ " + L("напрямую") : "📶 " + L("через сервер")) + (png ? " " + (png > 2000 ? Math.round(png / 1000) + L(" с") : Math.round(png) + L("мс")) : "");
   else if (!partner.online && mode !== "solo" && mode !== "bot") net = L("нет связи");
+  $("pnet").classList.toggle("bad", png > 1000);
   setText($("pnet"), net);
   // лавка
   const coins = S.coins(G, me);
@@ -1007,6 +1010,12 @@ document.querySelectorAll("#spd button").forEach((b) => b.onclick = () => {
 /* ---------- сохранение ---------- */
 // каждый режим — в свой слот: свой общий хутор, чужой (копия гостя), с ботом, одному
 const slotOf = () => (mode === "host" ? "host" : mode === "guest" ? "guest" : mode === "solo" ? "solo" : "bot");
+// автосохранение — когда браузер свободен (не посреди кадра); при сворачивании — сразу
+function idleSave() {
+  lastSave = performance.now();
+  const go = () => { const t = performance.now(); save(); const ms = performance.now() - t; if (ms > 60) TR("сохранение " + Math.round(ms) + " мс, карт " + Object.keys(G ? G.cards : {}).length); };
+  if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 0);
+}
 function save(force) {
   if (!G || !started || G.lost) return;
   lastSave = performance.now();
@@ -1057,7 +1066,7 @@ function pairText(w) {
   return "👥 " + (partner.bot ? L("Ждём жителя бота — он уже несёт") : L("Нужен житель второй семьи (напарника)"));
 }
 // чек-лист стройки моста: что лежит, чего не хватает, что лишнее
-function siteHtml(sc) {
+function siteHtml(sc, compact) {
   const ok = (b) => (b ? "✓" : "✗");
   const mats = sc.mats.map((m) => `<span class="${m.have >= m.need ? "ok" : "no"}">${ok(m.have >= m.need)} ${esc(cName(m.k))} ${m.have}/${m.need}</span>`).join(" · ");
   const dot = (f) => `<i style="background:${FAM[f].c}"></i>`;
@@ -1069,16 +1078,44 @@ function siteHtml(sc) {
     const want = sc.mats.find((m) => m.k === S.SRC[k]);
     return `<div class="no">✗ ${esc(cName(k))}${n > 1 ? " ×" + n : ""} — ${want ? esc(L("это не")) + " " + esc(cName(want.k).toLowerCase()) + ": " + esc(L("поставь жителя на")) + " " + esc(cName(k).toLowerCase()) + ", " + esc(L("чтобы добыть")) : esc(L("мосту не нужно, убери"))}</div>`;
   }).join("");
-  return `<b>🌉 ${esc(recName(sc.rid))}</b><div>${mats}</div><div>${w}</div>${ex}`;
+  return (compact ? "" : `<b>🌉 ${esc(recName(sc.rid))}</b>`) + `<div>${mats}</div><div>${w}</div>${ex}`;
+}
+// панель стройки моста — у края экрана (не поверх поля), сворачивается в значок, ✕ прячет до следующего изменения
+let siteSc = null;
+const SP = { col: (() => { try { return localStorage.getItem("o2_sitec") === "1"; } catch (_) { return false; } })(), hid: "" };
+function sitePanel() {
+  let el = $("sitep");
+  if (!el) {
+    el = document.createElement("div"); el.id = "sitep"; document.body.appendChild(el);
+    el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-a]"); const a = b ? b.dataset.a : "tog";
+      if (a === "x") { SP.hid = el.dataset.k || ""; el.classList.add("hidden"); }
+      else if (a === "go") { const s = siteSc && G.cards[siteSc.id]; if (s) cam.goal = { tx: U(s.x), tz: U(s.y) + 1.2, t: 0.9 }; }
+      else { SP.col = !SP.col; try { localStorage.setItem("o2_sitec", SP.col ? "1" : "0"); } catch (_) {} el.dataset.h = ""; sitePanel(); }
+      play("click", { vol: 0.5 }); e.stopPropagation();
+    });
+  }
+  if (!siteSc || !started) { el.classList.add("hidden"); return; }
+  const sc = siteSc.sc;
+  const bad = sc.mats.filter((m) => m.have < m.need).length + (sc.w0 && sc.w1 ? 0 : 1) + (sc.overW ? 1 : 0) + Object.keys(sc.extra).length;
+  const key = JSON.stringify([sc.rid, sc.mats.map((m) => m.have), sc.w0, sc.w1, Object.keys(sc.extra)]);
+  if (SP.hid && SP.hid === key) { el.classList.add("hidden"); return; }
+  SP.hid = ""; el.dataset.k = key; el.classList.remove("hidden");
+  const head = `<div class="sh"><span data-a="go" title="${esc(L("Показать мост"))}">🌉</span><b>${esc(recName(sc.rid))}</b><span class="sc ${bad ? "no" : "ok"}">${bad ? "✗" + bad : "✓"}</span><span class="sb" data-a="tog">${SP.col ? "▸" : "▾"}</span><span class="sb" data-a="x">✕</span></div>`;
+  const h = SP.col ? head : head + `<div class="sbody">${siteHtml(sc, true)}</div>`;
+  el.classList.toggle("col", SP.col);
+  if (el.dataset.h !== h) { el.dataset.h = h; el.innerHTML = h; }
 }
 function updPairs() {
   const want = new Map();
+  siteSc = null;
   for (const id in G.cards) {
     const r = G.cards[id]; if (r.dn || !r.up || r.drag) continue;
     const sc = S.siteCheck(G, r);
-    if (sc) { if (!r.rc) want.set(r.id, { site: sc }); continue; }
+    if (sc) { if (!r.rc) siteSc = { sc, id: r.id }; continue; }
     const w = S.pairWait(G, r); if (w) want.set(r.id, w);
   }
+  sitePanel();
   for (const [id, el] of pairEls) if (!want.has(id)) { el.remove(); pairEls.delete(id); }
   for (const [id, w] of want) {
     let el = pairEls.get(id);
@@ -1173,8 +1210,22 @@ const fpsEl = QS.get("fps") ? Object.assign(document.body.appendChild(document.c
 let fpsT = 0, fpsC = 0, simMs = 0;
 window.__perf = { frames: [], sim: 0, js: [], gl: [] };
 const TFPS = +QS.get("tfps") || 0;          // для автотестов: ограничить частоту кадров
+// журнал подвисаний: кадр дольше 200 мс (с разбивкой, что его съело) и всплески пинга
+const PF = { sim: 0, rnd: 0, hud: 0, n: 0, t: 0, png: 0, pngT: 0 };
+function perfTrace(gap) {
+  if (!started) return;
+  if (gap > 200 && !document.hidden) TR("подвис кадр " + Math.round(gap) + " мс: симуляция " + PF.sim.toFixed(0) + " · рендер " + PF.rnd.toFixed(0) + " · интерфейс " + PF.hud.toFixed(0) + " мс, карт " + (G ? Object.keys(G.cards).length : 0) + (room ? " · связь " + room.link + " " + Math.round(room.ping || room.rtt || 0) + " мс" : ""));
+  if (room && room.peer && performance.now() - PF.pngT > 3000) {
+    const p = room.ping || 0;
+    if (p > 1000 && PF.png <= 1000) { PF.pngT = performance.now(); TR("пинг вырос до " + Math.round(p) + " мс (" + (room.link === "p2p" ? "напрямую" : "через сервер") + ")" + (hs ? " · отправлено " + hs.stat.tx + " пакетов, " + Math.round(hs.stat.bytes / 1024) + " КБ, полных " + hs.stat.full + ", догонялок " + hs.stat.catchup : gs ? " · пропусков " + gs.stat.gaps + ", догонялок " + (gs.stat.catchups || 0) + ", полных " + gs.stat.fulls : "")); }
+    else if (p < 500 && PF.png >= 1000) { PF.pngT = performance.now(); TR("пинг снова " + Math.round(p) + " мс"); }
+    PF.png = p;
+  }
+}
 function loop(now) {
   if (TFPS) setTimeout(() => loop(performance.now()), 1000 / TFPS); else requestAnimationFrame(loop);
+  if (last && !TFPS) perfTrace(now - last);
+  PF.sim = 0;
   const rdt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
   const tj0 = performance.now();
   const dt = Math.min(0.05, rdt);
@@ -1191,13 +1242,13 @@ function loop(now) {
     if (drag && G.cards[drag.id]) S.moveI(G, me, drag.id, drag.x, drag.y);
     if (G.ev.length) { const evs = G.ev; G.ev = []; onEvents(evs); if (hs) hs.events(evs); }
     if (hs) hs.tick(dt);
-    simMs += performance.now() - t0;
-    if (performance.now() - lastSave > 10000) save();
+    simMs += performance.now() - t0; PF.sim = performance.now() - t0;
+    if (performance.now() - lastSave > 10000) idleSave();
     // курсор хозяина для гостя
-    if (hs && room && room.peer && drag) { const d = { x: Math.round(drag.x), y: Math.round(drag.y + CH / 2), d: 1 }; if ((loop.ct = (loop.ct || 0) + dt) > 0.08) { loop.ct = 0; room.sendFast("cu", d); } }
+    if (hs && room && room.peer && drag) { const d = { x: Math.round(drag.x), y: Math.round(drag.y + CH / 2), d: 1 }; if ((loop.ct = (loop.ct || 0) + dt) > (room.link === "p2p" ? 0.08 : 0.25)) { loop.ct = 0; room.sendFast("cu", d); } }
   } else if (live && mode === "guest") {
     gs.extrapolate(dt);
-    if (performance.now() - lastSave > 10000) save();
+    if (performance.now() - lastSave > 10000) idleSave();
     netWatch(dt);
     if (ghost) { const c = G.cards[ghost.id]; if (!c || (c.drag === 0 && Math.abs(c.x - ghost.x) + Math.abs(c.y - ghost.y) < 260) || clock - ghost.t > 1.6 || ghost.sell) ghost = ghost.sell && c && clock - ghost.t < 1.2 ? ghost : null; }
   }
@@ -1252,7 +1303,9 @@ function loop(now) {
   loop.lr = now;
   if (document.hidden || window.__noRender) return;
   const tj1 = performance.now();
+  PF.hud = tj1 - tj0 - PF.sim;
   renderer.render(scene, camera);
+  PF.rnd = performance.now() - tj1;
   if (live && window.__perf.js.length < 3000) { window.__perf.js.push(tj1 - tj0); window.__perf.gl.push(performance.now() - tj1); }
   // частота кадров: при постоянных тормозах снижаем качество
   if (live) {
