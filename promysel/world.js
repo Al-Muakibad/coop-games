@@ -184,6 +184,15 @@ export class World {
     // столбы-указатели у дороги и пара домиков-декораций за рынком
     const hut = BUILD.hut(), crates = BUILD.crates(), barrel = BUILD.barrel(), boat = BUILD.boat();
     const deco = [[hut, -18, 25, 0.2], [hut, 17.5, 25.5, -0.3], [hut, 23, 14, -1.2], [hut, -23, 12, 1.4], [crates, -14.6, -5.5, 0.4], [barrel, 14.4, 5.5, 0], [barrel, 14.6, 6.4, 0], [crates, 14.2, 10.6, -0.5], [boat, -15.6, -8.0, 0.5], [boat, 17, -9, -0.4]];
+    for (const sgn of L.MAP.signs || []) for (let t = 0; t < L.teams; t++) {
+      const c = document.createElement("canvas"); c.width = 512; c.height = 96; const x = c.getContext("2d");
+      x.fillStyle = sgn.c; x.beginPath(); if (x.roundRect) x.roundRect(4, 4, 504, 88, 44); else x.rect(4, 4, 504, 88); x.fill(); x.lineWidth = 6; x.strokeStyle = "rgba(255,255,255,.9)"; x.stroke();
+      x.font = "900 54px Rubik, Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff"; x.fillText(window.I18N ? I18N.t(sgn.t) : sgn.t, 256, 52);
+      const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 4;
+      const g = new THREE.PlaneGeometry(3.4, 0.64); g.rotateX(-Math.PI / 2);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: tx, transparent: true, depthWrite: false })); m.renderOrder = 2;
+      m.position.set(sgn.x * (t ? -1 : 1), this.height(sgn.x, sgn.z) + 0.05, sgn.z); this.root.add(m);
+    }
     for (const d of L.deco) { const m = new THREE.Mesh(BUILD[d.m](), mat); m.position.set(d.x, 0, d.z); m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
     // бочки и ящики у мест — для уюта (вне зон)
     for (const e of L.E) { if (!(e.k === "proc" || e.k === "gen")) continue; const sx = e.x + (e.w / 2 + 0.35) * (e.x > 0 ? 1 : -1) * (hash(e.i, 3) > 0.5 ? 1 : -1), sz = e.z - e.d / 2 + 0.3; const m = new THREE.Mesh(hash(e.i, 9) > 0.5 ? barrel : crates, mat); m.scale.setScalar(0.8); m.position.set(sx, 0, sz); m.rotation.y = hash(e.i, 5) * 6; m.castShadow = true; e.decoM = m; this.root.add(m); m.visible = false; }

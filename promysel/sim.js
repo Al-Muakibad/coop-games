@@ -251,7 +251,7 @@ function via(G, ax, az, tx, tz) {
   if (!aw && tw) { const ex = tx, ez = shoreZ(L, tx) + 0.55; if (Math.abs(ax - ex) > 0.45 || az > ez + 0.3) return viaBox(G, ax, az, ex, ez) || [ex, ez]; return null; }
   return viaBox(G, ax, az, tx, tz);
 }
-function viaBox(G, ax, az, tx, tz) {
+function viaBox(G, ax, az, tx, tz, depth) {
   let best = null, bt = 2;
   for (const b of boxes(G)) { const t = segBox(ax, az, tx, tz, b, 0.32); if (t >= 0 && t < bt) { bt = t; best = b; } }
   if (!best) return null;
@@ -266,6 +266,8 @@ function viaBox(G, ax, az, tx, tz) {
   };
   for (const k of cs) { const d0 = hyp(k[0] - ax, k[1] - az); if (d0 < 0.3 || segBox(ax, az, k[0], k[1], best, 0.3) >= 0) continue; const d = d0 + rest(k); if (d < cd) { cd = d; c = k; } }
   if (!c) { for (const k of cs) { const d = hyp(k[0] - ax, k[1] - az); if (d < cd) { cd = d; c = k; } } }
+  // до самого угла мешает другое здание — сначала обходим его
+  if (c && (depth || 0) < 2) { const w = viaBox(G, ax, az, c[0], c[1], (depth || 0) + 1); if (w) return w; }
   return c;
 }
 // идти к точке; true — пришли
@@ -549,7 +551,7 @@ function stepCustomers(G, dt) {
   // кого сколько хотят (по товару)
   const wantN = new Array(NIT).fill(0);
   for (const c of G.cu) if (c.s < 4) wantN[c.w]++;
-  const canMake = (it) => L.E.some((e) => G.e[e.i].o && ((e.k === "spot" && e.item === it) || (e.k === "proc" && e.rec.out === it) || (e.k === "gen" && e.item === it)));
+  const canMake = (it) => [0, 1].slice(0, G.teams).some((t) => chainOK(G, t, it));
   const items = [...new Set(stalls.map((e) => e.item))].filter(canMake);
   G.spT = (G.spT || 0) - dt;
   if (items.length && G.spT <= 0) {
@@ -626,13 +628,18 @@ function stepContract(G, dt) {
   if (!G.con) {
     G.conT -= dt;
     if (G.conT > 0) return;
-    const its = openStalls(G).map((e) => e.item);
-    const dock = L.byId[0].dock; if (dock != null && G.e[dock].o) { if (G.e[L.byId[0].cannery].o) its.push(IT.can); if (G.e[L.byId[0].icehouse].o) its.push(IT.crate); }
+    // заказ — только на то, что уже можно и сделать (вся цепочка открыта), и продать
+    const its = [];
+    for (let it = 0; it < NIT; it++) if ((ITEMS[it].price || ITEMS[it].ship) && chainOK(G, 0, it) && hasDest(G, 0, it)) its.push(it);
+    if (!its.length) { G.conT = 10; return; }
     const pool = its.filter((it) => it !== IT.herring || its.length < 3);
     const it = pool[Math.floor(rnd(G) * pool.length)];
     const tier = ITEMS[it].price || ITEMS[it].ship;
-    const n = Math.max(8, Math.round((14 + G.cdone * 2.2) * Math.pow(6 / tier, 0.35)));
-    const T = Math.round((70 + n * 3.2) * DIFF[G.diff].ct);
+    let n = Math.max(5, Math.round((7 + G.cdone * 1.6) * Math.pow(6 / tier, 0.3)));
+    // успеть можно: не больше, чем цепочка даст за срок (с запасом)
+    const T0 = 60 + n * 7, rate = chainRate(G, 0, it);
+    n = Math.max(4, Math.min(n, Math.floor(T0 * rate * 0.35)));
+    const T = Math.round((60 + n * 7) * DIFF[G.diff].ct);
     G.con = { it, n, got: 0, T, t: T, rw: Math.round(itemPrice(G, it) * n * 2.6), end: 0 };
     G.ev.push({ t: "contract", s: "new" });
     return;
@@ -647,6 +654,32 @@ function finishContract(G, ok) {
   c.end = 3; c.ok = ok ? 1 : 0;
   if (ok) { G.e[L.byId[0].board].cash += c.rw; G.earned[0] += c.rw; G.cdone++; G.stars += DIFF[G.diff].star; G.ev.push({ t: "contract", s: "done", amt: c.rw }); }
   else { G.cfail++; G.ev.push({ t: "contract", s: "fail" }); }
+}
+
+/* ---------- цепочки ---------- */
+// товар можно сделать: открыто место, где он ловится/делается, и всё, что нужно на входе, тоже можно сделать
+export function chainOK(G, team, it, depth) {
+  if ((depth || 0) > 6) return false;
+  const L = layout(G.mode);
+  for (const e of L.E) {
+    if ((G.mode === "vs" && e.team !== team) || !G.e[e.i].o) continue;
+    if ((e.k === "spot" || e.k === "gen") && e.item === it) return true;
+    if (e.k === "proc" && e.rec.out === it && e.rec.in.every((x) => chainOK(G, team, x, (depth || 0) + 1))) return true;
+  }
+  return false;
+}
+// сколько штук в секунду цепочка может дать (грубо: самый медленный цех, улов игрока ~1,5/с)
+export function chainRate(G, team, it, depth) {
+  if ((depth || 0) > 6) return 0;
+  const L = layout(G.mode); let best = 0;
+  for (const e of L.E) {
+    if ((G.mode === "vs" && e.team !== team) || !G.e[e.i].o) continue;
+    const lv = 1 + SUPG.speed * (G.e[e.i].lv || 0);
+    if (e.k === "spot" && e.item === it) best = Math.max(best, 1.5);
+    if (e.k === "gen" && e.item === it) best = Math.max(best, lv / e.def.t);
+    if (e.k === "proc" && e.rec.out === it) { let r = lv / e.rec.t; for (const x of e.rec.in) r = Math.min(r, chainRate(G, team, x, (depth || 0) + 1)); best += r; }
+  }
+  return best;
 }
 
 /* ---------- доход, пока игры не было ---------- */

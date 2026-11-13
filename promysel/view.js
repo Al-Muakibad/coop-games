@@ -93,8 +93,8 @@ export class View {
       const col = kind === "conf" ? ["#ff5a4a", "#f2c14e", "#3aa0c8", "#7ed957", "#e0703a", "#b77fb5", "#ffffff"][i % 7] : kind === "splash" ? (i % 2 ? "#e6f6ff" : "#9fd9f0") : kind === "snow" ? "#ffffff" : kind === "gold" ? "#ffe07a" : kind === "smoke" ? "#eef1f4" : kind === "cash" ? "#7ed957" : "#ffffff";
       C.set(col);
       this.parts.push({ x, y, z, vx: Math.cos(a) * sp * (kind === "conf" ? 0.5 : 1), vy: kind === "conf" ? 5 + Math.random() * 4 : kind === "smoke" ? 0.9 + Math.random() * 0.4 : kind === "splash" ? 2.5 + Math.random() * 2.5 : 1.5 + Math.random() * 2, vz: Math.sin(a) * sp * (kind === "conf" ? 0.5 : 1),
-        life: 0, max: kind === "conf" ? 1.6 + Math.random() : kind === "smoke" ? 2.2 : 0.6 + Math.random() * 0.4, r: C.r, g: C.g, b: C.b,
-        s: kind === "conf" ? 0.12 : kind === "smoke" ? 0.16 : kind === "snow" ? 0.12 : 0.08, grav: kind === "smoke" ? -0.1 : kind === "conf" ? 6 : 12, rot: Math.random() * 6, spin: (Math.random() - 0.5) * 12, k: kind });
+        life: 0, max: kind === "conf" ? 1.6 + Math.random() : kind === "smoke" ? 1.3 : 0.6 + Math.random() * 0.4, r: C.r, g: C.g, b: C.b,
+        s: kind === "conf" ? 0.12 : kind === "smoke" ? 0.09 : kind === "snow" ? 0.12 : 0.08, grav: kind === "smoke" ? -0.1 : kind === "conf" ? 6 : 12, rot: Math.random() * 6, spin: (Math.random() - 0.5) * 12, k: kind });
     }
   }
   stepParticles(dt) {

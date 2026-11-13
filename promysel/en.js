@@ -76,7 +76,7 @@ window.I18N && I18N.add({
   "Матч": "Match", "Заработано": "Earned", "заказов": "orders", "Продолжить": "Continue", "Ссылка другу ещё раз": "Send link again", "Новая бухта": "New bay",
   "Прогресс сохранится": "Progress is saved", "Играет бот": "A bot is playing", "Прямая связь": "Direct connection", "Связь через сервер": "Via server",
   "Выйти в меню?": "Leave to menu?", "Прогресс сохранён.": "Progress saved.", "Вернуться к другу можно из меню.": "You can return to your friend from the menu.", "Остаться": "Stay",
-  "Рыбак-лоточник": "Stall fisher", "СЮДА": "DROP", "ЗАБРАТЬ": "TAKE", "ЗАКАЗ": "ORDER", "ЗАКАЗЫ": "ORDERS", "неси к доске заказов": "bring it to the order board",
+  "Рыбак-лоточник": "Stall fisher", "Подносчик филе": "Fillet feeder", "Подносчик стейков": "Steak feeder", "СНАРЯЖЕНИЕ": "GEAR", "АРТЕЛЬ": "CREW", "СЮДА": "DROP", "ЗАБРАТЬ": "TAKE", "ЗАКАЗ": "ORDER", "ЗАКАЗЫ": "ORDERS", "неси к доске заказов": "bring it to the order board",
   "Неси": "Bring", "к доске заказов": "to the order board", "собери и неси к доске": "gather them and bring to the board", "Ускорить": "Speed up",
   "Работает быстрее и вмещает больше": "Works faster and holds more", "быстрее и вмещает больше": "faster and holds more", "Некуда нести": "Nowhere to take", "сначала открой": "unlock first",
   "Связь с хозяином прервалась — переподключаемся…": "Lost connection to host — reconnecting…", "Связь восстановлена": "Connection restored", "Графика упрощена для плавности": "Graphics lowered for smoothness",

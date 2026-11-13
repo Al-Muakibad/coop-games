@@ -50,10 +50,14 @@
   #partner.off .pd { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
   #partner small { color: var(--muted2); font-weight: 800; font-size: 11px; }
   @keyframes pulse { 50% { opacity: .35; } }
-  #con { gap: 8px; height: auto; min-height: 38px; padding: 4px 10px; font-size: 13px; line-height: 1.15; }
-  #con img { width: 34px; height: 34px; }
-  #con .ct { display: flex; flex-direction: column; }
-  #con .cbar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; margin-top: 3px; width: 110px; }
+  #con { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; height: auto; min-height: 42px; padding: 4px 12px 4px 6px; font-size: 13.5px; line-height: 1.15; }
+  #con img { width: 34px; height: 34px; flex: 0 0 34px; }
+  #con .ct { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  #con .ct span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #con .ct span b { color: var(--gold); }
+  #con .cbar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; margin-top: 4px; width: 100%; }
+  #con .tm { flex: 0 0 auto; font-family: "Rubik", sans-serif; font-size: 16px; min-width: 38px; text-align: right; }
+  #con .go { flex: 0 0 auto; font-size: 11px; color: var(--muted2); font-weight: 800; }
   #con .cbar i { display: block; height: 100%; background: var(--gold); }
   #con.late .cbar i { background: var(--red); }
   #con.ok { box-shadow: 0 0 0 3px rgba(126,217,87,.6); }
@@ -68,10 +72,10 @@
     display: flex; align-items: center; gap: 8px; max-width: 92vw; width: max-content; border: 1px solid var(--line); transition: opacity .3s; white-space: normal; line-height: 1.2; font-size: 14px; }
   #hint img { width: 30px; height: 30px; margin: -4px 0; }
   #hint.fade { opacity: 0; }
-  #tip { left: 50%; transform: translateX(-50%); top: calc(168px + var(--sat)); background: var(--glass2); color: var(--cream); border-radius: 18px; padding: 8px 14px; text-align: center; border: 1px solid var(--line);
-    max-width: 88vw; opacity: 0; transition: opacity .2s; font-weight: 800; font-size: 13px; }
+  #tip { left: 50%; transform: translateX(-50%); top: calc(168px + var(--sat)); background: var(--glass2); color: var(--cream); border-radius: 16px; padding: 6px 12px; text-align: center; border: 1px solid var(--line);
+    max-width: 78vw; opacity: 0; transition: opacity .2s; font-weight: 800; font-size: 12px; line-height: 1.25; }
   #tip.show { opacity: 1; }
-  #tip b { display: block; font-size: 16px; color: #fff; } #tip .c { color: var(--gold); font-family: "Rubik"; } #tip .no { color: #ffb0a6; }
+  #tip b { display: block; font-size: 14.5px; color: #fff; } #tip .c { color: var(--gold); font-family: "Rubik"; } #tip .no { color: #ffb0a6; }
   /* джойстик */
   #joy { position: fixed; left: 0; top: 0; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255,255,255,.12); border: 3px solid rgba(255,255,255,.35); z-index: 6; pointer-events: none; opacity: 0; transition: opacity .12s; }
   #joy i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px; border-radius: 50%; background: rgba(255,255,255,.85); box-shadow: 0 4px 12px rgba(0,0,0,.3); }

@@ -663,7 +663,7 @@ function updHud(force) {
   const ce = $("con");
   if (G.con && G.mode !== "vs") {
     ce.classList.remove("hidden"); const c = G.con;
-    const html = `<img src="${ICONURL[ITEMS[c.it].id]}"><div class="ct"><span>📋 ${L("Заказ")}: ${L(ITEMS[c.it].n)} <b>${c.got}/${c.n}</b></span><div class="cbar"><i style="width:${Math.max(0, c.t / c.T * 100).toFixed(1)}%"></i></div></div><span>${c.end ? (c.ok ? "✅" : "❌") : Math.ceil(Math.max(0, c.t)) + L("с")}</span>`;
+    const html = `<img src="${ICONURL[ITEMS[c.it].id]}"><div class="ct"><span>${L("Заказ")}: ${L(ITEMS[c.it].n)} <b>${c.got}/${c.n}</b></span><div class="cbar"><i style="width:${Math.max(0, c.t / c.T * 100).toFixed(1)}%"></i></div></div><span class="tm">${c.end ? (c.ok ? "✅" : "❌") : Math.ceil(Math.max(0, c.t)) + L("с")}</span><span class="go">📍</span>`;
     if (ce.dataset.h !== html) { ce.innerHTML = html; ce.dataset.h = html; }
     ce.classList.toggle("late", c.t < c.T * 0.25 && !c.end); ce.classList.toggle("ok", !!(c.end && c.ok));
   } else ce.classList.add("hidden");
@@ -699,7 +699,8 @@ function computeHint() {
   if (con && bi != null && G.e[bi].o) {
     const be = Lr.E[bi];
     if (p.st.includes(con.it)) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Неси") + " «" + L(ITEMS[con.it].n) + "» " + L("к доске заказов"), t: be.zin }; }
-    if (!G.cdone && !p.st.length) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
+    const np0 = S.nextPad(G, team), afford = np0 >= 0 && G.money[team] >= S.padCost(G, np0) - G.e[np0].p;
+    if (!G.cdone && !p.st.length && !afford) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
   }
   const np = S.nextPad(G, team);
   let cashSum = 0, cashE = null, cd = 1e9;
