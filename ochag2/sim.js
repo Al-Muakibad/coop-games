@@ -75,8 +75,7 @@ export function newGame(opt) {
   put("villager", nx - 50, ny - 120 + 140, 1); put("villager", nx + 50, ny - 120 + 140, 1);
   const m1 = put("mushroom", nx - 140, ny + 220); stackOnto(G, put("mushroom", nx, ny), m1);
   // монеты — у каждого берега
-  for (let i = 0; i < 3; i++) { const c = put("coin", sx + 250, sy - 160, 0); const t = coinPile(G, c.id, c.y, 0); if (t) stackOnto(G, c, t); }
-  for (let i = 0; i < 3; i++) { const c = put("coin", nx - 250, ny + 120, 1); const t = coinPile(G, c.id, c.y, 1); if (t) stackOnto(G, c, t); }
+  G.wal = [3, 3];          // кошельки семей: монеты — просто число, карт-монет на столе нет
   for (const id in G.cards) { const c = G.cards[id]; if (isPerson(c.k)) c.hp = maxHp(G, c); }
   G.ev = [];
   return G;
@@ -191,9 +190,18 @@ function coinPile(G, skipId, nearY, o) {
   return best;
 }
 // выпадение новой карты рядом с (x,y); похожие складываются в ближайшую одинаковую стопку
+// монеты сразу в кошелёк семьи o (без хозяина — по берегу, где появились); событие для «летящих монет» к счётчику
+export function addCoins(G, o, n, x, y) {
+  if (!(n > 0)) return;
+  if (!G.wal) G.wal = [0, 0];
+  o = o === 1 ? 1 : 0;
+  G.wal[o] += n; G.st.made.coin = (G.st.made.coin || 0) + n;
+  G.ev.push({ t: "coin", o, n, x, y });
+}
 export function spawn(G, k, x, y, opt) {
   opt = opt || {};
   const d = CARDS[k];
+  if (k === "coin") { addCoins(G, opt.o != null ? opt.o : bankFam(y), opt.n || 1, x, y); return null; }
   if (d.c === "idea") { learn(G, d.rec, x, y, k); return null; }
   const c = add(G, k, x, y);
   if (isPerson(k)) { c.o = opt.o != null ? opt.o : weakFam(G); c.hp = maxHp(G, c); }
@@ -719,7 +727,16 @@ function nudge(G, r, target) {
 
 /* ---------- монеты, продажа, сундуки ---------- */
 // coins(G) — все монеты; coins(G, p) — кошелёк семьи p (в одиночной игре кошелёк общий)
-export function coins(G, p) { let n = 0; for (const id in G.cards) { const c = G.cards[id]; if (c.k === "coin" && (p == null || G.solo || coinOf(c) === p)) n++; } return n; }
+export function coins(G, p) { const w = G.wal || [0, 0]; return p == null || G.solo ? w[0] + w[1] : w[p] || 0; }
+// подарить монеты напарнику (из своего кошелька в его)
+export function giveI(G, p, n) {
+  if (G.solo || !G.wal) return 0;
+  n = Math.min(Math.floor(n) || 0, G.wal[p] || 0); if (n <= 0) return 0;
+  G.wal[p] -= n; G.wal[1 - p] += n;
+  G.st.gifts = (G.st.gifts || 0) + n;
+  G.ev.push({ t: "gift", p, to: 1 - p, n });
+  return n;
+}
 export function sellValue(G, c) { const v = CARDS[c.k].v; if (v == null) return null; return v + (v > 0 && hasB(G, "fair") ? 1 : 0); }
 export function canSell(G, r) { return chain(G, r).every((c) => CARDS[c.k].v != null); }
 function sell(G, r, x, y, p) {
@@ -732,7 +749,7 @@ function sell(G, r, x, y, p) {
   for (const c of cs) delete G.cards[c.id];
   const sp = { x, y: y - 120 }; clampToBoard(G, sp);
   const o = p != null && !G.solo ? p : bankFam(sp.y);
-  for (let i = 0; i < sum; i++) spawn(G, "coin", sp.x, sp.y, { o });
+  addCoins(G, o, sum, sp.x, sp.y);
   G.ev.push({ t: "sell", n: sum, x: sp.x, y: sp.y, cnt: cs.length, p });
   return { ok: true, n: sum };
 }
@@ -750,12 +767,9 @@ export function buyI(G, p, k, x, y) {
   const cost = packCost(G, pk, p);
   if (coins(G, p) < cost) return null;
   G.st.acts[p] = (G.st.acts[p] || 0) + 1;
-  let need = cost;
-  const mineC = (c) => c.k === "coin" && !c.drag && (G.solo || coinOf(c) === p);
-  // монеты снимаем только из своего кошелька (в одиночной — из общего), сначала с ближайших стопок
-  const pools = Object.values(G.cards).filter((c) => mineC(c) && !c.up).sort((a, c) => ((a.x - x) ** 2 + (a.y - y) ** 2) - ((c.x - x) ** 2 + (c.y - y) ** 2));
-  for (const c of pools) { if (!need) break; G.ev.push({ t: "spend", x: c.x, y: c.y }); removeCard(G, c); need--; }
-  while (need > 0) { const c = Object.values(G.cards).find((q) => mineC(q) && !q.up); if (!c) break; G.ev.push({ t: "spend", x: c.x, y: c.y }); removeCard(G, c); need--; }
+  // платим из своего кошелька (в одиночной игре кошелёк общий: сначала из своего, остаток — из второго)
+  const a = Math.min(cost, G.wal[p]); G.wal[p] -= a; if (cost > a) G.wal[1 - p] -= cost - a;
+  G.ev.push({ t: "spend", p, n: cost });
   const c = add(G, k, x, y);
   c.o = p;
   const sp = freeSpot(G, x, y, CH, c); c.x = sp[0]; c.y = sp[1];
@@ -869,7 +883,9 @@ function dawn(G) {
   // семья осталась без пары жителей — утром к ней приходит странник (не чаще раза в 2 дня на семью): из такого положения иначе не выбраться
   if (popCount(G) > 0) for (const f of [0, 1]) {
     G.sett = G.sett || [0, 0];
-    if (famCount(G, f) >= 2 || G.day - (G.sett[f] || 0) < 2) continue;
+    // странник: семье меньше двух жителей или она втрое меньше соседней (одному игроку нечего делать)
+    const mine = famCount(G, f), other = famCount(G, 1 - f);
+    if ((mine >= 2 && !(other >= 6 && mine * 3 <= other)) || G.day - (G.sett[f] || 0) < 2) continue;
     G.sett[f] = G.day;
     const hy = f === 0 ? 1240 : 360;
     const c = spawn(G, "villager", 700, hy, { o: f, dy: 0 });
@@ -1028,6 +1044,12 @@ export function deserialize(s) {
   for (const id in G.fights) { const f = G.fights[id]; f.foes = f.foes.filter((i) => G.cards[i]); f.allies = f.allies.filter((i) => G.cards[i]); if (!f.foes.length || !f.allies.length) { [...f.foes, ...f.allies].forEach((i) => { G.cards[i].cb = 0; }); delete G.fights[id]; } }
   for (const id in G.cards) { const c = G.cards[id]; if (c.cb && !G.fights[c.cb]) c.cb = 0; if (!c.dn) c.dirty = 1; }
   if (!G.st.acts) G.st.acts = [0, 0];
+  // старые сохранения: карты-монеты на столе → в кошельки хозяев (по владельцу, иначе по берегу) и со стола убираем
+  if (!G.wal) {
+    G.wal = [0, 0];
+    for (const id of Object.keys(G.cards)) { const c = G.cards[id]; if (c.k !== "coin") continue; G.wal[c.o != null ? (c.o === 1 ? 1 : 0) : bankFam(c.y)] += c.cn || 1; delete G.cards[id]; }
+    for (const id in G.cards) { const c = G.cards[id]; if (c.dn && !G.cards[c.dn]) c.dn = 0; if (c.up && !G.cards[c.up]) c.up = 0; }
+  }
   if (G.kn) G.kn.r_breed = 1;
   // старые сохранения: монеты без хозяина делим по берегу (вся кучка — хозяину её нижней монеты)
   for (const id in G.cards) { const c = G.cards[id]; if (c.k !== "coin" || c.dn || c.o != null) continue; const o = bankFam(c.y); for (const q of chain(G, c)) if (q.k === "coin") q.o = o; }          // старые сохранения: рецепт «Новый житель» виден сразу
