@@ -54,7 +54,7 @@ export function newGame(seed) {
   put("appletree", -138, -100); put("bush", -46, -100); put("berry", 46, -100); put("berry", 46, -76);
   put("villager", -46, 50); put("villager", 46, 50);
   stackOnto(G, findK(G, "berry", 1), findK(G, "berry", 0));
-  for (let i = 0; i < 4; i++) { const c = put("coin", 138, 60); const t = coinPile(G, "home", c.id); if (t) stackOnto(G, c, t); }
+  G.wal = 4;          // кошелёк: монеты — просто число вверху, карт-монет на столе нет
   G.ev = [];
   return G;
 }
@@ -163,10 +163,17 @@ function coinPile(G, b, skipId) {
   return best;
 }
 // выпадение новой карты рядом с (x,y); похожие складываются в ближайшую одинаковую стопку
+// монеты сразу в кошелёк; событие — для монет, летящих к счётчику
+export function addCoins(G, n, b, x, y) {
+  if (!(n > 0)) return;
+  G.wal = (G.wal || 0) + n; G.st.made.coin = (G.st.made.coin || 0) + n;
+  G.ev.push({ t: "coin", n, b, x, y });
+}
 export function spawn(G, k, b, x, y, opt) {
   opt = opt || {};
   const d = CARDS[k];
   if (d.c === "idea") { learn(G, d.rec, x, y, k); return null; }
+  if (k === "coin") { addCoins(G, opt.n || 1, b, x, y); return null; }
   const c = add(G, k, b, x, y);
   const fx = x, fy = y;
   let placed = false;
@@ -568,7 +575,7 @@ function nudge(G, r, target) {
 }
 
 /* ---------- монеты, продажа, наборы ---------- */
-export function coins(G) { let n = 0; for (const id in G.cards) if (G.cards[id].k === "coin") n++; return n; }
+export function coins(G) { return G.wal || 0; }
 export function sellValue(G, c) { const v = CARDS[c.k].v; if (v == null) return null; return v + (v > 0 && hasB(G, "market") ? 1 : 0); }
 export function canSell(G, r) { return chain(G, r).every((c) => CARDS[c.k].v != null || c.k === "coin"); }
 // продать стопку r; монеты появляются у (x,y) на столе b
@@ -579,7 +586,7 @@ export function sell(G, r, x, y) {
   let sum = 0;
   for (const c of cs) { sum += sellValue(G, c); G.st.sold++; }
   for (const c of cs) delete G.cards[c.id];
-  for (let i = 0; i < sum; i++) spawn(G, "coin", r.b, x, y);
+  addCoins(G, sum, r.b, x, y);
   G.ev.push({ t: "sell", n: sum, x, y, cnt: cs.length });
   return { ok: true, n: sum };
 }
@@ -594,16 +601,8 @@ export function buyPack(G, k, b, x, y) {
   const p = PACKS.find((q) => q.k === k);
   if (!p || packLocked(G, p)) return null;
   if (coins(G) < p.cost) return null;
-  // снимаем монеты: сначала с этого стола, сверху стопок
-  let need = p.cost;
-  const pools = Object.values(G.cards).filter((c) => c.k === "coin" && !c.drag).sort((a, c) => (a.b === b ? 0 : 1) - (c.b === b ? 0 : 1) || (c.up ? 0 : 1) - (a.up ? 0 : 1));
-  for (const c of pools) {
-    if (!need) break;
-    if (c.up) continue;
-    G.ev.push({ t: "spend", x: c.x, y: c.y, b: c.b });
-    removeCard(G, c); need--;
-  }
-  while (need > 0) { const c = Object.values(G.cards).find((q) => q.k === "coin" && !q.up && !q.drag); if (!c) break; G.ev.push({ t: "spend", x: c.x, y: c.y, b: c.b }); removeCard(G, c); need--; }
+  G.wal -= p.cost;
+  G.ev.push({ t: "spend", n: p.cost, b });
   const c = add(G, k, b, x, y);
   const sp = freeSpot(G, b, x, y, CH, c); c.x = sp[0]; c.y = sp[1];
   G.st.packs++;
@@ -873,6 +872,12 @@ export function deserialize(s) {
   // бои: на всякий случай чистим ссылки на исчезнувшие карты
   for (const id in G.fights) { const f = G.fights[id]; f.foes = f.foes.filter((i) => G.cards[i]); f.allies = f.allies.filter((i) => G.cards[i]); if (!f.foes.length || !f.allies.length) { [...f.foes, ...f.allies].forEach((i) => { G.cards[i].cb = 0; }); delete G.fights[id]; } }
   for (const id in G.cards) { const c = G.cards[id]; if (c.cb && !G.fights[c.cb]) c.cb = 0; if (!c.dn) c.dirty = 1; }
+  // старые сохранения: карты-монеты со стола → в кошелёк
+  if (G.wal == null) {
+    G.wal = 0;
+    for (const id of Object.keys(G.cards)) { const c = G.cards[id]; if (c.k !== "coin") continue; G.wal += c.cn || 1; delete G.cards[id]; }
+    for (const id in G.cards) { const c = G.cards[id]; if (c.dn && !G.cards[c.dn]) c.dn = 0; if (c.up && !G.cards[c.up]) c.up = 0; }
+  }
   return G;
 }
 export { rnd };

@@ -317,7 +317,16 @@ function onEvents() {
         if (e.n) floatText(...s2w(r.left + r.width / 2, r.top - 10), "+" + e.n + " 🪙", "#fff4a0", { size: 22 });
         break;
       }
-      case "spend": if (e.b === board) { const [sx, sy] = w2s(e.x, e.y + 20); const pr = $("packs").getBoundingClientRect(); parts.push({ kind: "fly", k: "coin", fx: sx, fy: sy, tx: pr.left + pr.width / 2, ty: pr.top + 30, life: -Math.random() * 0.2, max: 0.5, scr: 1, size: 22, arc: 50 }); } break;
+      case "spend": { const cr = $("s-coin").getBoundingClientRect(), pr = $("packs").getBoundingClientRect(); for (let i = 0; i < Math.min(5, e.n || 1); i++) parts.push({ kind: "fly", k: "coin", fx: cr.left + cr.width / 2, fy: cr.top + cr.height / 2, tx: pr.left + pr.width / 2, ty: pr.top + 30, life: -i * 0.07, max: 0.5, scr: 1, size: 22, arc: 50 }); bumpCoin(); break; }
+      case "coin": {
+        // монеты летят в кошелёк вверху
+        const cr = $("s-coin").getBoundingClientRect();
+        let fx = cr.left, fy = cr.top + 200;
+        if (e.b === board && e.x != null) { const q = w2s(e.x, e.y + 20); fx = q[0]; fy = q[1]; }
+        for (let i = 0; i < Math.min(6, e.n || 1); i++) parts.push({ kind: "fly", k: "coin", fx: fx + (Math.random() - 0.5) * 30, fy: fy + (Math.random() - 0.5) * 20, tx: cr.left + cr.width / 2, ty: cr.top + cr.height / 2, life: -i * 0.06, max: 0.6, scr: 1, size: 22, arc: 60 });
+        setTimeout(bumpCoin, 600); play("coin", { vol: 0.45 });
+        break;
+      }
       case "buy": {
         const c = G.cards[e.id]; if (!c) break;
         const r = rsOf(c); const pr = $("packs").getBoundingClientRect(); const [wx, wy] = s2w(pr.left + pr.width / 2, pr.top);
@@ -1174,6 +1183,8 @@ function switchBoard(b) {
   buildTabs(); play("whoosh", { vol: 0.5 });
 }
 function flash(el) { if (typeof el === "string") el = $(el); if (!el) return; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+let shownCoin = null, shownG = null;
+function bumpCoin() { const el = $("s-coin"); if (!el) return; el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
 function toast(txt, cls, life) {
   const box = $("toasts");
   try { measureHud(); box.style.top = Math.round(hudTop + 6) + "px"; } catch (_) {}
@@ -1208,7 +1219,9 @@ function updHud() {
   const cc = S.cardCount(G), cap = S.capacity(G);
   setText($("s-cards").lastElementChild, cc + "/" + cap);
   $("s-cards").classList.toggle("warn", cc > cap);
-  setText($("s-coin").lastElementChild, String(S.coins(G)));
+  // число «бежит» к настоящему
+  if (shownG !== G) { shownG = G; shownCoin = null; }
+  { const v = S.coins(G), cur = shownCoin == null ? v : shownCoin, d = v - cur; shownCoin = d === 0 ? v : cur + Math.sign(d) * Math.max(1, Math.round(Math.abs(d) * 0.35)); setText($("s-coin").lastElementChild, String(shownCoin)); }
   if (G.ph === "day" && p > 0.66 && safe < need && warnedFood !== G.day) { warnedFood = G.day; toast("🍖 Еды на ночь не хватит: нужно " + need + ", есть " + safe, "bad", 3.5); haptic("notify", "warning"); }
   const q = S.questNow(G);
   setText($("qn"), L(q.n)); setText($("qh"), L(q.h));

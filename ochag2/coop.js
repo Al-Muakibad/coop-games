@@ -44,8 +44,8 @@ function compact(G) {
   delete o._claims; delete o._carry; delete o._plans; delete o._miss;
   return JSON.stringify(o);
 }
-function meta(G) { return [G.day, Math.round(G.t * 10), PH.indexOf(G.ph), Math.round(G.nt * 10), G.spd, G.q, G.bridge, G.won ? 1 : 0, G.lost ? 1 : 0, G.season || 0, Math.round((G.hold || 0) * 10), G.nid]; }
-function unmeta(G, m) { G.day = m[0]; G.t = m[1] / 10; G.ph = PH[m[2]] || "day"; G.nt = m[3] / 10; G.spd = m[4]; G.q = m[5]; G.bridge = m[6]; G.won = m[7] ? G.won || "bridge" : 0; G.lost = m[8]; G.season = m[9]; G.hold = m[10] / 10; G.nid = m[11]; }
+function meta(G) { return [G.day, Math.round(G.t * 10), PH.indexOf(G.ph), Math.round(G.nt * 10), G.spd, G.q, G.bridge, G.won ? 1 : 0, G.lost ? 1 : 0, G.season || 0, Math.round((G.hold || 0) * 10), G.nid, (G.wal || [0, 0])[0], (G.wal || [0, 0])[1]]; }
+function unmeta(G, m) { G.day = m[0]; G.t = m[1] / 10; G.ph = PH[m[2]] || "day"; G.nt = m[3] / 10; G.spd = m[4]; G.q = m[5]; G.bridge = m[6]; G.won = m[7] ? G.won || "bridge" : 0; G.lost = m[8]; G.season = m[9]; G.hold = m[10] / 10; G.nid = m[11]; if (m.length > 13) G.wal = [m[12], m[13]]; }   // кошельки — в каждом пакете (12 байт)
 const RARE = ["kn", "f", "st", "bought", "pl", "solo", "open", "fights", "lastNight", "wonDay", "ht", "sett"];
 
 /* ---------- хозяин ---------- */
@@ -58,7 +58,7 @@ export class HostSync {
     const R = room;
     this.ack = 0;
     const I = (t) => R.on(t, (d) => { if (!this.on) return; api.intent(t, d || {}); if (d && d.q && t === "dr") this.ack = Math.max(this.ack, d.q); });
-    ["pk", "mv", "dr", "by", "op", "sp", "rl", "rd"].forEach(I);
+    ["pk", "mv", "dr", "by", "op", "sp", "rl", "rd", "gv"].forEach(I);
     R.on("cu", (d) => api.cursor && api.cursor(d));
     R.on("pg", (d) => api.ping && api.ping(d, 1));
     R.on("em", (d) => api.emote && api.emote(d, 1));

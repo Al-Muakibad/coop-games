@@ -47,6 +47,8 @@
   #spd button { width: 36px; height: 100%; border: 0; background: transparent; color: var(--cream); font-size: 14px; font-weight: 900; }
   #spd button.on { background: rgba(246,176,74,.9); color: var(--ink); }
   #stats .chip { flex: 1; justify-content: center; padding: 0 6px; font-size: 14px; gap: 4px; }
+  .flyc { position: fixed; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; z-index: 30; pointer-events: none; background: radial-gradient(circle at 35% 35%, #fff2b0, #f6c945 50%, #c08a10); box-shadow: 0 0 8px rgba(246,201,69,.8); transition: transform .62s cubic-bezier(.5,-0.3,.6,1), opacity .62s; }
+  #s-coins.bump, #s-pcoins.bump { animation: cbump .45s ease-out; } @keyframes cbump { 30% { transform: scale(1.25); filter: brightness(1.5); } }
   #s-pcoins { font-size: 11px; font-weight: 900; opacity: .9; padding: 1px 5px; border-radius: 8px; color: #062428; margin-left: 2px; }
   #s-pcoins:empty { display: none; }
   #stats .chip.warn { background: rgba(140, 30, 24, .85); animation: pulse 1s infinite; }

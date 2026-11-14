@@ -273,4 +273,11 @@ window.I18N && I18N.add({
   "Рецепты — в книге 📖": "Recipes are in the book 📖",
   " с": " s",
   "Показать мост": "Show the bridge",
+  "У каждого свой кошелёк — число вверху. Продал карты — монеты прилетают в твой кошелёк, сундуки покупаешь из него, и всё из сундука — твоё. Ресурсы общие. Подарить монеты напарнику — тап по кошельку.": "Each player has a wallet — the number at the top. Sell cards and the coins fly into your wallet; you buy packs from it and everything inside is yours. Resources are shared. Tap the wallet to give coins to your partner.",
+  "у напарника есть — попроси подарить (тап по кошельку вверху)": "your partner has some — ask them to give you coins (tap the wallet at the top)",
+  "Монеты: общий кошелёк обеих семей. Продавай карты — монеты прилетят сюда; трать на сундуки внизу.": "Coins: one wallet for both families. Sell cards and the coins fly here; spend them on packs below.",
+  "Кошелёк": "Wallet",
+  "Продаёшь карты — монеты прилетают сюда. Сундуки внизу покупаются из твоего кошелька. У напарника свой": "Sell cards and the coins fly here. Packs below are bought from your wallet. Your partner has their own",
+  "половину": "half",
+  "Кошелёк пуст": "Wallet is empty",
 });

@@ -559,14 +559,9 @@ export function makeBot(p, opt) {
   // напарник на мели, а у меня монет полно — отдаём пару через реку (раз в день)
   function giveCoins(G) {
     if (G.solo || G.ph !== "day" || B.gave === G.day) return false;
-    const mineN = S.coins(G, p), his = S.coins(G, 1 - p);
-    if (his >= 2 || mineN < 9) return false;
-    let pile = null;
-    for (const id in G.cards) { const c = G.cards[id]; if (c.k === "coin" && !c.dn && free(G, c) && S.coinOf(c) === p && S.chain(G, c).length >= 3) { pile = c; break; } }
-    if (!pile) return false;
-    const cs = S.chain(G, pile); B.gave = G.day;
-    const hy = p === 0 ? 380 : 1240;
-    return move(G, cs[cs.length - 3].id, 0, 700 + (rand() - 0.5) * 300, hy + 120, "gift coins");
+    if (S.coins(G, 1 - p) >= 2 || S.coins(G, p) < 9) return false;
+    B.gave = G.day; S.giveI(G, p, 3); B.acts++;
+    return true;
   }
   function decide(G) {
     if (G.ph === "hold") return sellJunk(G, true);
