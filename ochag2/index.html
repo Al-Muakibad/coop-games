@@ -56,6 +56,7 @@
   #goal { max-width: 70%; height: auto; min-height: 36px; padding: 6px 10px; white-space: normal; font-size: 13px; line-height: 1.2; text-align: left; }
   #goal b { color: var(--amber); }
   #partner { margin-left: auto; font-size: 13px; gap: 6px; }
+  #pnet.bad { color: #ff8a70; font-weight: 900; }
   #partner .pd { width: 12px; height: 12px; border-radius: 50%; background: var(--f1); box-shadow: 0 0 8px var(--f1); }
   #partner.off .pd { background: #888; box-shadow: none; }
   #partner small { color: var(--muted2); font-weight: 700; }
@@ -99,6 +100,14 @@
   .cur .hand { width: 26px; height: 26px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); border: 3px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.4); }
   .cur .nm { position: absolute; left: 22px; top: 18px; font-weight: 900; font-size: 12px; color: #fff; padding: 2px 8px; border-radius: 9px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
   .pairlab { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; color: #fff; font-weight: 900; font-size: 12.5px; line-height: 1.25; padding: 5px 9px; border-radius: 12px; border: 2px solid; max-width: 210px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.35); animation: plb 1.2s ease-in-out infinite; }
+  #sitep { position: fixed; left: 8px; top: calc(158px + var(--sat)); z-index: 8; width: min(236px, calc(100vw - 96px)); background: rgba(24, 16, 11, .97); color: #fff4e2; border: 2px solid #f6b04a; border-radius: 14px; padding: 6px 8px 7px; font-size: 12px; font-weight: 800; line-height: 1.3; box-shadow: 0 6px 20px rgba(0,0,0,.45); pointer-events: auto; }
+  #sitep.col { width: auto; padding: 4px 6px; }
+  #sitep .sh { display: flex; align-items: center; gap: 6px; } #sitep .sh b { flex: 1; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #sitep.col .sh b { display: none; }
+  #sitep .sh span[data-a] { cursor: pointer; } #sitep .sb { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; background: rgba(255,255,255,.1); font-size: 13px; }
+  #sitep .sc { font-size: 12px; padding: 1px 6px; border-radius: 8px; } #sitep .sc.no { background: #8c2a1a; } #sitep .sc.ok { background: #2f6e2a; }
+  #sitep .sbody { margin-top: 4px; } #sitep .ok { color: #a6ee84; } #sitep .no { color: #ffab94; } #sitep small { color: #f0dfc4; }
+  #sitep i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 2px 0 4px; }
   .pairlab.site { background: rgba(34, 24, 17, .94); border-color: #f6b04a; text-align: left; font-size: 12px; max-width: 250px; animation: none; }
   .pairlab.site b { display: block; font-size: 13px; margin-bottom: 2px; } .pairlab.site .ok { color: #9be27a; } .pairlab.site .no { color: #ff9a80; }
   .pairlab.site i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 2px 0 4px; } .pairlab.site small { color: #e8d8c0; font-weight: 800; }

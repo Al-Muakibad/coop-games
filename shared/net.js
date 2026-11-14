@@ -107,6 +107,8 @@
     // живость прямого канала: когда последний раз что-то пришло именно по нему. Канал может «умереть» молча
     // (смена сети, телефон уснул): readyState остаётся "open", а данные уходят в пустоту — тогда шлём ещё и через брокер.
     let p2pIn = 0, p2pTry = 0, hbLast = Date.now(), peerAt = 0;
+    // честный пинг: если ответ на пинг задерживается, показываем, сколько уже ждём (а не старое «хорошее» значение)
+    let pingOut = 0, lastPong = 0;
     const p2pStale = () => p2p && p2p.open && Date.now() - p2pIn > 3500;
     const emit = (type, data, from) => (handlers[type] || []).forEach((fn) => { try { fn(data, from); } catch (e) { console.error(e); } });
     const pack = (type, data) => JSON.stringify({ f: me.id, n: me.name, h: isHost ? 1 : 0, t: type, d: data === undefined ? null : data, i: ++seq });
@@ -153,7 +155,7 @@
         relay(pack("hi")); emit("resync", peer);
         return;
       }
-      if (m.t === "pong") { if (m.d && m.d.ts) rtt = Math.round(rtt ? rtt * 0.7 + (Date.now() - m.d.ts) * 0.3 : Date.now() - m.d.ts); return; }
+      if (m.t === "pong") { if (m.d && m.d.ts) { const r = Date.now() - m.d.ts; rtt = !rtt || r > rtt * 3 ? r : Math.round(r < rtt ? rtt * 0.4 + r * 0.6 : rtt * 0.7 + r * 0.3); lastPong = Date.now(); if (pingOut && m.d.ts >= pingOut) pingOut = 0; } return; }
       if (m.t === "hi") return;
       if (m.t === "bye") { const p = peer; peer = null; if (p2p) { p2p.close(); p2p = null; } emit("peer-left", p); return; }
       emit(m.t, m.d, m.f);
@@ -169,7 +171,7 @@
     document.addEventListener("visibilitychange", onVis);
     const hb = setInterval(() => {
       woke();
-      if (peer) send("ping", { ts: Date.now() }); else relay(pack("ping"));
+      if (peer) { const ts = Date.now(); if (!pingOut) pingOut = ts; send("ping", { ts }); } else relay(pack("ping"));
       // прямой канал молчит дольше 8 с, хотя открыт, — закрываем; хозяин потом попробует открыть новый
       if (p2p && p2p.open && Date.now() - p2pIn > 8000) { p2p.close(); p2p = null; emit("link", "relay"); }
       if (peer && isHost && (!p2p || p2p.closed) && Date.now() - p2pTry > 20000 && Date.now() - peerSeen < 4000) startP2P();
@@ -178,6 +180,8 @@
     }, 2000);
     const room = {
       id, isHost, me, get peer() { return peer; }, topic, get rtt() { return rtt; }, get link() { return p2p && p2p.open ? "p2p" : "relay"; },
+      // ping — rtt, но если ответ на пинг уже задерживается дольше, — сколько ждём; via — «p2p» (напрямую) или «relay» (через сервер)
+      get ping() { return peer ? Math.max(rtt, pingOut ? Date.now() - pingOut : 0) : null; }, get via() { return p2p && p2p.open ? "p2p" : "relay"; },
       on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); return room; },
       off(type) { delete handlers[type]; },
       send, sendFast: (type, data) => send(type, data, true),

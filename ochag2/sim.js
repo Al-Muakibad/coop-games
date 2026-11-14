@@ -93,14 +93,14 @@ export function add(G, k, x, y) {
   G.cards[c.id] = c;
   return c;
 }
-export const root = (G, c) => { while (c.dn) c = G.cards[c.dn]; return c; };
+export const root = (G, c) => { while (c.dn && G.cards[c.dn]) c = G.cards[c.dn]; return c; };
 export function chain(G, r) { const a = []; let c = r; while (c) { a.push(c); c = c.up ? G.cards[c.up] : null; } return a; }
-export const topOf = (G, c) => { while (c.up) c = G.cards[c.up]; return c; };
+export const topOf = (G, c) => { while (c.up && G.cards[c.up]) c = G.cards[c.up]; return c; };
 function dyOf(below, c, i) { return below.k === "coin" && c.k === "coin" ? (i < 10 ? COIN_DY : 0) : STACK_DY; }
-export function stackH(G, r) { let h = CH, c = r, i = 0; while (c.up) { const u = G.cards[c.up]; h += dyOf(c, u, ++i); c = u; } return h; }
+export function stackH(G, r) { let h = CH, c = r, i = 0; while (c.up) { const u = G.cards[c.up]; if (!u) break; h += dyOf(c, u, ++i); c = u; } return h; }
 export function layout(G, r) {
   let c = r, i = 0;
-  while (c.up) { const u = G.cards[c.up]; u.x = c.x; u.y = c.y + dyOf(c, u, ++i); c = u; }
+  while (c.up) { const u = G.cards[c.up]; if (!u) break; u.x = c.x; u.y = c.y + dyOf(c, u, ++i); c = u; }   // у гостя соседняя карта могла ещё не прийти
 }
 function dirty(G, r) { r.rc = ""; r.rt = 0; r.dirty = 1; }
 export function detach(G, c) {
@@ -989,14 +989,22 @@ function separate(G, dt) {
   const rs = [];
   for (const id in G.cards) { const c = G.cards[id]; if (!c.dn && !c.drag && !c.cb && !isEnemy(c.k)) rs.push(c); }
   const k = Math.min(1, dt * 6);
+  // сортировка по x и проход «окном»: пары дальше CW+4 по x не пересекаются (было O(n²) — на 500+ картах это главный расход хозяина)
+  rs.sort((p, q) => p.x - q.x);
+  const fx = rs.map((c) => isFixed(c.k));
   for (let i = 0; i < rs.length; i++) {
-    const a = rs[i]; const ah = a.h || CH, af = isFixed(a.k);
+    const a = rs[i]; const ah = a.h || CH, af = fx[i];
     for (let j = i + 1; j < rs.length; j++) {
-      const b = rs[j]; const bf = isFixed(b.k);
+      const b = rs[j];
+      if (b.x - a.x > CW + 4 + 40) break;          // запас 40: в этом проходе карты сдвигаются
+      const bf = fx[j];
       if (af && bf) continue;
+      if (a.dn || b.dn) continue;                     // уже слились в этом проходе
       const ox = CW + 4 - Math.abs(a.x - b.x); if (ox <= 0) continue;
       const bh = b.h || CH;
       const oy = Math.min(a.y + ah, b.y + bh) - Math.max(a.y, b.y) + 4; if (oy <= 0) continue;
+      // две кучки монет одного хозяина налезли друг на друга — ссыпаем в одну (иначе десятки кучек толкаются без конца)
+      if (a.k === "coin" && b.k === "coin" && coinOf(a) === coinOf(b) && !a.drag && !b.drag) { stackOnto(G, b, a); continue; }
       const wa = af ? 0 : bf ? 2 : 1, wb = bf ? 0 : af ? 2 : 1;
       if (ox < oy) { const s = (a.x < b.x ? -1 : 1) * ox * 0.5 * k; a.x += s * wa; b.x -= s * wb; }
       else { const s = (a.y < b.y ? -1 : 1) * oy * 0.5 * k; a.y += s * wa; b.y -= s * wb; }
@@ -1004,7 +1012,7 @@ function separate(G, dt) {
       if (!af) layout(G, a); if (!bf) layout(G, b);
     }
   }
-  for (const r of rs) r.h = stackH(G, r);
+  for (const r of rs) if (!r.dn) r.h = stackH(G, r);
 }
 
 /* ---------- сохранение ---------- */
