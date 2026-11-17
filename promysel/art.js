@@ -153,10 +153,20 @@ export const ITEM_GEO = {
   platter: () => { const b = new Build(); b.cyl(0.26, 0.24, 0.035, 14, "#f4f1ea", { p: [0, 0.02, 0], jit: 0.02 }); b.sph(0.5, 1, "#ff6a3d", { p: [-0.08, 0.07, 0], s: [0.18, 0.07, 0.14] });
     for (let i = 0; i < 4; i++) b.sph(0.5, 0, "#2f3554", { p: [0.1 + (i % 2) * 0.06, 0.05, -0.08 + i * 0.05], s: [0.08, 0.04, 0.05], r: [0, i, 0] }); b.box(0.05, 0.03, 0.05, "#ffd34d", { p: [0.02, 0.06, 0.12], jit: 0 }); b.box(0.04, 0.03, 0.04, "#7ed957", { p: [-0.12, 0.06, 0.12], jit: 0 }); return b.geo(); },
   liver: () => { const b = new Build(); b.cyl(0.13, 0.13, 0.12, 12, "#d0d6dc", { p: [0, 0.06, 0] }); b.cyl(0.133, 0.133, 0.07, 12, "#d9c36a", { p: [0, 0.06, 0] }); b.cyl(0.12, 0.12, 0.02, 12, "#b8bec4", { p: [0, 0.125, 0], jit: 0 }); b.box(0.12, 0.012, 0.03, "#8a9096", { p: [0.05, 0.14, 0], jit: 0 }); return b.geo(); },
+  salt: () => { const b = new Build(); b.cyl(0.15, 0.17, 0.14, 9, "#c8a878", { p: [0, 0.07, 0] }); b.sph(0.5, 1, "#f7f7f2", { p: [0, 0.13, 0], s: [0.3, 0.12, 0.3] }); return b.geo(); },
+  lox: () => { const b = new Build(); b.box(0.46, 0.04, 0.3, "#c08a58", { p: [0, 0.02, 0] }); for (let i = 0; i < 3; i++) b.box(0.4, 0.035, 0.08, i % 2 ? "#f08a5a" : "#e8703f", { p: [0, 0.06 + i * 0.012, (i - 1) * 0.08], r: [0, 0.1 * (i - 1), 0.05], jit: 0.04 }); return b.geo(); },
+  keg: () => { const b = new Build(); b.cyl(0.13, 0.15, 0.28, 10, "#a0703f", { p: [0, 0.14, 0] }); for (const y of [0.04, 0.24]) b.cyl(0.155, 0.155, 0.03, 10, "#4a4a52", { p: [0, y, 0], jit: 0 }); b.cyl(0.11, 0.11, 0.02, 10, "#ff5a3c", { p: [0, 0.285, 0], jit: 0 }); return b.geo(); },
+  dmussel: () => { const b = new Build(); b.box(0.36, 0.05, 0.24, "#d9c08a", { p: [0, 0.025, 0] }); for (let i = 0; i < 6; i++) b.sph(0.5, 0, "#5a4a3a", { p: [-0.12 + (i % 3) * 0.12, 0.07, (i < 3 ? -0.05 : 0.06)], s: [0.1, 0.04, 0.06], r: [0, i, 0] }); return b.geo(); },
+  pate: () => { const b = new Build(); b.cyl(0.14, 0.14, 0.12, 12, "#e8e0d0", { p: [0, 0.06, 0] }); b.cyl(0.142, 0.142, 0.06, 12, "#e0906a", { p: [0, 0.07, 0] }); b.cyl(0.13, 0.13, 0.02, 12, "#c9433a", { p: [0, 0.13, 0], jit: 0 }); return b.geo(); },
+  smcod: () => { const b = new Build(); fishB(b, "#b8742f", "#e0b070", "#7a4a1a", 0.66, 0.22, 0.11); b.box(0.02, 0.24, 0.02, PAL.rope, { p: [-0.2, 0.22, 0], jit: 0 }); return b.geo(); },
+  klip: () => { const b = new Build(); for (let i = 0; i < 3; i++) b.box(0.5, 0.035, 0.26, i % 2 ? "#efe4c8" : "#e2d4b0", { p: [0, 0.02 + i * 0.04, 0], r: [0, (i - 1) * 0.15, 0], jit: 0.04 }); b.box(0.06, 0.02, 0.28, "#ffffff", { p: [0.1, 0.13, 0], jit: 0 }); return b.geo(); },
+  basket: () => { const b = new Build(); b.cyl(0.2, 0.16, 0.2, 10, "#c8963f", { p: [0, 0.1, 0] }); b.cyl(0.205, 0.205, 0.03, 10, "#a0702f", { p: [0, 0.19, 0], jit: 0 }); b.sph(0.5, 1, "#e0a050", { p: [-0.06, 0.22, 0], s: [0.18, 0.08, 0.18] }); fishB(b, "#b8742f", "#e0b070", "#7a4a1a", 0.3, 0.08, 0.2);
+    b.box(0.02, 0.18, 0.3, "#a0702f", { p: [0, 0.3, 0], jit: 0 }); return b.geo(); },
   cash: () => { const b = new Build(); b.box(0.42, 0.1, 0.22, PAL.cash, { p: [0, 0.05, 0], jit: 0.04 }); b.box(0.43, 0.02, 0.23, PAL.cash2, { p: [0, 0.1, 0], jit: 0 }); b.box(0.08, 0.104, 0.225, "#f4f0d8", { p: [0, 0.05, 0], jit: 0 }); return b.geo(); },
 };
 export const ITEM_H = { herring: 0.2, fillet: 0.13, log: 0.22, smoked: 0.21, salmon: 0.25, steak: 0.14, caviar: 0.26, can: 0.2, ice: 0.3, crate: 0.36, cash: 0.1,
-  salted: 0.28, crab: 0.17, crabc: 0.14, mussel: 0.16, cod: 0.24, stockfish: 0.12, seaweed: 0.19, oil: 0.38, pie: 0.17, soup: 0.18, gift: 0.22, platter: 0.08, liver: 0.13 };
+  salted: 0.28, crab: 0.17, crabc: 0.14, mussel: 0.16, cod: 0.24, stockfish: 0.12, seaweed: 0.19, oil: 0.38, pie: 0.17, soup: 0.18, gift: 0.22, platter: 0.08, liver: 0.13,
+  salt: 0.16, lox: 0.09, keg: 0.3, dmussel: 0.1, pate: 0.14, smcod: 0.21, klip: 0.13, basket: 0.32 };
 
 // рыба для косяка в воде (лёгкая)
 export function schoolFishGeo(kind) {

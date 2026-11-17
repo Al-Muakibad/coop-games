@@ -1,7 +1,7 @@
 // «Промысел» — всё, что движется: люди (одна отрисовка на часть тела для всех), стопки на спине, кучи у цехов, косяки рыбы,
 // летящие предметы, деньги, площадки покупки с заполнением, пузыри над покупателями, частицы, снег, стрелка-подсказка.
 import * as THREE from "three";
-import { ITEMS, IT, UPG, PAD_R, YAW } from "./data.js";
+import { ITEMS, IT, UPG, PAD_R, YAW, OUTFITS } from "./data.js";
 import { layout, padVisible, padCost, accepts, capOf, itemPrice, deckY, tideR, evOn, bigStage } from "./sim.js";
 import { torsoGeo, legGeo, armGeo, packGeo, ITEM_GEO, ITEM_H, schoolFishGeo, Build, PAL } from "./art.js";
 import { ICON, BUB, bubbleAtlas } from "./icons.js";
@@ -99,6 +99,24 @@ export class View {
       const mesh = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20), new THREE.MeshLambertMaterial({ color: "#f3e7c7", transparent: true, opacity: 0.45, side: THREE.DoubleSide })); mesh.rotation.x = -Math.PI / 2; mesh.position.y = -0.08; g.add(mesh);
       for (const s of [-1, 1]) { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.15, 5), new THREE.MeshLambertMaterial({ color: "#a06a3b" })); pole.position.set(s * 0.45, 0.32, 0.55); pole.rotation.x = -0.75; g.add(pole); }
       g.visible = false; this.root.add(g); return g; });
+    // пёс-помощник и санки/лодка у каждого игрока
+    const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+    this.dogs = [0, 1].map(() => { const g = new THREE.Group(), fur = lam("#b0773f"), dark = lam("#5a3a22");
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.24, 0.55), fur); body.position.y = 0.32; g.add(body);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.24), fur); head.position.set(0, 0.5, 0.32); g.add(head);
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.12), dark); nose.position.set(0, 0.45, 0.48); g.add(nose);
+      for (const s of [-1, 1]) { const ear = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.08), dark); ear.position.set(s * 0.09, 0.64, 0.28); g.add(ear); }
+      g.legs = []; for (const [x, z] of [[-0.09, 0.2], [0.09, 0.2], [-0.09, -0.2], [0.09, -0.2]]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.07), fur); l.position.set(x, 0.12, z); g.add(l); g.legs.push(l); }
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.24), fur); tail.position.set(0, 0.45, -0.34); tail.rotation.x = 0.7; g.add(tail); g.tail = tail;
+      const bag = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.1), lam("#5aa05a")); bag.position.set(0, 0.42, 0.5); g.add(bag); g.bag = bag;
+      g.visible = false; this.root.add(g); return g; });
+    this.rides = [0, 1].map(() => { const g = new THREE.Group(), wood = lam("#a0703f"), red = lam("#c8423a");
+      const sled = new THREE.Group(); const deck = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.06, 0.95), red); deck.position.y = 0.14; sled.add(deck);
+      for (const s of [-1, 1]) { const run = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.15), wood); run.position.set(s * 0.27, 0.04, 0.05); sled.add(run); const tip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), wood); tip.position.set(s * 0.27, 0.12, 0.62); sled.add(tip); }
+      const boat = new THREE.Group(); const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.26, 12, 1, true), lam("#2f6f8f")); hull.scale.set(1, 1, 1.9); hull.position.y = 0.13; boat.add(hull);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.04, 5, 16), wood); rim.rotation.x = Math.PI / 2; rim.scale.set(1, 1.9, 1); rim.position.y = 0.26; boat.add(rim);
+      g.add(sled); g.add(boat); g.sled = sled; g.boat = boat; g.visible = false; this.root.add(g); return g; });
+    this.outC = OUTFITS.map((o) => (o.coat ? { coat: new THREE.Color(o.coat), hat: new THREE.Color(o.hat) } : null));
     this.popK = new Map();
     this.disp = { p: [], h: [], c: new Map() };
     this.coats = { p: PCOL.map((c) => ({ coat: new THREE.Color(c.coat), hat: new THREE.Color(c.hat) })), h: { coat: new THREE.Color(HCOL.coat), hat: new THREE.Color(HCOL.hat) },
@@ -168,7 +186,7 @@ export class View {
       uniforms: { uTex: { value: bubbleAtlas() } }, transparent: true, depthWrite: false, depthTest: true,
       vertexShader: `attribute vec3 iPos; attribute vec2 iCell; varying vec2 vUv; varying float vA;
         void main(){ float cell = iCell.x; float sc = iCell.y; vA = clamp(sc * 3.0, 0.0, 1.0);
-          vec2 c = vec2(mod(cell, 8.0), floor(cell / 8.0)); vUv = (c + vec2(uv.x, 1.0 - uv.y)) / 8.0; vUv.y = 1.0 - vUv.y;
+          vec2 c = vec2(mod(cell, 8.0), floor(cell / 8.0)); vUv = (c + vec2(uv.x, 1.0 - uv.y)) / vec2(8.0, 16.0); vUv.y = 1.0 - vUv.y;
           vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]); vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
           vec3 p = iPos + right * position.x * sc + up * position.y * sc;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
@@ -336,7 +354,15 @@ export class View {
       const p = G.pl[i]; const d = this.disp.p[i] || (this.disp.p[i] = { x: p.x, z: p.z, dir: p.dir, ph: 0, lean: 0, lv: 0, sp: 0, ox: p.x, oz: p.z });
       if (ctx.local && i === ctx.me) { d.x = ctx.local.x; d.z = ctx.local.z; d.dir = angLerp(d.dir, ctx.local.dir, Math.min(1, dt * 16)); }
       else { const k = Math.min(1, dt * (ctx.remoteK || 14)); d.x = lerp(d.x, p.x, k); d.z = lerp(d.z, p.z, k); if (p.mv) d.dir = angLerp(d.dir, p.dir, Math.min(1, dt * 12)); }
-      this.person(d, this.coats.p[G.mode === "vs" ? p.team : i], dt, p.st, "p" + i, true, G, 1.0);
+      const gg = p.g || {};
+      // санки или лодка под игроком
+      const rd = this.rides[i];
+      if (rd) { rd.visible = (gg.ride || 0) > 0; if (rd.visible) { rd.sled.visible = gg.ride === 1; rd.boat.visible = gg.ride >= 2; rd.position.set(d.x - Math.sin(d.dir) * 0.05, this.groundY(d.x, d.z), d.z - Math.cos(d.dir) * 0.05); rd.rotation.y = d.dir; } }
+      this.person(d, this.outC[gg.out || 0] || this.coats.p[G.mode === "vs" ? p.team : i], dt, p.st, "p" + i, true, G, 1.0, rd && rd.visible ? 0.16 : 0);
+      // пёс
+      const dg = this.dogs[i];
+      if (dg) { dg.visible = !!(gg.dog && p.dg); if (dg.visible) { const q = this.disp["dog" + i] || (this.disp["dog" + i] = { x: p.dg.x, z: p.dg.z, dir: p.dg.dir || 0, ph: 0 }); const k2 = Math.min(1, dt * 12); q.x = lerp(q.x, p.dg.x, k2); q.z = lerp(q.z, p.dg.z, k2); q.dir = angLerp(q.dir, p.dg.dir || 0, Math.min(1, dt * 10)); if (p.dg.mv) q.ph += dt * 16;
+        dg.position.set(q.x, this.groundY(q.x, q.z) + (p.dg.mv ? Math.abs(Math.sin(q.ph)) * 0.05 : 0), q.z); dg.rotation.y = q.dir; dg.legs.forEach((l, j) => (l.rotation.x = p.dg.mv ? Math.sin(q.ph + (j % 2 ? Math.PI : 0) + (j > 1 ? Math.PI / 2 : 0)) * 0.6 : 0)); dg.tail.rotation.y = Math.sin(this.t * 9) * 0.5; dg.bag.visible = p.dg.s === 2; } }
       // в зоне лова — в руках большая сеть, в ней бьётся улов
       let fishing = false, fk = 0; for (const e of this.L.E) if (e.k === "spot" && G.e[e.i].o && Math.hypot(d.x - e.zin.x, d.z - e.zin.z) < e.zin.r + 0.1) { fishing = true; fk = this.fishKind(e.item); }
       d.netK = lerp(d.netK || 0, fishing ? 1 : 0, Math.min(1, dt * 7));
@@ -415,7 +441,7 @@ export class View {
   near(d, c, r) { return Math.abs(d.x - c.x) < r && Math.abs(d.z - c.z) < r * 1.4; }
   groundY(x, z) { const g = this.G0 && deckY(this.G0, x, z); return g != null ? Math.max(g, this.world.height(x, z)) : Math.max(this.world.height(x, z), -0.42); }
   // человек: туловище, ноги, руки; стопка — на коробе за спиной (pack) или в руках (покупатель)
-  person(d, col, dt, stack, key, pack, G, scale) {
+  person(d, col, dt, stack, key, pack, G, scale, lift) {
     const mvx = d.x - d.ox, mvz = d.z - d.oz; d.ox = d.x; d.oz = d.z;
     const sp = Math.hypot(mvx, mvz) / Math.max(dt, 1e-3);
     d.sp = lerp(d.sp, Math.min(sp, 6), Math.min(1, dt * 10));
@@ -424,7 +450,7 @@ export class View {
     // наклон стопки: пружина от разгона
     const acc = (d.sp - (d.psp || 0)) / Math.max(dt, 1e-3); d.psp = d.sp;
     d.lv += (-acc * 0.012 - d.lean * 30) * dt; d.lv *= Math.pow(0.04, dt); d.lean += d.lv * dt * 10; d.lean = Math.max(-0.35, Math.min(0.35, d.lean));
-    let y0 = this.groundY(d.x, d.z) + (moving ? Math.abs(Math.sin(d.ph)) * 0.06 : Math.sin(this.t * 2 + d.x) * 0.008);
+    let y0 = this.groundY(d.x, d.z) + (lift || 0) + (moving && !lift ? Math.abs(Math.sin(d.ph)) * 0.06 : Math.sin(this.t * 2 + d.x) * 0.008);
     if (d.hop > 0) { d.hop = Math.max(0, d.hop - dt); y0 += Math.abs(Math.sin(d.hop * 9)) * 0.25 * Math.min(1, d.hop * 2); }
     // стопка: на остановке приседает и пружинит
     if ((d.psq || 0) > 1.6 && d.sp < 0.7) d.sqv = (d.sqv || 0) - 1.6;

@@ -1,5 +1,5 @@
 // Остаться или плыть дальше? Боты проходят бухту до маяка, дальше два пути на 60 минут:
-//  A — остаться и докупать всё в этой бухте;  B — уплыть в следующую (с тем, что переносится).
+//  A — остаться и докупать всё в этой бухте;  B — уплыть в следующую (с тем, что переносится; старый остров копит сундук).
 // Плыть дальше должно быть выгоднее. Запуск из корня: node promysel/tools/stay.mjs [бухта 0..2] [минут]
 import * as S from "../sim.js";
 import { makeBot } from "../bot.js";
@@ -15,9 +15,9 @@ const snap = S.serialize(G);
 // A: остаться
 const A = S.deserialize(snap); A.done = -1; const ba = A.pl.map((_, i) => makeBot(i, { seed: 3 + i }));
 const ea = play(A, ba, mins * 60, false);
-// B: уплыть (как в игре: артель и снаряжение переносятся)
-const carry = S.carryOf(G);
-const B = S.newGame(Object.assign({ mode: "coop", seed: sd + 1, bay: bay + 1, perks: G.perks }, carry)); const bb = B.pl.map((_, i) => makeBot(i, { seed: 3 + i }));
-const eb = play(B, bb, mins * 60, false);
+// B: уплыть (как в игре: архипелаг — снаряжение и артель с собой, старый остров торгует сам и копит сундук)
+const B = S.sailTo(S.deserialize(snap), bay + 1, { seed: sd + 1 }); const bb = B.pl.map((_, i) => makeBot(i, { seed: 3 + i }));
+const eNew = play(B, bb, mins * 60, false), chest = S.chestOf(B, bay), eb = eNew + chest;
+console.log(`  уплыли: заработано на новом острове ${Math.round(eNew)}, в сундуке старого ${Math.round(chest)}`);
 console.log(`за ${mins} мин: остаться — ${Math.round(ea)}, уплыть — ${Math.round(eb)} (${eb > ea ? "уплыть выгоднее ✓" : "остаться выгоднее ✗"})`);
 process.exit(eb > ea ? 0 : 1);

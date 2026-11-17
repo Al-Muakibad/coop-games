@@ -33,6 +33,15 @@ export const ITEMS = [
   { id: "gift", n: "Подарочный набор икры", price: 0, ship: 28, h: 0.22, c: "#c9433a" },
   { id: "platter", n: "Морское ассорти", price: 34, h: 0.16, c: "#ff8a6a" },
   { id: "liver", n: "Печень трески", price: 27, h: 0.18, c: "#d9c36a" },
+  // раунд 7: глубже цепочки в бухтах 2–4
+  { id: "salt", n: "Соль", price: 0, h: 0.18, c: "#f2f2ee" },
+  { id: "lox", n: "Копчёный лосось", price: 24, h: 0.16, c: "#e8703f" },
+  { id: "keg", n: "Бочонок икры", price: 0, ship: 55, h: 0.26, c: "#a0703f" },
+  { id: "dmussel", n: "Вяленые мидии", price: 30, h: 0.16, c: "#5a4a3a" },
+  { id: "pate", n: "Крабовый паштет", price: 0, ship: 50, h: 0.18, c: "#e0906a" },
+  { id: "smcod", n: "Копчёная треска", price: 16, h: 0.2, c: "#b8742f" },
+  { id: "klip", n: "Клипфиск", price: 0, ship: 30, h: 0.14, c: "#e8dcc0" },
+  { id: "basket", n: "Ярмарочная корзина", price: 0, ship: 140, h: 0.3, c: "#c8963f" },
 ];
 export const IT = {}; ITEMS.forEach((it, i) => { it.i = i; IT[it.id] = i; });
 export const NIT = ITEMS.length;
@@ -222,10 +231,11 @@ const BAY1 = {
 };
 // Бухта 2 — Ледяной фьорд: лосось с отмели и с мостков, стейки, икра, консервы на судно
 const BAY2 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-4.4, -4.2], pl: 1.25,
+  w: [-14.5, 28.5], d: [-18, 21.5], start: [-4.4, -4.2], pl: 1.25,
   shore: { base: -6.6, capes: [[-10.6, -9.2, -13.2, -1], [9.2, 10.6, -13.2, 1]] }, event: "run",
   big: [{ n: "Большой заказ судна", after: "fisher3", st: [["steak", 16], ["caviar", 10], ["salmon", 30]], rw: 1125 },
-    { n: "Финальная поставка", after: "loader2", st: [["caviar", 11], ["steak", 14], ["salmon", 24]], rw: 2000 }],
+    { n: "Поставка наборов", after: "loader2", st: [["caviar", 11], ["steak", 14], ["salmon", 24]], rw: 2000 },
+    { n: "Флотский контракт", after: "saltman", st: [["keg", 14], ["gift", 12], ["can", 30], ["keg", 20]], rw: 6000 }],
   signs: [],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель: лосось", item: "salmon", x: -5.4, z: -9.2, r: 2.6, sx: -5.4, sz: -11.6, free: 1 },
@@ -248,7 +258,7 @@ const BAY2 = {
     { id: "pier", k: "pier", n: "Мостки", x: 1.2, z: -10.6, x0: 1.2, z0: -6.8, z1: -14.4, pad: [1.2, -5.0], cost: 1100, after: ["runner2"] },
     { id: "spot2", k: "spot", n: "Глубина: крупный лосось", item: "salmon", x: 1.2, z: -13.8, r: 1.5, sx: 1.2, sz: -16.2, after: ["pier"], auto: 1 },
     { id: "fisher3", k: "helper", n: "Рыбак с мостков", role: "fisher", from: "spot2", to: ["caviar", "steak"], cost: 1300, after: ["pier"] },
-    { id: "dock", k: "dock", n: "Причал", x: 7.6, z: -8.3, accept: ["can", "gift"], cap: 30, pad: [7.8, -5.2], cost: 1700, after: ["fisher3"] },
+    { id: "dock", k: "dock", n: "Причал", x: 7.6, z: -8.3, accept: ["can", "gift", "keg"], cap: 30, pad: [7.8, -5.2], cost: 1700, after: ["fisher3"] },
     { id: "cannery", k: "proc", n: "Консервный цех", model: "cannery", x: 4.6, z: -2.8, w: 2.8, d: 2.0, rec: { in: ["steak"], out: "can", t: 0.5 }, cost: 2000, after: ["dock"] },
     { id: "su_cannery", k: "supg", of: "cannery", x: 4.6, z: -5.2, after: ["cannery"] },
     { id: "feed_can", k: "helper", n: "Подносчик стейков", role: "runner", from: "steak", to: ["cannery"], cost: 2200, after: ["cannery"] },
@@ -260,17 +270,34 @@ const BAY2 = {
     { id: "packer", k: "helper", n: "Подносчик икры", role: "runner", from: "caviar", to: ["pack"], cost: 3200, after: ["pack"] },
     { id: "packer2", k: "helper", n: "Подносчик банок", role: "runner", from: "cannery", to: ["pack"], cost: 3400, after: ["pack"] },
     { id: "loader2", k: "helper", n: "Грузчик наборов", role: "runner", from: "pack", to: ["dock"], cost: 3700, after: ["packer"] },
-    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 11000, after: ["loader2"] },
+    // восточный двор: копчёный лосось (стейк + дрова) и бочонки икры (икра + соль) на судно
+    { id: "stall_lox", k: "stall", n: "Прилавок: копчёный лосось", item: "lox", x: 2.4, z: 6.8, cost: 3900, after: ["loader2"] },
+    { id: "wood", k: "gen", n: "Дровяник", model: "woodshed", x: 17.4, z: -3.0, w: 2.4, d: 2, item: "log", t: 1.0, cap: 20, cost: 4000, after: ["smokery"] },
+    { id: "smokery", k: "proc", n: "Коптильня лосося", model: "smokehouse", x: 22.2, z: -3.2, w: 2.8, d: 2.2, rec: { in: ["steak", "log"], out: "lox", t: 0.9 }, cost: 4200, after: ["stall_lox"] },
+    { id: "su_wood", k: "supg", of: "wood", x: 17.4, z: -5.4, after: ["wood"] },
+    { id: "su_smokery", k: "supg", of: "smokery", x: 22.2, z: -5.6, after: ["smokery"] },
+    { id: "woodman", k: "helper", n: "Дровосек", role: "runner", from: "wood", to: ["smokery"], cost: 4000, after: ["wood"] },
+    { id: "feed_smk", k: "helper", n: "Подносчик стейков в коптильню", role: "runner", from: "steak", to: ["smokery"], cost: 4300, after: ["wood"] },
+    { id: "runner_lox", k: "helper", n: "Разносчик копчёного лосося", role: "runner", from: "smokery", to: ["stall_lox"], cost: 4600, after: ["woodman"] },
+    { id: "saltpan", k: "gen", n: "Солеварня", model: "boiler", x: 26.6, z: -3.0, w: 2.6, d: 1.8, item: "salt", t: 1.0, cap: 20, cost: 4800, after: ["cooper"] },
+    { id: "su_saltpan", k: "supg", of: "saltpan", x: 26.6, z: -5.4, after: ["saltpan"] },
+    { id: "cooper", k: "proc", n: "Бондарня", model: "saltery", x: 23.0, z: 1.6, w: 2.8, d: 1.4, rec: { in: ["caviar", "salt"], out: "keg", t: 1.0 }, cost: 5200, after: ["runner_lox"] },
+    { id: "su_cooper", k: "supg", of: "cooper", x: 26.8, z: 1.6, after: ["cooper"] },
+    { id: "saltman", k: "helper", n: "Солевар", role: "runner", from: "saltpan", to: ["cooper"], cost: 5300, after: ["saltpan"] },
+    { id: "feed_keg", k: "helper", n: "Подносчик икры в бондарню", role: "runner", from: "caviar", to: ["cooper"], cost: 5600, after: ["cooper"] },
+    { id: "loader3", k: "helper", n: "Грузчик бочонков", role: "runner", from: "cooper", to: ["dock"], cost: 6000, after: ["cooper"] },
+    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 11000, after: ["saltman", "feed_keg", "loader3"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 // Бухта 3 — Крабовый мыс: краб у камней, варочная, мидийная ферма, лёд и ящики на судно
 const BAY3 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-5.0, -4.6], pl: 1.55,
+  w: [-14.5, 28.5], d: [-18, 21.5], start: [-5.0, -4.6], pl: 1.55,
   shore: { base: -7.4, capes: [[-10.6, -9.2, -13.2, -1], [3.4, 5.0, -5.0, 1]] }, event: "tide",
   traps: [[-11.2, -7.3], [-4.0, -7.0], [1.8, -6.9]],     // на отливе здесь находят ловушки с крабами
   big: [{ n: "Большой заказ судна", after: "musselman", st: [["crabc", 16], ["mussel", 16], ["crab", 30]], rw: 1400 },
-    { n: "Финальная поставка", after: "runner_plat", st: [["platter", 8], ["crabc", 14], ["mussel", 14]], rw: 2500 }],
+    { n: "Поставка ассорти", after: "runner_plat", st: [["platter", 8], ["crabc", 14], ["mussel", 14]], rw: 2500 },
+    { n: "Флотский контракт", after: "loader_p", st: [["pate", 16], ["crate", 16], ["pate", 24], ["crate", 24]], rw: 8000 }],
   signs: [],
   ents: [
     { id: "spot1", k: "spot", n: "Камни: краб", item: "crab", x: -5.8, z: -9.8, r: 2.6, sx: -5.8, sz: -12.2, free: 1 },
@@ -289,7 +316,7 @@ const BAY3 = {
     { id: "su_farm", k: "supg", of: "farm", x: 6.4, z: -3.8, after: ["farm"] },
     { id: "musselman", k: "helper", n: "Сборщик мидий", role: "runner", from: "farm", to: ["stall_mussel"], cost: 1500, after: ["farm"] },
     { id: "board", k: "board", n: "Доска заказов", x: 6.4, z: 7.4, after: ["fisher1"], coopOnly: 1 },
-    { id: "dock", k: "dock", n: "Причал", x: 10.8, z: -6.4, accept: ["crate"], cap: 30, pad: [11.6, -3.4], cost: 2600, after: ["musselman"] },
+    { id: "dock", k: "dock", n: "Причал", x: 10.8, z: -6.4, accept: ["crate", "pate"], cap: 30, pad: [11.6, -3.4], cost: 2600, after: ["musselman"] },
     { id: "icehouse", k: "proc", n: "Ледник", model: "icehouse", x: -2.0, z: -3.0, w: 2.8, d: 2.0, rec: { in: ["crab", "ice"], out: "crate", t: 1.0 }, cost: 3000, after: ["dock"] },
     { id: "icehole", k: "gen", n: "Прорубь", model: "icehole", x: 1.6, z: -4.0, w: 2.0, d: 1.6, item: "ice", t: 1.2, cap: 20, cost: 3300, after: ["icehouse"] },
     { id: "su_icehouse", k: "supg", of: "icehouse", x: -2.0, z: -5.6, after: ["icehouse"] },
@@ -304,16 +331,36 @@ const BAY3 = {
     { id: "runner_bar", k: "helper", n: "Подносчик краба", role: "runner", from: "boil", to: ["bar"], cost: 6400, after: ["bar"] },
     { id: "mussel2", k: "helper", n: "Подносчик мидий", role: "runner", from: "farm", to: ["bar"], cost: 6800, after: ["bar"] },
     { id: "runner_plat", k: "helper", n: "Разносчик ассорти", role: "runner", from: "bar", to: ["stall_platter"], cost: 7300, after: ["runner_bar"] },
-    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 19000, after: ["runner_plat", "mussel2"] },
+    // восточный двор: соль, вяленые мидии на прилавок и крабовый паштет на судно
+    { id: "stall_dm", k: "stall", n: "Прилавок: вяленые мидии", item: "dmussel", x: 10.4, z: 6.8, cost: 7600, after: ["runner_plat"] },
+    { id: "saltpan", k: "gen", n: "Солеварня", model: "boiler", x: 17.4, z: -3.0, w: 2.6, d: 1.8, item: "salt", t: 1.0, cap: 20, cost: 7800, after: ["drysh"] },
+    { id: "farm2", k: "gen", n: "Вторая мидийная ферма", model: "musselfarm", x: 26.6, z: -2.8, w: 2.4, d: 1.6, item: "mussel", t: 1.0, cap: 20, cost: 8000, after: ["drysh"] },
+    { id: "drysh", k: "proc", n: "Вялильня мидий", model: "dryer", x: 22.2, z: -3.0, w: 2.8, d: 1.6, rec: { in: ["mussel", "salt"], out: "dmussel", t: 0.9 }, cost: 8200, after: ["stall_dm"] },
+    { id: "su_saltpan", k: "supg", of: "saltpan", x: 17.4, z: -5.4, after: ["saltpan"] },
+    { id: "su_farm2", k: "supg", of: "farm2", x: 26.6, z: -5.0, after: ["farm2"] },
+    { id: "su_drysh", k: "supg", of: "drysh", x: 22.2, z: -5.4, after: ["drysh"] },
+    { id: "saltman", k: "helper", n: "Солевар", role: "runner", from: "saltpan", to: ["drysh"], cost: 7900, after: ["saltpan"] },
+    { id: "feed_dry", k: "helper", n: "Сборщик второй фермы", role: "runner", from: "farm2", to: ["drysh"], cost: 8300, after: ["farm2"] },
+    { id: "runner_dm", k: "helper", n: "Разносчик вяленых мидий", role: "runner", from: "drysh", to: ["stall_dm"], cost: 8700, after: ["saltman"] },
+    { id: "boil2", k: "proc", n: "Вторая варочная", model: "boiler", x: 17.6, z: 1.6, w: 2.8, d: 1.8, rec: { in: ["crab"], out: "crabc", t: 0.7 }, cost: 8600, after: ["patehouse"] },
+    { id: "su_boil2", k: "supg", of: "boil2", x: 14.2, z: 1.6, after: ["boil2"] },
+    { id: "fisher_b2", k: "helper", n: "Ловец второй варочной", role: "fisher", from: "spot1", to: ["boil2"], cost: 9100, after: ["boil2"] },
+    { id: "patehouse", k: "proc", n: "Паштетная", model: "packhouse", x: 23.0, z: 1.6, w: 2.6, d: 1.6, rec: { in: ["crabc", "mussel"], out: "pate", t: 1.0 }, cost: 9200, after: ["runner_dm"] },
+    { id: "su_pate", k: "supg", of: "patehouse", x: 26.8, z: 1.6, after: ["patehouse"] },
+    { id: "feed_p1", k: "helper", n: "Подносчик краба в паштетную", role: "runner", from: "boil2", to: ["patehouse"], cost: 9500, after: ["boil2"] },
+    { id: "feed_p2", k: "helper", n: "Подносчик мидий в паштетную", role: "runner", from: "farm2", to: ["patehouse"], cost: 9900, after: ["patehouse"] },
+    { id: "loader_p", k: "helper", n: "Грузчик паштета", role: "runner", from: "patehouse", to: ["dock"], cost: 10400, after: ["feed_p1"] },
+    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 19000, after: ["loader_p", "feed_p2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 // Бухта 4 — Ярмарочная гавань: треска, сушильня, морская капуста, пекарня рыбников, жиротопня и судно в гавани
 const BAY4 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -5.6], pl: 1.95,
+  w: [-14.5, 28.5], d: [-18, 21.5], start: [-6.4, -5.6], pl: 1.95,
   shore: { base: -8.4, capes: [[3.4, 5.0, -4.8, 2], [9.2, 10.6, -13.2, 1]] }, event: "fair",
   big: [{ n: "Большой заказ судна", after: "planter", st: [["stockfish", 16], ["seaweed", 16], ["cod", 30]], rw: 1750 },
-    { n: "Финальная поставка", after: "runner_liver", st: [["pie", 8], ["liver", 8], ["stockfish", 14]], rw: 3100 }],
+    { n: "Ярмарочная поставка", after: "runner_liver", st: [["pie", 8], ["liver", 8], ["stockfish", 14]], rw: 3100 },
+    { n: "Флотский контракт", after: "loader_b", st: [["klip", 20], ["basket", 12], ["oil", 24], ["basket", 18]], rw: 12000 }],
   signs: [],
   ents: [
     { id: "spot1", k: "spot", n: "Банка: треска", item: "cod", x: -8.0, z: -11.0, r: 2.6, sx: -8.0, sz: -13.4, free: 1 },
@@ -337,7 +384,7 @@ const BAY4 = {
     { id: "su_bakery", k: "supg", of: "bakery", x: -1.8, z: -3.8, after: ["bakery"] },
     { id: "feed_bake", k: "helper", n: "Подносчик трески", role: "runner", from: "dryer", to: ["bakery"], cost: 7000, after: ["bakery"] },
     { id: "runner_pie", k: "helper", n: "Пекарь-разносчик", role: "runner", from: "bakery", to: ["stall_pie"], cost: 7800, after: ["bakery"] },
-    { id: "dock", k: "dock", n: "Причал", x: 0.0, z: -5.9, accept: ["oil"], cap: 30, pad: [1.8, -3.8], cost: 9500, after: ["runner_pie"] },
+    { id: "dock", k: "dock", n: "Причал", x: 0.0, z: -5.9, accept: ["oil", "klip", "basket"], cap: 30, pad: [1.8, -3.8], cost: 9500, after: ["runner_pie"] },
     { id: "render", k: "proc", n: "Жиротопня", model: "render", x: 5.8, z: -3.6, w: 2.8, d: 2.0, rec: { in: ["cod"], out: "oil", t: 0.8 }, cost: 11000, after: ["dock"] },
     { id: "su_render", k: "supg", of: "render", x: 5.8, z: -6.2, after: ["render"] },
     { id: "fisher2", k: "helper", n: "Рыбак жиротопни", role: "fisher", from: "spot1", to: ["render"], cost: 12000, after: ["render"] },
@@ -349,7 +396,28 @@ const BAY4 = {
     { id: "su_liver", k: "supg", of: "liverhouse", x: 9.2, z: 2.0, after: ["liverhouse"] },
     { id: "fisher3", k: "helper", n: "Рыбак цеха печени", role: "fisher", from: "spot1", to: ["liverhouse"], cost: 18000, after: ["liverhouse"] },
     { id: "runner_liver", k: "helper", n: "Разносчик печени", role: "runner", from: "liverhouse", to: ["stall_liver"], cost: 19500, after: ["liverhouse"] },
-    { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 36000, after: ["runner_liver", "fisher3"] },
+    // восточный двор: копчёная треска, клипфиск (треска + соль) и ярмарочные корзины (рыбник + копчёная треска) на судно
+    { id: "stall_smcod", k: "stall", n: "Прилавок: копчёная треска", item: "smcod", x: 15.8, z: 6.8, cost: 21000, after: ["runner_liver"] },
+    { id: "wood", k: "gen", n: "Дровяник", model: "woodshed", x: 17.4, z: -3.0, w: 2.4, d: 2, item: "log", t: 1.0, cap: 20, cost: 21500, after: ["smokery"] },
+    { id: "smokery", k: "proc", n: "Коптильня трески", model: "smokehouse", x: 22.2, z: -3.2, w: 2.8, d: 2.2, rec: { in: ["cod", "log"], out: "smcod", t: 0.8 }, cost: 22000, after: ["stall_smcod"] },
+    { id: "su_wood", k: "supg", of: "wood", x: 17.4, z: -5.4, after: ["wood"] },
+    { id: "su_smokery", k: "supg", of: "smokery", x: 22.2, z: -5.6, after: ["smokery"] },
+    { id: "woodman", k: "helper", n: "Дровосек", role: "runner", from: "wood", to: ["smokery"], cost: 21000, after: ["wood"] },
+    { id: "fisher_smk", k: "helper", n: "Рыбак коптильни", role: "fisher", from: "spot1", to: ["smokery"], cost: 22000, after: ["wood"] },
+    { id: "runner_smcod", k: "helper", n: "Разносчик копчёной трески", role: "runner", from: "smokery", to: ["stall_smcod"], cost: 23000, after: ["woodman"] },
+    { id: "saltpan", k: "gen", n: "Солеварня", model: "boiler", x: 26.6, z: -3.0, w: 2.6, d: 1.8, item: "salt", t: 1.0, cap: 20, cost: 23000, after: ["klipyard"] },
+    { id: "su_saltpan", k: "supg", of: "saltpan", x: 26.6, z: -5.4, after: ["saltpan"] },
+    { id: "klipyard", k: "proc", n: "Клипфисковый двор", model: "dryer", x: 23.0, z: 1.6, w: 2.8, d: 1.6, rec: { in: ["cod", "salt"], out: "klip", t: 0.8 }, cost: 24000, after: ["runner_smcod"] },
+    { id: "su_klip", k: "supg", of: "klipyard", x: 26.8, z: 1.6, after: ["klipyard"] },
+    { id: "saltman", k: "helper", n: "Солевар", role: "runner", from: "saltpan", to: ["klipyard"], cost: 24000, after: ["saltpan"] },
+    { id: "fisher_klip", k: "helper", n: "Рыбак клипфиска", role: "fisher", from: "spot1", to: ["klipyard"], cost: 25000, after: ["saltpan"] },
+    { id: "loader_k", k: "helper", n: "Грузчик клипфиска", role: "runner", from: "klipyard", to: ["dock"], cost: 26000, after: ["saltman"] },
+    { id: "basketry", k: "proc", n: "Корзинная лавка", model: "packhouse", x: 17.6, z: 1.6, w: 2.6, d: 1.6, rec: { in: ["pie", "smcod"], out: "basket", t: 1.2 }, cost: 26000, after: ["loader_k"] },
+    { id: "su_basket", k: "supg", of: "basketry", x: 14.2, z: 1.6, after: ["basketry"] },
+    { id: "feed_b1", k: "helper", n: "Подносчик рыбников", role: "runner", from: "bakery", to: ["basketry"], cost: 27000, after: ["basketry"] },
+    { id: "feed_b2", k: "helper", n: "Подносчик копчёной трески", role: "runner", from: "smokery", to: ["basketry"], cost: 28000, after: ["basketry"] },
+    { id: "loader_b", k: "helper", n: "Грузчик корзин", role: "runner", from: "basketry", to: ["dock"], cost: 29000, after: ["feed_b1"] },
+    { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 36000, after: ["loader_b", "feed_b2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -8.0, z: 9.3, free: 1 },
   ],
 };
@@ -357,10 +425,12 @@ export const BAYMAPS = [BAY1, BAY2, BAY3, BAY4];
 // бухты: название, тема мира, что нового (для окна перехода)
 export const BAYS = [
   { n: "Тихая бухта", theme: 0, news: ["herring", "fillet", "salted", "smoked", "soup"], ev: "Бураны: косяк уходит — держи запас" },
-  { n: "Ледяной фьорд", theme: 1, news: ["salmon", "steak", "caviar", "can", "gift"], ev: "Ход лосося: улов вдвое" },
-  { n: "Крабовый мыс", theme: 2, news: ["crab", "crabc", "mussel", "crate", "platter"], ev: "Приливы и отливы: на отливе — ловушки с крабами" },
-  { n: "Ярмарочная гавань", theme: 3, news: ["cod", "stockfish", "seaweed", "pie", "liver", "oil"], ev: "Ярмарочный день: важные гости платят втрое" },
+  { n: "Ледяной фьорд", theme: 1, news: ["salmon", "steak", "caviar", "can", "gift", "lox", "keg"], ev: "Ход лосося: улов вдвое" },
+  { n: "Крабовый мыс", theme: 2, news: ["crab", "crabc", "mussel", "crate", "platter", "dmussel", "pate"], ev: "Приливы и отливы: на отливе — ловушки с крабами" },
+  { n: "Ярмарочная гавань", theme: 3, news: ["cod", "stockfish", "seaweed", "pie", "liver", "oil", "smcod", "klip", "basket"], ev: "Ярмарочный день: важные гости платят втрое" },
 ];
+// сколько платят за товар в каждой бухте (выручка, не цены построек): подогнано, чтобы каждая бухта шла 30–40 минут
+export const BAY_INCOME = [1.1, 1.3, 0.75, 0.85];
 // старые бухты (версия 1: одна карта, цены умножались)
 export const BAYS_OLD = [{ mult: 1 }, { mult: 3.5 }, { mult: 12 }, { mult: 40 }];
 
@@ -422,3 +492,58 @@ export function recText(e) { return e.rec ? e.rec.in.map((i) => ITEMS[IT[i]].n).
 
 // порядок мест в сохранениях версии до «Хижины» (для переноса старых сохранений по названиям мест)
 export const IDS_V2 = {"b0": ["spot1", "artel", "stall_fish", "fisher0", "stall_fillet", "table1", "runner1", "bag", "boots", "net", "su_table1", "fisher1", "stall_salt", "salt", "su_salt", "feed_salt", "runner_salt", "board", "stall_smoked", "smoke", "wood", "su_smoke", "su_wood", "woodman", "feed_smoke", "runner3", "cashier", "table2", "su_table2", "fisher2", "runner2", "stall_soup", "kettle", "su_kettle", "fisher_soup", "woodman2", "runner_soup", "light"], "b1": ["spot1", "artel", "stall_salmon", "fisher0", "stall_steak", "steak", "runner1", "bag", "boots", "net", "su_steak", "fisher1", "stall_caviar", "caviar", "su_caviar", "fisher2", "runner2", "board", "pier", "spot2", "fisher3", "dock", "cannery", "su_cannery", "feed_can", "loader", "cashier", "pack", "su_pack", "packer", "packer2", "loader2", "light"], "b2": ["spot1", "artel", "stall_crab", "fisher0", "stall_crabc", "boil", "runner1", "bag", "boots", "net", "su_boil", "fisher1", "stall_mussel", "farm", "su_farm", "musselman", "board", "dock", "icehouse", "icehole", "su_icehouse", "fisher2", "iceman", "loader", "cashier", "stall_platter", "bar", "su_bar", "runner_bar", "mussel2", "runner_plat", "light"], "b3": ["spot1", "artel", "stall_cod", "fisher0", "stall_stock", "dryer", "runner1", "bag", "boots", "net", "su_dryer", "fisher1", "stall_sea", "plant", "planter", "su_plant", "board", "stall_pie", "bakery", "su_bakery", "feed_bake", "runner_pie", "dock", "render", "su_render", "fisher2", "loader", "cashier", "stall_liver", "liverhouse", "su_liver", "fisher3", "runner_liver", "light"], "vs": ["spot1", "stall_fish", "fisher0", "stall_fillet", "table1", "bag", "boots", "net", "runner1", "su_table1", "fisher1", "stall_smoked", "smoke", "wood", "su_smoke", "woodman", "feed_smoke", "runner3", "stall_caviar", "caviar", "pier", "spot2", "fisher3", "runner5", "cashier", "light", "artel", "spot1@1", "stall_fish@1", "fisher0@1", "stall_fillet@1", "table1@1", "bag@1", "boots@1", "net@1", "runner1@1", "su_table1@1", "fisher1@1", "stall_smoked@1", "smoke@1", "wood@1", "su_smoke@1", "woodman@1", "feed_smoke@1", "runner3@1", "stall_caviar@1", "caviar@1", "pier@1", "spot2@1", "fisher3@1", "runner5@1", "cashier@1", "light@1", "artel@1"]};
+
+/* ---------- архипелаг (раунд 7) ---------- */
+// острова на карте архипелага (координаты в процентах карты) и торговые пути: что один остров везёт другому
+export const ISLES = [{ x: 22, y: 70 }, { x: 30, y: 22 }, { x: 74, y: 30 }, { x: 72, y: 76 }];
+export const ROUTES = [
+  { a: 0, b: 1, it: "salted", n: "Солёная сельдь для фьорда", cost: 2500 },
+  { a: 1, b: 2, it: "can", n: "Консервы для крабовых лодок", cost: 5000 },
+  { a: 2, b: 3, it: "mussel", n: "Мидии для пирогов гавани", cost: 9000 },
+  { a: 3, b: 0, it: "seaweed", n: "Ламинария в уху Тихой бухты", cost: 9000 },
+  { a: 0, b: 2, it: "smoked", n: "Копчёности на мыс", cost: 6000 },
+  { a: 1, b: 3, it: "caviar", n: "Икра на ярмарку", cost: 12000 },
+];
+export const ARCH = { cap: 7200, routeK: 0.25, routeT: 90, srcBonus: 0.1 };     // сундук острова — до 2 часов дохода; путь: 25% дохода острова-поставщика
+
+/* ---------- хижина: наряды, пёс, санки и лодка (за деньги в игре, переносятся) ---------- */
+export const OUTFITS = [
+  { n: "Рабочая куртка", cost: 0 },          // свой цвет игрока
+  { n: "Штормовка", coat: "#f2c230", hat: "#2f3b4a", cost: 600 },
+  { n: "Тельняшка", coat: "#e8eef5", hat: "#1f4d8f", cost: 1500 },
+  { n: "Шуба", coat: "#8a5a3a", hat: "#e9dcc6", cost: 3500 },
+  { n: "Капитанский китель", coat: "#1d2c4f", hat: "#f2f2f2", cost: 7000 },
+  { n: "Праздничный кафтан", coat: "#c8323c", hat: "#f4c542", cost: 12000 },
+];
+export const PET = { n: "Пёс-помощник", d: "Сам бегает к прилавкам и приносит выручку", cost: 2500, r: 9, cd: 3.5, speed: 6.2 };
+export const RIDES = [
+  null,
+  { n: "Санки", d: "Ходишь быстрее", sp: 0.1, cost: 1800 },
+  { n: "Лёгкая лодка", d: "Ещё быстрее, а по мелководью — как по суше", sp: 0.2, cost: 8000 },
+];
+
+/* ---------- книга улова: редкие рыбы и находки ---------- */
+// bay — где попадается (-1 — везде), p — шанс на один улов игрока, v — сколько стоит (умножается на цены бухты)
+export const RARE = [
+  { id: "gold", n: "Золотая сельдь", d: "Блестит, как монета", ic: "🐟", f: "sepia(1) saturate(4) hue-rotate(5deg)", bay: 0, p: 1 / 500, v: 300 },
+  { id: "bottle", n: "Бутылка с запиской", d: "«Ищи там, где спит маяк»", ic: "🍾", bay: 0, p: 1 / 800, v: 150, tr: 1 },
+  { id: "king", n: "Королевский лосось", d: "Вдвое больше обычного", ic: "🐠", f: "hue-rotate(-30deg) saturate(1.6)", bay: 1, p: 1 / 500, v: 600 },
+  { id: "ice", n: "Ледяной кристалл", d: "Не тает даже в руке", ic: "💎", bay: 1, p: 1 / 800, v: 400, tr: 1 },
+  { id: "blue", n: "Голубой краб", d: "Один на две тысячи", ic: "🦀", f: "hue-rotate(190deg) saturate(1.5)", bay: 2, p: 1 / 500, v: 900 },
+  { id: "pearl", n: "Жемчужина", d: "Нашлась в мидии", ic: "🦪", bay: 2, p: 1 / 800, v: 1200, tr: 1 },
+  { id: "giant", n: "Гигантская треска", d: "Еле влезла в короб", ic: "🐡", f: "hue-rotate(60deg)", bay: 3, p: 1 / 500, v: 1200 },
+  { id: "anchor", n: "Старинный якорь", d: "С затонувшего брига", ic: "⚓", bay: 3, p: 1 / 800, v: 2000, tr: 1 },
+  { id: "moon", n: "Рыба-луна", d: "Говорят, приносит удачу", ic: "🌕", bay: -1, p: 1 / 5000, v: 5000 },
+];
+
+/* ---------- задания дня ---------- */
+export const DAILY = [
+  { k: "served", n: "Обслужи покупателей", need: [120, 200, 300] },
+  { k: "orders", n: "Выполни заказы с доски", need: [3, 5, 7] },
+  { k: "catch", n: "Поймай рыбы сам", need: [80, 150, 250] },
+  { k: "buy", n: "Открой новые места", need: [5, 8, 12] },
+  { k: "earn", n: "Заработай", need: [20000, 50000, 120000] },
+  { k: "rare", n: "Поймай редкую рыбу", need: [1, 1, 2] },
+  { k: "cash", n: "Собери выручку с прилавков", need: [40, 70, 110] },
+];
+export const DAILY_RW = { task: 3, streak: [4, 5, 6, 8, 10, 12, 15] };     // якоря за задание и за все три (по дню серии)

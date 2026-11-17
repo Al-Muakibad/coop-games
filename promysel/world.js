@@ -71,7 +71,7 @@ export class World {
     return h;
   }
   buildGround() {
-    const L = this.L, X0 = -34, X1 = 34, Z0 = -40, Z1 = 42;
+    const L = this.L, X0 = Math.min(-34, L.MAP.w[0] - 20), X1 = Math.max(34, L.MAP.w[1] + 20), Z0 = -40, Z1 = 42;
     const g = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, 120, 146); g.rotateX(-Math.PI / 2); g.translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
     const T = this.theme, SNOW = new THREE.Color(T.snow[0]), SNOW2 = new THREE.Color(T.snow[1]), SAND = new THREE.Color(T.sand || "#cbbba0"), PEB = new THREE.Color("#a99d8c"), BED = new THREE.Color("#5d7f8c"), TRAMP = new THREE.Color("#cdd6df"), ROAD = new THREE.Color("#b3bcc6"), DECK = new THREE.Color();
@@ -105,7 +105,7 @@ export class World {
   /* ---------- море ---------- */
   buildWater() {
     const L = this.L, T = this.theme;
-    const g = new THREE.PlaneGeometry(90, 56, 90, 56); g.rotateX(-Math.PI / 2); g.translate(0, -0.06, -34);
+    const wx0 = Math.min(-45, L.MAP.w[0] - 31), wx1 = Math.max(45, L.MAP.w[1] + 31); const g = new THREE.PlaneGeometry(wx1 - wx0, 56, Math.round(wx1 - wx0), 56); g.rotateX(-Math.PI / 2); g.translate((wx0 + wx1) / 2, -0.06, -34);
     const shal = L.E.filter((e) => e.k === "spot" && !e.def.auto).map((e) => new THREE.Vector3(e.zin.x, e.zin.z, e.zin.r));
     while (shal.length < 2) shal.push(new THREE.Vector3(999, 999, 0));
     const sh = L.MAP.shore, caps = sh.capes.map((c) => new THREE.Vector4(c[0], c[1], c[2], c[3]));
@@ -155,37 +155,38 @@ export class World {
       im.castShadow = !!shadow; im.receiveShadow = true; this.root.add(im); return im;
     };
     const pines = [], pines2 = [], rocks = [], drifts = [], lamps = [];
+    const xl = M.w[0], xr = M.w[1], out = (x, m) => x < xl - m || x > xr + m;      // карта бывает шире с одной стороны (восточный двор)
     const R = (i, k) => hash(i * 3.17 + k, i * 1.31 - k);
     // лес по бокам и позади рынка
     for (let i = 0; i < 260; i++) {
-      const x = -34 + R(i, 1) * 68, z = -8 + R(i, 2) * 50;
+      const x = xl - 20 + R(i, 1) * (xr - xl + 40), z = -8 + R(i, 2) * 50;
       const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3;
       if (inside) continue;
       if (z < shoreZ(L, x) + 1.2) continue;
-      if (Math.abs(z - 20.6) < 2.2 && x > -30 && x < 30) continue;   // дорога
+      if (Math.abs(z - 20.6) < 2.2 && x > xl - 15 && x < xr + 15) continue;   // дорога
       (R(i, 3) > 0.5 ? pines : pines2).push({ x, z, s: 0.8 + R(i, 4) * 0.7, r: R(i, 5) * 6 });
     }
     // мысы (где они есть) — камни; на игровом поле — только в стороне от мест
     const nearEnt = (x, z, m) => { for (const e of L.E) { if (e.box && x > e.box[0] - m && x < e.box[2] + m && z > e.box[1] - m && z < e.box[3] + m) return true; for (const k of ["zin", "zout", "zcash", "zpad"]) if (e[k] && Math.hypot(x - e[k].x, z - e[k].z) < e[k].r + m) return true; if (e.pier && Math.abs(x - e.pier.x) < 1.6) return true; } return false; };
     for (let i = 0; i < 90; i++) {
-      const x = -30 + R(i, 7) * 60, z = -14 + R(i, 8) * 8, sh = shoreZ(L, x);
+      const x = xl - 15 + R(i, 7) * (xr - xl + 30), z = -14 + R(i, 8) * 8, sh = shoreZ(L, x);
       if (z < sh + 0.2 || z > M.d[1]) continue;
-      if (Math.abs(x) > 15.5) { if (R(i, 9) > 0.6) rocks.push({ x, z, s: 0.6 + R(i, 10) * 0.8, r: R(i, 11) * 6 }); continue; }
+      if (out(x, 1)) { if (R(i, 9) > 0.6) rocks.push({ x, z, s: 0.6 + R(i, 10) * 0.8, r: R(i, 11) * 6 }); continue; }
       if (z < shoreZ(L, x) + 3 && z < -7.4 && R(i, 12) > 0.7 && !nearEnt(x, z, 1.2)) rocks.push({ x, z, s: 0.5 + R(i, 10) * 0.6, r: R(i, 11) * 6 });
     }
     // камни вдоль берега
     for (let i = 0; i < 46; i++) {
-      const x = -28 + R(i, 13) * 56; const sh = shoreZ(L, x), z = sh + 0.2 + R(i, 14) * 0.8;
+      const x = xl - 13 + R(i, 13) * (xr - xl + 26); const sh = shoreZ(L, x), z = sh + 0.2 + R(i, 14) * 0.8;
       let near = nearEnt(x, z, 1.0); for (const e of L.E) { if (e.k === "spot" && Math.abs(x - e.zin.x) < e.zin.r + 1.2) near = true; if (e.k === "pier" && Math.abs(x - e.pier.x) < 1.6) near = true; if (e.k === "dock" && Math.abs(x - e.x) < 3.5) near = true; }
-      if (near && Math.abs(x) < 15) continue;
-      if (Math.abs(x) < 15 && R(i, 15) > 0.45) continue;
+      if (near && !out(x, 0.5)) continue;
+      if (!out(x, 0.5) && R(i, 15) > 0.45) continue;
       rocks.push({ x, z, s: 0.4 + R(i, 16) * 0.6, r: R(i, 17) * 6 });
     }
     // скалы за краем карты (море по бокам)
-    for (let i = 0; i < 40; i++) { const sx = R(i, 18) > 0.5 ? 1 : -1; const x = sx * (16 + R(i, 19) * 14), z = -24 + R(i, 20) * 18; if (z > shoreZ(L, x) - 1) continue; rocks.push({ x, z, s: 0.8 + R(i, 21) * 1.0, r: R(i, 22) * 6, y: -0.3 }); }
+    for (let i = 0; i < 40; i++) { const sx = R(i, 18) > 0.5 ? 1 : -1; const x = sx > 0 ? xr + 1.5 + R(i, 19) * 14 : xl - 1.5 - R(i, 19) * 14, z = -24 + R(i, 20) * 18; if (z > shoreZ(L, x) - 1) continue; rocks.push({ x, z, s: 0.8 + R(i, 21) * 1.0, r: R(i, 22) * 6, y: -0.3 }); }
     // сугробы в игровой зоне по краям
-    for (let i = 0; i < 40; i++) { const x = M.w[0] + R(i, 23) * (M.w[1] - M.w[0]), z = -6 + R(i, 24) * 28; if ((Math.abs(x) < M.w[1] - 1.2 && z < 19) || nearEnt(x, z, 1.4)) continue; drifts.push({ x, z, s: 0.6 + R(i, 25) * 0.9, r: R(i, 26) * 6 }); }
-    for (let x = -26; x <= 26; x += 6.5) { lamps.push({ x, z: 19.0 }); }
+    for (let i = 0; i < 40; i++) { const x = M.w[0] + R(i, 23) * (M.w[1] - M.w[0]), z = -6 + R(i, 24) * 28; if ((x > xl + 1.2 && x < xr - 1.2 && z < 19) || nearEnt(x, z, 1.4)) continue; drifts.push({ x, z, s: 0.6 + R(i, 25) * 0.9, r: R(i, 26) * 6 }); }
+    for (let x = xl - 11.5; x <= xr + 11.5; x += 6.5) { lamps.push({ x, z: 19.0 }); }
     // мелочи на снегу: сухая трава, камешки, бугорки — чтобы снег не был пустым
     const tufts = [], pebbles = [];
     const busy = (x, z) => { for (const e of L.E) { if (Math.hypot(x - e.x, z - e.z) < Math.max(e.w, e.d, 1.6) * 0.75 + 0.8) return true; for (const k of ["zin", "zout", "zcash", "zpad"]) if (e[k] && Math.hypot(x - e[k].x, z - e[k].z) < e[k].r + 0.4) return true; } return false; };
@@ -200,12 +201,12 @@ export class World {
     const T = this.theme;
     add(pineGeo(0, T.trees === 1), pines, true); add(pineGeo(1, T.trees === 1), pines2, true); add(rockGeo(), rocks, true); if (!T.shrubs) add(driftGeo(), drifts, false); add(lampGeo(), lamps, true);
     // особые приметы бухты
-    if (T.cliffs) { const cl = []; for (let i = 0; i < 26; i++) { const sx = i % 2 ? 1 : -1, x = sx * (16.2 + R(i, 40) * 9), z = -16 + R(i, 41) * 34; if (z > 21 && z < 23.5) continue; cl.push({ x, z, s: 1.1 + R(i, 42) * 1.3, r: R(i, 43) * 6, y: z < shoreZ(L, x) ? -0.6 : 0 }); } add(BUILD.cliff(), cl, true); }
-    if (T.bergs) { const bg = []; for (let i = 0; i < 40 && bg.length < 9; i++) { const x = -22 + R(i, 50) * 44, z = -30 + R(i, 51) * 16; if (z > shoreZ(L, x) - 3 || Math.abs(x) < 15 && z > -19) continue; bg.push({ x, z, s: 0.6 + R(i, 52) * 1.0, r: R(i, 53) * 6, y: -0.25 }); } add(BUILD.iceberg(), bg, true); }
-    if (T.shrubs) { const sb = []; for (let i = 0; i < 160 && sb.length < 70; i++) { const x = -32 + R(i, 60) * 64, z = -6 + R(i, 61) * 34; const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3; if (inside || z < shoreZ(L, x) + 1 || Math.abs(z - 20.6) < 2.2) continue; sb.push({ x, z, s: 0.7 + R(i, 62) * 0.8, r: R(i, 63) * 6 }); } add(BUILD.shrub(), sb, true); }
+    if (T.cliffs) { const cl = []; for (let i = 0; i < 26; i++) { const sx = i % 2 ? 1 : -1, x = sx > 0 ? xr + 1.7 + R(i, 40) * 9 : xl - 1.7 - R(i, 40) * 9, z = -16 + R(i, 41) * 34; if (z > 21 && z < 23.5) continue; cl.push({ x, z, s: 1.1 + R(i, 42) * 1.3, r: R(i, 43) * 6, y: z < shoreZ(L, x) ? -0.6 : 0 }); } add(BUILD.cliff(), cl, true); }
+    if (T.bergs) { const bg = []; for (let i = 0; i < 40 && bg.length < 9; i++) { const x = xl - 7.5 + R(i, 50) * (xr - xl + 15), z = -30 + R(i, 51) * 16; if (z > shoreZ(L, x) - 3 || !out(x, 0.5) && z > -19) continue; bg.push({ x, z, s: 0.6 + R(i, 52) * 1.0, r: R(i, 53) * 6, y: -0.25 }); } add(BUILD.iceberg(), bg, true); }
+    if (T.shrubs) { const sb = []; for (let i = 0; i < 160 && sb.length < 70; i++) { const x = xl - 17.5 + R(i, 60) * (xr - xl + 35), z = -6 + R(i, 61) * 34; const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3; if (inside || z < shoreZ(L, x) + 1 || Math.abs(z - 20.6) < 2.2) continue; sb.push({ x, z, s: 0.7 + R(i, 62) * 0.8, r: R(i, 63) * 6 }); } add(BUILD.shrub(), sb, true); }
     if (T.traps) { const tp = []; for (let i = 0; i < 30 && tp.length < 6; i++) { const x = M.w[0] + 0.8 + R(i, 70) * (M.w[1] - M.w[0] - 1.6), z = shoreZ(L, x) + 0.6 + R(i, 71) * 0.8; if (nearEnt(x, z, 1.0)) continue; tp.push({ x, z, r: R(i, 72) * 6 }); } add(BUILD.trap(), tp, true); }
-    if (T.houses) { const hs = []; const cols = ["#e9dcc4", "#d9e4ea", "#f0d8c0", "#e0e8d0"]; for (let i = 0; i < 9; i++) hs.push([-17 + i * 4.3 + R(i, 80) * 0.8, 25.2 + R(i, 81) * 1.4, R(i, 82) * 0.3 - 0.15, cols[i % 4]]); for (const [x, z, r, c] of hs) { const m = new THREE.Mesh(BUILD.house(c), mat); m.position.set(x, 0, z); m.rotation.y = Math.PI + r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
-      for (const z of [19.6]) { const fl = new THREE.Mesh(BUILD.flags(6.4), mat); for (let k = -2; k <= 1; k++) { const m = fl.clone(); m.position.set(k * 6.5 + 3.25, 0, z); this.root.add(m); } } }
+    if (T.houses) { const hs = []; const cols = ["#e9dcc4", "#d9e4ea", "#f0d8c0", "#e0e8d0"]; for (let i = 0; i < Math.round(9 + (xr - 14.5) / 4.3); i++) hs.push([-17 + i * 4.3 + R(i, 80) * 0.8, 25.2 + R(i, 81) * 1.4, R(i, 82) * 0.3 - 0.15, cols[i % 4]]); for (const [x, z, r, c] of hs) { const m = new THREE.Mesh(BUILD.house(c), mat); m.position.set(x, 0, z); m.rotation.y = Math.PI + r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
+      for (const z of [19.6]) { const fl = new THREE.Mesh(BUILD.flags(6.4), mat); for (let k = -2; k <= 1 + Math.floor((xr - 14.5) / 6.5); k++) { const m = fl.clone(); m.position.set(k * 6.5 + 3.25, 0, z); this.root.add(m); } } }
     // частокол по краям настила (за край карты всё равно не пройти)
     const zs = Math.max(shoreZ(L, M.w[0]), shoreZ(L, M.w[1])) + 1.2, flen = L.fz - zs;
     for (const sx of [M.w[0] - 0.25, M.w[1] + 0.25]) { const m = new THREE.Mesh(fenceGeo(flen), mat); m.position.set(sx, 0, zs + flen / 2); m.rotation.y = Math.PI / 2; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
@@ -217,6 +218,7 @@ export class World {
     }
     // столбы-указатели у дороги и пара домиков-декораций за рынком
     const hut = BUILD.hut(), crates = BUILD.crates(), barrel = BUILD.barrel(), boat = BUILD.boat();
+    const dx = Math.max(0, L.MAP.w[1] - 14.5);      // восточный двор: правые декорации сдвигаем за край
     const deco = [[hut, -18, 25, 0.2], [hut, 17.5, 25.5, -0.3], [hut, 23, 14, -1.2], [hut, -23, 12, 1.4], [crates, -14.6, -5.5, 0.4], [barrel, 14.4, 5.5, 0], [barrel, 14.6, 6.4, 0], [crates, 14.2, 10.6, -0.5], [boat, -15.6, -8.0, 0.5], [boat, 17, -9, -0.4]];
     for (const sgn of L.MAP.signs || []) for (let t = 0; t < L.teams; t++) {
       // табличка-лента по ширине ряда: текст подгоняем, чтобы не обрезался
@@ -234,7 +236,7 @@ export class World {
     for (const d of L.deco) { const m = new THREE.Mesh(BUILD[d.m](), mat); m.position.set(d.x, 0, d.z); m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
     // бочки и ящики у мест — для уюта (вне зон)
     for (const e of L.E) { if (!(e.k === "proc" || e.k === "gen")) continue; const sx = e.x + (e.w / 2 + 0.35) * (e.x > 0 ? 1 : -1) * (hash(e.i, 3) > 0.5 ? 1 : -1), sz = e.z - e.d / 2 + 0.3; const m = new THREE.Mesh(hash(e.i, 9) > 0.5 ? barrel : crates, mat); m.scale.setScalar(0.8); m.position.set(sx, 0, sz); m.rotation.y = hash(e.i, 5) * 6; m.castShadow = true; e.decoM = m; this.root.add(m); m.visible = false; }
-    for (const [geo, x, z, r] of deco) { if (nearEnt(x, z, 1.7)) continue; const m = new THREE.Mesh(geo, mat); m.position.set(x, this.height(x, z) < -0.2 ? -0.05 : this.height(x, z), z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
+    for (const [geo, x0, z, r] of deco) { const x = x0 > 0 ? x0 + dx : x0; if (nearEnt(x, z, 1.7)) continue; const m = new THREE.Mesh(geo, mat); m.position.set(x, this.height(x, z) < -0.2 ? -0.05 : this.height(x, z), z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
   }
   /* ---------- места ---------- */
   buildEnts() {
