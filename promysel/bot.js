@@ -59,6 +59,8 @@ export function makeBot(pi, opt) {
       if (best >= 0 && (p.st.length >= cap * 0.8 || !freeWork(G, p, cap))) return { k: "deliver", e: best };
       if (best < 0 && p.st.length >= cap) { const c = cashTask(G, mine, p, 0); if (c) return c; return { k: "wait" }; }
     }
+    // большой заказ судна — важнее, чем собирать выручку впрок
+    if (bigStage(G) && G.mode !== "vs") { const fw = freeWork(G, p, cap); if (fw && (fw.big || fw.bigFish)) return fw; }
     // 3) выручка: если не хватает на площадку или её много скопилось
     const ct = cashTask(G, mine, p, (pad >= 0 || hireT) && G.money[team] + cashSum(G, mine) >= padNeed ? 0.01 : 25 * (G.mode === "vs" ? 1 : 1));
     if (ct) return ct;
@@ -79,7 +81,7 @@ export function makeBot(pi, opt) {
       if ((e.team !== team && G.mode === "vs") || !G.e[e.i].o) continue;
       const s = G.e[e.i];
       // большой заказ: встаём у цеха, который делает нужное, и ждём готового
-      if ((e.k === "proc" || e.k === "gen") && bigNeeds(G, e.k === "gen" ? e.item : e.rec.out)) { const sc = 500 + Math.min(s.ob, cap) - hyp(e.zout.x - p.x, e.zout.z - p.z) * 0.4; if (sc > bs) { bs = sc; best = { k: "pick", e: e.i, big: 1 }; } }
+      if ((e.k === "proc" || e.k === "gen") && !(B.bigCool > 0) && bigNeeds(G, e.k === "gen" ? e.item : e.rec.out) && (s.ob > 0 || e.k === "gen" || s.ib.every((n) => n > 0))) { const sc = 500 + Math.min(s.ob, cap) - hyp(e.zout.x - p.x, e.zout.z - p.z) * 0.4; if (sc > bs) { bs = sc; best = { k: "pick", e: e.i, big: 1 }; } }
       if ((e.k === "proc" || e.k === "gen") && s.ob > 0) {
         const it = e.k === "gen" ? e.item : e.rec.out;
         if (!hasDest(G, L, team, it)) continue;
@@ -90,8 +92,8 @@ export function makeBot(pi, opt) {
       if (e.k === "spot" && s.f > 2) {
         if (!hasDest(G, L, team, e.item)) continue;
         const need = needOf(G, L, team, e.item);
-        const sc = 3 + need * 1.5 - hyp(e.zin.x - p.x, e.zin.z - p.z) * 0.35 + (e.item === IT.salmon ? 2 : 0);
-        if (sc > bs) { bs = sc; best = { k: "fish", e: e.i }; }
+        const bf = bigNeeds(G, e.item), sc = 3 + need * 1.5 - hyp(e.zin.x - p.x, e.zin.z - p.z) * 0.35 + (e.item === IT.salmon ? 2 : 0) + (bf ? 500 : 0);
+        if (sc > bs) { bs = sc; best = { k: "fish", e: e.i, bigFish: bf ? 1 : 0 }; }
       }
     }
     return best;
@@ -110,14 +112,14 @@ export function makeBot(pi, opt) {
     if (t.k === "hire") return t.h != null ? !canHire(G, t.h) || G.money[p.team] < hireCost(G, t.h) : G.money[p.team] < crewCost(G, p.team, t.u);
     if (t.k === "cash") return !(s.cash > 0);
     if (t.k === "deliver") { if (t.e < 0) return true; for (const it of p.st) if (accepts(G, t.e, it)) return false; return true; }
-    if (t.k === "pick") return p.st.length >= cap || (s.ob <= 0 && !(t.big && B.tt < 25)) || (t.big && p.st.length >= 4);
+    if (t.k === "pick") { const end = p.st.length >= cap || (s.ob <= 0 && !(t.big && B.tt < 25)) || (t.big && p.st.length >= 4); if (end && t.big && s.ob <= 0 && !p.st.length) B.bigCool = 30; return end; }
     if (t.k === "fish") return p.st.length >= cap || s.f <= 0;
     return true;
   }
   // вызывать каждый кадр: возвращает джойстик {x, z}
   function tick(G, dt) {
     const p = G.pl[pi];
-    B.tt += dt; B.think -= dt;
+    B.tt += dt; B.think -= dt; if (B.bigCool > 0) B.bigCool -= dt;
     if (!B.task || B.think <= 0 || (B.arr && done(G, B.task))) {
       if (!B.task || B.arr && done(G, B.task) || B.think <= 0) {
         const nt = choose(G);

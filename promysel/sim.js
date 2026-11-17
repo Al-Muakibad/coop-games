@@ -781,7 +781,7 @@ function finishContract(G, ok) {
 /* ---------- большой заказ судна и финальная поставка: три ступени, сдаются у доски заказов ---------- */
 const bigList = (G) => ((G.v || 1) >= 2 && G.mode !== "vs" && layoutOf(G).MAP.big) || [];
 export function bigDone(G) { return (G.bigN || 0) >= bigList(G).length; }
-export function bigStage(G) { const b = G.big; if (!b) return null; const d = bigList(G)[b.i]; if (!d) return null; const st = d.st[b.s]; return { n: d.n, it: IT[st[0]], need: st[1], got: b.got, s: b.s, of: d.st.length, rw: d.rw }; }
+export function bigStage(G) { const b = G.big; if (!b) return null; const d = bigList(G)[b.i]; if (!d) return null; const st = d.st[b.s]; return { n: d.n, it: IT[st[0]], need: G.mode === "solo" ? Math.max(5, Math.round(st[1] * 0.6)) : st[1], got: b.got, s: b.s, of: d.st.length, rw: d.rw }; }
 function bigWants(G, it) { const s = bigStage(G); return !!(s && s.it === it && s.got < s.need); }
 function bigGot(G, bi) {
   const st = bigStage(G); if (!st) return;
@@ -817,7 +817,7 @@ function stepEvent(G, dt) {
   } else { v.ph = 0; v.t = E.every - E.warn - E.dur; G.ev.push({ t: "bayev", s: "end", k }); if (k === "tide") G.traps = []; }
 }
 // принудительно запустить событие (отладка и проверки)
-export function forceEvent(G) { if (G.evt) { G.evt.ph = 0; G.evt.t = 0.001; } else { const k = layoutOf(G).MAP.event; if (k) G.evt = { k, ph: 0, t: 0.001, n: 0 }; } }
+export function forceEvent(G) { if (G.evt) { G.evt.t = 0.001; } else { const k = layoutOf(G).MAP.event; if (k) G.evt = { k, ph: 0, t: 0.001, n: 0 }; } }
 
 /* ---------- цепочки ---------- */
 // товар можно сделать: открыто место, где он ловится/делается, и всё, что нужно на входе, тоже можно сделать

@@ -1055,7 +1055,7 @@ function loop(now) {
     let tx = (d ? d.x : p.x) - Math.sin(YAW) * 0.8, tz = (d ? d.z : p.z) - Math.cos(YAW) * 0.8;
     if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
     const ce = 1 - Math.exp(-dt * 3.6); cam.x += (tx - cam.x) * ce; cam.z += (tz - cam.z) * ce;
-    cam.dist += (camDist() + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
+    cam.dist += (camDist() * (cam.zk || 1) + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
     hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); updHire(); netWatch(); }
     const nd = role === "guest" ? gtm : G.pl[me];
     if (nd.noDest != null) { noDest(nd.noDest); nd.noDest = null; }
@@ -1100,7 +1100,7 @@ window.__pm = {
   get G() { return G; }, get role() { return role; }, get me() { return me; }, get started() { return started; }, get room() { return room; }, get hs() { return hs; }, get gs() { return gs; }, get partner() { return partner; }, get view() { return view; },
   S, cam, renderer, project, camera, scene, get world() { return world; },
   solo: () => { soloMenu(); return true; }, coopBot: (bay, o) => { start("local", S.newGame(Object.assign({ mode: "coop", seed: 77, meta: prof.meta, diff: 1, bay: bay || 0 }, o || {})), 0, { bot: 1 }); return true; },
-  bayDone: () => bayDone(), fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
+  bayDone: () => bayDone(), zoom: (k) => { cam.zk = k; }, fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
   host: (mode) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1 })); return true; },
   join: (id) => { joinGame(id); return true; },
