@@ -1,7 +1,7 @@
 // «Промысел» — бот-игрок (соперник в «друг против друга», напарник во «вместе», и он же гоняет баланс).
 // Бот не жульничает: только выбирает, куда идти, и «держит джойстик». Ловить, носить и платить его заставляет
 // та же самая близость к местам, что и человека (sim.proximityOps).
-import { upgMax, gearOf, gearCost, bigStage, canAd, adCost, canMgr, mgrCost, safeCost, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
+import { cosCost, upgMax, gearOf, gearCost, bigStage, canAd, adCost, canMgr, mgrCost, safeCost, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
 import { UPG } from "./data.js";
 import { IT, ITEMS } from "./data.js";
 
@@ -46,6 +46,7 @@ export function makeBot(pi, opt) {
     // своя хижина: рюкзак, унты, сеть, длинные руки
     const hut = L.huts.find((h) => L.E[h].slot === pi);
     if (hut != null && G.t > 40) for (const u of ["bag", "boots", "net", "reach"]) { if ((gearOf(G, pi)[u] || 0) >= upgMax(G, u)) continue; const c = gearCost(G, pi, u), w = c * (u === "bag" ? 1.2 : u === "reach" ? 2.2 : 1.6); if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: hut, op: ["y", hut, u], c }; } }
+    if (hut != null && G.t > 40 && G.mode !== "vs") for (const u of ["dog", "ride"]) { const c = cosCost(G, pi, u); if (c <= 0) continue; const w = c * 1.5; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: hut, op: ["y", hut, u], c }; } }
     // реклама: вывеска — как улучшение; листовки и глашатай — когда товара на прилавках много
     const adsE = L.ads.find((h) => L.E[h].team === team || G.mode !== "vs");
     if (adsE != null && G.t > 60) {

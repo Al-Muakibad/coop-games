@@ -150,3 +150,25 @@ window.I18N && I18N.add({ "нанимай помощников и улучшай
 window.I18N && I18N.add({ "Выбери рекламу — нажми на карточку": "Pick an ad — tap a card" });
 window.I18N && I18N.add({ "Своя хижина": "Your cabin", "ХИЖИНА": "CABIN", "твоё снаряжение — переходит в каждую бухту": "your gear — it comes with you to every bay", "целиком": "all of it",
   "Длинные руки": "Long arms", "Выручку собираешь издалека": "Collect takings from further away", "м": "m", "помощников": "helpers" });
+// раунд 7: архипелаг, хижина, задания дня, книга улова
+window.I18N && I18N.add({
+  "Задания дня": "Daily tasks", "Книга улова": "Catch book", "Наряд — во всех бухтах": "Outfit — in every bay", "Шхуна из": "Schooner from", "Торговый путь проложен": "Trade route opened",
+  "продолжит торговать сама": "will keep trading on its own", "в сундук острова. Вернуться можно в любой момент — через «Архипелаг».": "into the island chest. Come back any time via «Archipelago».",
+  "Задание дня выполнено": "Daily task done", "Все задания дня!": "All daily tasks!", "Серия": "Streak", "во «Флот»": "to the Fleet", "дн.": "d.", "за все три сегодня": "for all three today",
+  "Три задания на сегодня. Выполни все — серия дней растёт, награда больше.": "Three tasks for today. Finish all of them — your streak grows and so does the reward.",
+  "новое в книге": "new in the book", "Книга улова собрана!": "Catch book complete!", "Редкие рыбы и находки. Попадаются, когда ловишь сам. За каждую новую — 2 ⚓, за всю книгу — 20 ⚓.": "Rare fish and finds. They turn up when you fish yourself. Each new one — 2 ⚓, the whole book — 20 ⚓.",
+  "где угодно": "anywhere", "Ты здесь": "You are here", "сам без тебя": "on its own", "Новый остров": "New island", "Новые товары": "New goods", "в сундуке": "in the chest", "сначала зажги маяк": "light the lighthouse first",
+  "Архипелаг": "Archipelago", "Старые острова торгуют сами и копят выручку в сундуке — заберёшь, когда приплывёшь. Торговые пути возят товар с острова на остров.": "Old islands keep trading on their own and fill a chest — collect it when you sail there. Trade routes carry goods between islands.",
+  "Торговые пути": "Trade routes", "Сундук острова": "Island chest", "Остров торговал, пока тебя не было": "The island kept trading while you were away", "Тебя не было": "You were away for", "ч": "h",
+  "помощники работали и торговали": "helpers kept working and trading", "в сундуке — заберёшь, когда приплывёшь": "in the chest — collect it when you sail there", "шхуны ходят, пока ты играешь": "schooners sail while you play", "Забрать и играть": "Collect and play",
+  "Наряды": "Outfits", "Пёс и санки": "Dog & sled", "Новые уровни — в следующей бухте": "New levels — in the next bay", "надето": "wearing", "Куплено — нажми, чтобы надеть": "Owned — tap to wear", "Наряд на все бухты": "An outfit for every bay", "надеть": "wear",
+  "уже бегает с тобой": "already runs with you", "радиус": "radius", "Быстрая графика": "Fast graphics", "Для слабых телефонов: без теней, проще картинка": "For weaker phones: no shadows, simpler picture", "Острова, сундуки, торговые пути": "Islands, chests, trade routes", "Задания": "Tasks", "Улов": "Catch",
+  "Солёная сельдь для фьорда": "Salted herring for the fjord", "Консервы для крабовых лодок": "Tins for the crab boats", "Мидии для пирогов гавани": "Mussels for the harbour pies", "Ламинария в уху Тихой бухты": "Kelp for Quiet Bay's soup", "Копчёности на мыс": "Smoked fish for the cape", "Икра на ярмарку": "Caviar for the fair",
+  "Рабочая куртка": "Work jacket", "Штормовка": "Storm jacket", "Тельняшка": "Striped shirt", "Шуба": "Fur coat", "Капитанский китель": "Captain's coat", "Праздничный кафтан": "Festive kaftan",
+  "Пёс-помощник": "Helper dog", "Сам бегает к прилавкам и приносит выручку": "Runs to the stalls and brings back the takings", "Санки": "Sled", "Лёгкая лодка": "Light boat", "Ещё быстрее, а по мелководью — как по суше": "Even faster, and quick in the shallows",
+  "Золотая сельдь": "Golden herring", "Блестит, как монета": "Shines like a coin", "Бутылка с запиской": "Message in a bottle", "«Ищи там, где спит маяк»": "«Look where the lighthouse sleeps»", "Королевский лосось": "King salmon", "Вдвое больше обычного": "Twice the usual size",
+  "Ледяной кристалл": "Ice crystal", "Не тает даже в руке": "Doesn't melt even in your hand", "Голубой краб": "Blue crab", "Один на две тысячи": "One in two thousand", "Жемчужина": "Pearl", "Нашлась в мидии": "Found in a mussel", "Гигантская треска": "Giant cod", "Еле влезла в короб": "Barely fit in the basket",
+  "Старинный якорь": "Ancient anchor", "С затонувшего брига": "From a sunken brig", "Рыба-луна": "Sunfish", "Говорят, приносит удачу": "They say it brings luck",
+  "Обслужи покупателей": "Serve customers", "Выполни заказы с доски": "Complete board orders", "Поймай рыбы сам": "Catch fish yourself", "Открой новые места": "Open new places", "Заработай": "Earn", "Поймай редкую рыбу": "Catch a rare fish", "Собери выручку с прилавков": "Collect takings from stalls",
+  "Находка!": "A find!", "Редкий улов!": "Rare catch!",
+});

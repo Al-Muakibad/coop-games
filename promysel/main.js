@@ -2,7 +2,7 @@
 // HUD, события → эффекты и звук, сохранения, кнопка «Назад».
 import * as THREE from "three";
 import * as S from "./sim.js";
-import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW } from "./data.js";
+import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW, OUTFITS, PET, RIDES, RARE, ROUTES, ISLES, ARCH, DAILY, DAILY_RW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
@@ -39,7 +39,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 let quality = QS.get("q") != null ? Math.max(0, Math.min(2, +QS.get("q"))) : mobile ? 1 : 2, qLock = QS.get("q") != null;
-try { const q = localStorage.getItem("pm_q"); if (q != null && QS.get("q") == null) { quality = +q; qLock = true; } } catch (_) {}
+try { const q = localStorage.getItem("pm_q"); if (q != null && QS.get("q") == null) { quality = +q; qLock = true; } if (localStorage.getItem("pm_fast") === "1" && QS.get("q") == null) { quality = 0; qLock = true; } } catch (_) {}
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 140);
 let W = 1, H = 1, DPR = 1;
@@ -141,6 +141,7 @@ function showMenu() {
     <button class="b" id="m-solo"><span>🙋</span><span class="t">${L("Одному")}<small>${L("Своя бухта — долгая прокачка")}</small></span></button>
     ${order.slice(1).map((k) => resBtn(k)).join("")}
     <button class="b fleet" id="m-fleet"><span>⚓</span><span class="t">${L("Флот")}<small>${L("Якоря за бухты — постоянные улучшения")}: ⚓ ${prof.anchors || 0}${metaN ? " · " + L("куплено") + " " + metaN : ""}</small></span></button>
+    <div class="b2"><button class="b" id="m-day">📅 ${L("Задания дня")} ${daily().tasks.filter((t) => t.got >= t.need).length}/3${daily().streak ? " · 🔥" + daily().streak : ""}</button><button class="b" id="m-book">📖 ${L("Книга улова")} ${RARE.filter((r) => (prof.book || {})[r.id]).length}/${RARE.length}</button></div>
     <div class="b2"><button class="b ghost" id="m-help">❓ ${L("Как играть")}</button><button class="b ghost" id="m-set">⚙️ ${L("Настройки")}</button><button class="b ghost" id="m-games">🎮 ${L("Игры")}</button></div>
     ${prof.vsWin || prof.bays ? `<p style="margin:6px 0 0;font-size:12.5px">${prof.bays ? "⭐ " + L("Бухт пройдено") + ": " + prof.bays + " · " : ""}${prof.vsWin ? "🏆 " + L("Побед") + ": " + prof.vsWin : ""}</p>` : ""}`;
   $("menup").querySelectorAll("[data-slot]").forEach((b) => (b.onclick = () => resumeSlot(b.dataset.slot)));
@@ -148,6 +149,8 @@ function showMenu() {
   $("m-vs").onclick = () => vsMenu();
   $("m-solo").onclick = () => guardSlot("solo", () => soloMenu());
   $("m-help").onclick = () => showHelp();
+  $("m-day").onclick = () => dailyMenu(() => showMenu());
+  $("m-book").onclick = () => bookMenu(() => showMenu());
   $("m-fleet").onclick = () => fleetMenu(() => showMenu());
   $("m-set").onclick = () => settings(() => showMenu());
   $("m-games").onclick = () => { location.href = "../"; };
@@ -331,7 +334,11 @@ function start(r, g, pi, opt) {
   music(G.mode === "vs" ? "m_town" : "m_shanty");
   St.gameStart({ mode: G.mode, role: r, bay: G.bay, resume: G.t > 5 ? 1 : 0 });
   // доход, пока игры не было
-  if (opt.away > 60 && r !== "guest") { const got = S.offline(G, opt.away); if (got > 0) { G.money[0] += got; setTimeout(() => banner(L("Пока тебя не было") + ": +" + fmt(got), L("Помощники работали и торговали"), "gold"), 700); } }
+  if (opt.away > 60 && r !== "guest") {
+    if (G.arch) G.arch.ac += Math.min(opt.away, 12 * 3600);      // старые острова тоже торговали
+    const got = S.offline(G, opt.away); if (got > 0) G.money[0] += got;
+    if (G.mode !== "vs" && (got > 0 || G.arch)) setTimeout(() => { if ($("dlg").classList.contains("hidden")) welcomeBack(opt.away, got); }, 600);
+  }
   // улучшения «Флота» хозяина действуют сразу, в том числе в начатом забеге
   if (r !== "guest" && G.mode !== "vs" && (G.v || 1) >= 2) G.meta = Object.assign({}, prof.meta);
   hireOpen = -1; $("hire").classList.add("hidden");
@@ -460,7 +467,7 @@ function onEvents(list, remote) {
   const Lr = L_();
   for (const e of list) {
     const isMe = e.a === "p" + me;
-    if (remote && isMe && (e.t === "catch" || e.t === "drop" || e.t === "pick" || e.t === "padpay" || e.t === "cash" || e.t === "trap")) continue;   // свои — уже показаны
+    if (remote && isMe && (e.t === "catch" || e.t === "drop" || e.t === "pick" || e.t === "padpay" || (e.t === "cash" && !e.dog) || e.t === "trap")) continue;   // свои — уже показаны
     const en = e.e != null ? Lr.E[e.e] : null;
     switch (e.t) {
       case "catch": {
@@ -502,6 +509,7 @@ function onEvents(list, remote) {
         break;
       }
       case "cash": {
+        if (e.dog) { const pd = G.pl[+e.a.slice(1)], q = view.disp["dog" + e.a.slice(1)] || pd.dg || pd; if (isMe) { floatText(q.x, 1.2, q.z, "🐕 +" + fmt(e.amt), "cash"); play("coins", { vol: 0.5 }); haptic("impact", "light"); } break; }
         if (e.a === "safe") { const z = en.zcash; if (camNear(z.x, z.z, 12)) { floatText(z.x, 1.4, z.z, "+" + fmt(e.amt), "cash"); moneyFly(z.x, 0.6, z.z, 2); } break; }
         const z = en.zcash, n = Math.min(10, 2 + Math.floor(Math.log2(1 + e.amt)));
         for (let i = 0; i < n; i++) view.fly(CASH, { x: z.x + (Math.random() - 0.5) * 0.5, y: 0.2 + i * 0.05, z: z.z + (Math.random() - 0.5) * 0.5 }, () => view.topOf(e.a), { dur: 0.3, h: 0.9, delay: i * 0.035, s: 0.8 });
@@ -589,6 +597,11 @@ function onEvents(list, remote) {
         break;
       }
       case "mgr": { const st = Lr.E[e.e]; banner("⚙ " + L("Управляющий") + ": " + entName(st), L("Цех сам подтягивает сырьё тележкой"), "gold"); play("upgrade"); view.flash([e.e], 4); break; }
+      case "cos": if (isMe && e.buy) { banner(e.u === "dog" ? "🐕 " + L(PET.n) : e.u === "ride" ? (S.gearOf(G, me).ride >= 2 ? "🛶 " : "🛷 ") + L(RIDES[S.gearOf(G, me).ride].n) : "👕 " + L(OUTFITS[+e.u.slice(1)].n), e.u === "dog" ? L(PET.d) : e.u === "ride" ? L("Ходишь быстрее") : L("Наряд — во всех бухтах"), "gold"); play("upgrade"); haptic("notify", "success", true); } else if (isMe) play("cloth"); break;
+      case "dogpick": { const z = en && en.zcash; if (z && camNear(z.x, z.z, 12)) { view.burst(z.x, 0.4, z.z, "gold", 6); play("coin", { vol: vol(z.x, z.z, 0.4), rate: 1.4 }); } break; }
+      case "rare": onRare(e); break;
+      case "route": { const R = ROUTES[e.k]; banner("⛵ " + L("Шхуна из") + " «" + L(BAYS[R.a].n) + "»", L(R.n) + ": +" + fmt(e.v), "gold"); play("cash2"); haptic("notify", "success"); break; }
+      case "routeon": { const R = ROUTES[e.k]; banner("🧭 " + L("Торговый путь проложен"), L(BAYS[R.a].n) + " → " + L(BAYS[R.b].n), "gold"); play("levelup"); break; }
       case "safe": banner("🔐 " + L("Сейф с автосбором"), L("Выручка сама идёт в кошелёк"), "gold"); play("cash2"); haptic("notify", "success", true); break;
       case "auto": { banner("⚙ " + L("Цепочка работает сама!"), L("Автоматизация") + ": " + e.n + "/" + e.of, "gold"); play("levelup", { vol: 0.7 }); setTimeout(() => play("bell", { vol: 0.5 }), 250); for (const i of autoSet) { const st = Lr.E[i]; if (camNear(st.x, st.z, 14)) view.burst(st.x, 2.6, st.z, "gold", 18); } break; }
       case "cart": { const a = Lr.E[e.from], b2 = Lr.E[e.to]; if (camNear(b2.x, b2.z, 12)) view.fly(e.it, view.pileTarget(a, "out", G, e.it, 1), view.pileTarget(b2, "in", G, e.it), { dur: 0.6, h: 1.4 }); break; }
@@ -673,22 +686,167 @@ function perkStep() {
 function carryUpg() { return S.carryOf(G); }
 function nextBayDlg() {
   const nb = ((G.v || 1) < 2 ? G.bay + 1 : G.bay + 1) % BAYS.length, lap = (G.lap || 0) + (G.bay + 1 >= BAYS.length ? 1 : 0), B = BAYS[nb], cr = carryUpg(), c = cr.upg;
+  if ((G.v || 1) >= 2 && G.arch && G.arch.isl[nb] && G.arch.isl[nb].lap === lap) return archMenu();      // туда уже плавали — это возвращение
   const icons = B.news.map((k) => `<img src="${ICONURL[k] || ""}" title="${esc(L(ITEMS[IT[k]].n))}">`).join("");
   const nPerk = Object.values(G.perks).reduce((a, b) => a + b, 0);
   dialog(`<h2>⛵ ${L(B.n)}${lap ? " · " + L("круг") + " " + (lap + 1) : ""}</h2>
     <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p><p>✨ ${L("Особое")}: ${L(B.ev)}</p>
     <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("целиком")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
+    ${(G.v || 1) >= 2 ? `<p class="isl-k">🏝 «${L(BAYS[G.bay % BAYS.length].n)}» ${L("продолжит торговать сама")}: +${fmt(S.isleRate(G) * 60)}${L("/мин")} ${L("в сундук острова. Вернуться можно в любой момент — через «Архипелаг».")}</p>` : ""}
     <button class="b primary" id="n-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}</span></button>
     <button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться пока здесь")}<small>${L("Уплыть можно из меню")}</small></span></button>`, true);
   $("n-go").onclick = () => { hideDlg(); goNextBay(nb, lap, cr); };
   $("n-stay").onclick = () => hideDlg();
 }
 function goNextBay(nb, lap, cr) {
-  const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: nb, lap, perks: G.perks, meta: prof.meta, upg: cr.upg, gear: cr.gear, diff: G.diff });
-  const wasBot = !!bot, r = role;
-  start(r, g, 0, { bot: wasBot, newBay: 1 });
-  if (hs) hs.go();
+  if ((G.v || 1) < 2) {      // старые сохранения (одна карта) — как раньше, без архипелага
+    const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: nb, lap, perks: G.perks, meta: prof.meta, upg: cr.upg, gear: cr.gear, diff: G.diff });
+    const wasBot = !!bot, r = role; start(r, g, 0, { bot: wasBot, newBay: 1 }); if (hs) hs.go(); return;
+  }
+  G.meta = Object.assign({}, prof.meta);
+  sailIsle(nb, lap);
 }
+/* ---------- задания дня: три задания, серия дней ---------- */
+const dkey = (d) => d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+function daily() {
+  const now = new Date(), k = dkey(now); let D = prof.daily;
+  if (D && D.d === k) return D;
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  const streak = D && (D.last === dkey(y) || D.last === k) ? D.streak || 0 : 0;
+  // три разных задания на день — одинаковые на любом устройстве в этот день
+  let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) | 0;
+  const pool = DAILY.map((_, i) => i), pick = []; while (pick.length < 3) { h = (h * 1103515245 + 12345) | 0; pick.push(pool.splice(Math.abs(h) % pool.length, 1)[0]); }
+  const tier = Math.min(2, Math.floor((prof.bays || 0) / 2));
+  D = prof.daily = { d: k, tasks: pick.map((i) => ({ k: DAILY[i].k, need: DAILY[i].need[tier], got: 0 })), all: 0, streak, last: D ? D.last || "" : "" };
+  SV.saveProfile(prof);
+  return D;
+}
+let dTrack = null;
+function dailyAdd(kind, n) {
+  if (!(n > 0)) return; const D = daily();
+  for (const t of D.tasks) {
+    if (t.k !== kind || t.got >= t.need) continue;
+    t.got = Math.min(t.need, t.got + n);
+    if (t.got >= t.need) {
+      prof.anchors = (prof.anchors || 0) + DAILY_RW.task; play("perk"); haptic("notify", "success", true);
+      banner("📅 " + L("Задание дня выполнено"), L(DAILY.find((x) => x.k === t.k).n) + " · +" + DAILY_RW.task + " ⚓", "gold");
+      if (D.tasks.every((x) => x.got >= x.need) && !D.all) {
+        D.all = 1; const y = new Date(); y.setDate(y.getDate() - 1);
+        D.streak = D.last === dkey(y) ? (D.streak || 0) + 1 : 1; D.last = D.d;
+        const rw = DAILY_RW.streak[Math.min(D.streak, DAILY_RW.streak.length) - 1]; prof.anchors += rw;
+        setTimeout(() => banner("🔥 " + L("Все задания дня!") + " " + L("Серия") + ": " + D.streak, "+" + rw + " ⚓ " + L("во «Флот»"), "gold"), 2700);
+      }
+      SV.saveProfile(prof);
+    }
+  }
+}
+// прогресс заданий: считаем прирост счётчиков мира (у гостя — из снимков хозяина)
+function dailyPoll() {
+  if (!G || !started) return;
+  const p = G.pl[me], team = p.team;
+  const cur = { cid: G.cid, served: G.served || 0, orders: G.cdone || 0, catch: p.nc || 0, buy: G.nbuy || 0, earn: G.earned[team] || 0, cash: p.nk || 0 };
+  if (!dTrack || dTrack.cid !== cur.cid) { dTrack = cur; return; }
+  for (const k of ["served", "orders", "catch", "buy", "earn", "cash"]) { const d = cur[k] - dTrack[k]; if (d > 0 && d < 1e7) dailyAdd(k, d); }
+  dTrack = cur;
+}
+function dailyHtml() {
+  const D = daily();
+  return `<div class="daily">${D.tasks.map((t) => { const T0 = DAILY.find((x) => x.k === t.k), ok = t.got >= t.need; return `<div class="dt ${ok ? "ok" : ""}"><b>${ok ? "✅" : "▫️"} ${L(T0.n)}</b><i><u style="width:${Math.round(t.got / t.need * 100)}%"></u></i><small>${fmt(t.got)} / ${fmt(t.need)} · +${DAILY_RW.task} ⚓</small></div>`; }).join("")}
+    <p class="streak">🔥 ${L("Серия")}: <b>${D.streak || 0}</b> ${L("дн.")} · ${L("за все три сегодня")}: +${DAILY_RW.streak[Math.min((D.all ? D.streak : (D.streak || 0) + 1) || 1, DAILY_RW.streak.length) - 1]} ⚓</p></div>`;
+}
+function dailyMenu(back) {
+  dialog(`<h2>📅 ${L("Задания дня")}</h2><p>${L("Три задания на сегодня. Выполни все — серия дней растёт, награда больше.")}</p>${dailyHtml()}<button class="b ghost" id="dl-x">${L("Готово")}</button>`);
+  $("dl-x").onclick = () => { hideDlg(); if (back) back(); };
+}
+
+/* ---------- книга улова ---------- */
+function onRare(e) {
+  const r = RARE.find((x) => x.id === e.id); if (!r) return;
+  const book = prof.book || (prof.book = {}), first = !book[r.id];
+  book[r.id] = { n: ((book[r.id] && book[r.id].n) || 0) + 1, t: (book[r.id] && book[r.id].t) || Date.now() };
+  let extra = "";
+  if (first) { prof.anchors = (prof.anchors || 0) + 2; extra = " · " + L("новое в книге") + " +2 ⚓"; }
+  if (!prof.bookDone && RARE.every((x) => book[x.id])) { prof.bookDone = 1; prof.anchors += 20; setTimeout(() => banner("📖 " + L("Книга улова собрана!"), "+20 ⚓", "gold"), 2800); }
+  SV.saveProfile(prof); dailyAdd("rare", 1);
+  banner(r.ic + " " + L(r.tr ? "Находка!" : "Редкий улов!") + " " + L(r.n), "+" + fmt(e.v) + extra, "gold");
+  if (e.x != null) { view.burst(e.x, 1, e.z, "gold", 40); view.burst(e.x, 1.5, e.z, "conf", 30); floatText(e.x, 2.2, e.z, r.ic + " +" + fmt(e.v), "cash"); }
+  play("levelup"); haptic("notify", "success", true);
+}
+function bookMenu(back) {
+  const book = prof.book || {}, n = RARE.filter((r) => book[r.id]).length;
+  dialog(`<h2>📖 ${L("Книга улова")}</h2><p>${L("Редкие рыбы и находки. Попадаются, когда ловишь сам. За каждую новую — 2 ⚓, за всю книгу — 20 ⚓.")}</p>
+    <p class="bk-n">${n} / ${RARE.length}</p>
+    <div class="book">${RARE.map((r) => { const b = book[r.id]; return `<div class="bk ${b ? "" : "no"}"><span class="ic" style="${b && r.f ? "filter:" + r.f : ""}">${r.ic}</span><b>${b ? L(r.n) : "???"}</b><small>${b ? L(r.d) + " · ×" + b.n : r.bay >= 0 ? L(BAYS[r.bay].n) : L("где угодно")}</small></div>`; }).join("")}</div>
+    <button class="b ghost" id="bk-x">${L("Готово")}</button>`);
+  $("bk-x").onclick = () => { hideDlg(); if (back) back(); };
+}
+
+/* ---------- архипелаг ---------- */
+function archOk() { return G && G.mode !== "vs" && (G.v || 1) >= 2 && role !== "guest"; }
+function archMenu(back) {
+  if (!archOk()) return;
+  const A = S.archOf(G), top = Math.max(A.top || 0, G.bay), money = G.money[0];
+  const known = (b) => S.isleKnown(G, b), lit = (b) => S.isleLit(G, b);
+  const nextNew = top + 1 < BAYS.length && lit(top) ? top + 1 : -1;
+  const isles = BAYS.map((B, b) => ({ b, B, k: known(b), nw: b === nextNew }));
+  const svg = `<svg class="amap" viewBox="0 0 100 100" preserveAspectRatio="none">
+    ${ROUTES.map((R, k) => { const on = A.rt.some((t) => t.k === k); if (!on && !(known(R.a) && known(R.b))) return ""; const a = ISLES[R.a], c = ISLES[R.b]; return `<line x1="${a.x}" y1="${a.y}" x2="${c.x}" y2="${c.y}" class="${on ? "on" : ""}"/>${on ? `<text class="ship" font-size="7">⛵<animateMotion dur="${6 + k}s" repeatCount="indefinite" path="M${a.x - 3},${a.y + 2} L${c.x - 3},${c.y + 2}"/></text>` : ""}`; }).join("")}
+    ${isles.map((i) => { const p = ISLES[i.b]; return `<g class="isl ${i.b === G.bay ? "cur" : i.k ? "kn" : i.nw ? "nw" : "fog"}"><circle cx="${p.x}" cy="${p.y}" r="${i.b === G.bay ? 9 : 8}"/><text x="${p.x}" y="${p.y + 2.2}" font-size="7" text-anchor="middle">${i.k ? (lit(i.b) ? "🗼" : "🏝") : i.nw ? "⛵" : "?"}</text></g>`; }).join("")}
+  </svg>`;
+  const rows = isles.filter((i) => i.k || i.nw).map((i) => {
+    if (i.b === G.bay) return `<div class="ai cur"><b>📍 ${L(i.B.n)}</b><small>${L("Ты здесь")}${lit(i.b) ? " · 🗼" : ""} · ${L("сам без тебя")}: +${fmt(S.isleRate(G) * 60)}${L("/мин")}</small></div>`;
+    if (i.nw) return `<button class="b primary" data-isl="${i.b}"><span>⛵</span><span class="t">${L("Новый остров")}: ${L(i.B.n)}<small>${L("Новые товары")}: ${i.B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}</small></span></button>`;
+    const ch = S.chestOf(G, i.b), cap = S.chestCap(G, i.b);
+    return `<button class="b" data-isl="${i.b}"><span>${lit(i.b) ? "🗼" : "🏝"}</span><span class="t">${L("Плыть")}: ${L(i.B.n)}<small>💰 ${L("в сундуке")} ${fmt(ch)}${cap > 0 ? " / " + fmt(cap) : ""} · +${fmt((A.isl[i.b].r || 0) * 60)}${L("/мин")}</small></span></button>`;
+  }).join("");
+  const routes = ROUTES.map((R, k) => {
+    const on = A.rt.find((t) => t.k === k); if (!on && !(known(R.a) && known(R.b))) return "";
+    const name = `${L(BAYS[R.a].n)} → ${L(BAYS[R.b].n)}`, ic = ICONURL[R.it] ? `<img src="${ICONURL[R.it]}">` : "";
+    if (on) return `<div class="rt on">${ic}<div><b>${name}</b><small>⛵ ${L(R.n)} · +${fmt(S.routeIncome(G, k) * 60)}${L("/мин")}</small></div></div>`;
+    const can = S.canRoute(G, k), c = S.routeCost(G, k);
+    return `<button class="rt ${can && money >= c ? "ok" : ""}" data-rt="${k}" ${can ? "" : "disabled"}>${ic}<div><b>${name}</b><small>${can ? L(R.n) : "🔒 " + L("сначала зажги маяк") + ": " + L(BAYS[R.a].n)}</small></div>${can ? `<span class="pr">💵 ${fmt(c)}</span>` : ""}</button>`;
+  }).join("");
+  dialog(`<h2>🗺 ${L("Архипелаг")}</h2><p>${L("Старые острова торгуют сами и копят выручку в сундуке — заберёшь, когда приплывёшь. Торговые пути возят товар с острова на остров.")}</p>
+    ${svg}<div class="alist">${rows}</div>${routes ? `<h3 class="ah">🧭 ${L("Торговые пути")}</h3><div class="rts">${routes}</div>` : ""}
+    <button class="b ghost" id="ar-x">${L("Назад")}</button>`);
+  $("dlgp").querySelectorAll("[data-isl]").forEach((b) => (b.onclick = () => { hideDlg(); sailIsle(+b.dataset.isl); }));
+  $("dlgp").querySelectorAll("[data-rt]").forEach((b) => (b.onclick = () => { if (S.buyRoute(G, +b.dataset.rt)) { onEvents(G.ev.splice(-1), false); if (hs) hs.events([{ t: "routeon", k: +b.dataset.rt }]); save(true); archMenu(back); } else { play("error"); toast(L("Не хватает денег"), "bad", 1.8); } }));
+  $("ar-x").onclick = () => { hideDlg(); if (back) back(); };
+}
+function sailIsle(b, lap) {
+  const N = S.sailTo(G, b, lap != null ? { lap } : {});
+  const wasBot = !!bot, r = role;
+  start(r, N, 0, { bot: wasBot, newBay: 1 });
+  if (hs) hs.go();
+  if (N.chestGot > 0) setTimeout(() => banner("💰 " + L("Сундук острова") + ": +" + fmt(N.chestGot), L("Остров торговал, пока тебя не было"), "gold"), 3200);
+}
+
+/* ---------- «пока тебя не было» ---------- */
+function welcomeBack(away, got) {
+  const h = Math.floor(away / 3600), m = Math.floor((away % 3600) / 60);
+  const A = G.arch, others = A ? Object.keys(A.isl).map(Number).filter((b) => b !== G.bay) : [];
+  const D = daily(), left = D.tasks.filter((t) => t.got < t.need).length;
+  dialog(`<h2>👋 ${L("Пока тебя не было")}</h2><p>${L("Тебя не было")} ${h ? h + " " + L("ч") + " " : ""}${m} ${L("мин")}</p>
+    <div class="wb"><div><span>🏝 ${L(BAYS[G.bay % BAYS.length].n)}</span><b>+${fmt(got)}</b><small>${L("помощники работали и торговали")}</small></div>
+    ${others.map((b) => `<div><span>${A.isl[b].lit ? "🗼" : "🏝"} ${L(BAYS[b].n)}</span><b>💰 ${fmt(S.chestOf(G, b))}</b><small>${L("в сундуке — заберёшь, когда приплывёшь")}</small></div>`).join("")}
+    ${A && A.rt.length ? `<div><span>⛵ ${L("Торговые пути")}</span><b>${A.rt.length}</b><small>${L("шхуны ходят, пока ты играешь")}</small></div>` : ""}
+    <div><span>📅 ${L("Задания дня")}</span><b>${3 - left} / 3</b><small>🔥 ${L("Серия")}: ${D.streak || 0}</small></div></div>
+    <button class="b primary" id="wb-go"><span>💰</span><span class="t">${L("Забрать и играть")}</span></button>
+    ${others.length ? `<button class="b" id="wb-map"><span>🗺</span><span class="t">${L("Архипелаг")}</span></button>` : ""}`);
+  $("wb-go").onclick = () => { hideDlg(); play("cash2"); bumpMoney(); };
+  if ($("wb-map")) $("wb-map").onclick = () => { hideDlg(); archMenu(); };
+}
+
+/* ---------- быстрая графика ---------- */
+let qPrev = 1;
+function setFast(on) {
+  if (on && quality > 0) qPrev = quality;
+  quality = on ? 0 : Math.max(1, qPrev); qLock = true; applyQuality();
+  try { localStorage.setItem("pm_fast", on ? "1" : "0"); } catch (_) {}
+  // мир строим заново под новое качество (меньше частиц, без теней)
+  worldKey = ""; const g = started && G ? G : demo; ensureWorld(g); world.sync(g, false); view.disp = { p: [], h: [], c: new Map() };
+}
+
 /* ---------- «Флот»: постоянные улучшения за якоря ---------- */
 function fleetMenu(back) {
   const draw = () => {
@@ -792,12 +950,25 @@ function doOp(op) {
   if (role === "guest") { if (!gs || !gs.G) return false; const n0 = G.ev.length; if (S.applyOp(G, "p" + me, op)) { gs.op(op); onEvents(G.ev.splice(n0), false); return true; } return false; }
   return S.applyOp(G, "p" + me, op);
 }
-// своя хижина: снаряжение игрока, на каждой карточке «было → станет»
+// своя хижина: снаряжение игрока («было → станет»), наряды, пёс, санки/лодка — три вкладки
+let hutTab = 0;
 function updHut() {
   const team = G.pl[me].team, money = G.money[team], g = S.gearOf(G, me);
   const ic = { bag: "bag", boots: "boots", net: "net", reach: "cash" };
-  const html = ["bag", "boots", "net", "reach"].map((u) => { const lv = g[u] || 0, max = lv >= S.upgMax(G, u), c = S.gearCost(G, me, u), ok = !max && money >= c;
-    return `<button class="hc up ${ok ? "ok" : ""}" data-y="${u}" ${max ? "disabled" : ""}><div class="por"><img src="${ICONURL[ic[u]]}"></div><div class="tx"><b>${L(UPG[u].n)} · ${L("ур.")}${lv}${max ? "" : "&nbsp;→&nbsp;" + (lv + 1)}</b><span>${L(UPG[u].d)}: <b class="ba">${esc(upgText(u, lv)).replace(/ /g, "&nbsp;")}${max ? "" : "&nbsp;→&nbsp;" + esc(upgText(u, lv + 1)).replace(/ /g, "&nbsp;")}</b></span></div>${max ? `<div class="pr">✓</div>` : `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`}</button>`; }).join("");
+  const price = (c) => `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`;
+  const tabs = `<div class="htabs">${[L("Снаряжение"), L("Наряды"), L("Пёс и санки")].map((n, i) => `<button data-tab="${i}" class="${i === hutTab ? "on" : ""}">${n}</button>`).join("")}</div>`;
+  let body = "";
+  if (hutTab === 0) body = ["bag", "boots", "net", "reach"].map((u) => { const lv = g[u] || 0, max = lv >= S.upgMax(G, u), c = S.gearCost(G, me, u), ok = !max && money >= c;
+    return `<button class="hc up ${ok ? "ok" : ""}" data-y="${u}" ${max ? "disabled" : ""}><div class="por"><img src="${ICONURL[ic[u]]}"></div><div class="tx"><b>${L(UPG[u].n)} · ${L("ур.")}${lv}${max ? "" : "&nbsp;→&nbsp;" + (lv + 1)}</b><span>${L(UPG[u].d)}: <b class="ba">${esc(upgText(u, lv)).replace(/ /g, "&nbsp;")}${max ? "" : "&nbsp;→&nbsp;" + esc(upgText(u, lv + 1)).replace(/ /g, "&nbsp;")}</b></span>${max ? `<small>${L("Новые уровни — в следующей бухте")}</small>` : ""}</div>${max ? `<div class="pr">✓</div>` : price(c)}</button>`; }).join("");
+  else if (hutTab === 1) body = OUTFITS.map((o, k) => { const c = S.cosCost(G, me, "o" + k), worn = (g.out || 0) === k, own = k === 0 || ((g.ow || 0) & (1 << k));
+    const col = o.coat || (G.mode === "vs" ? ["#e0703a", "#3aa0c8"][G.pl[me].team] : ["#e0703a", "#3aa0c8"][me]), hat = o.hat || (me ? "#c9433a" : "#2d4f7c");
+    return `<button class="hc up ${worn ? "on" : c >= 0 && money >= c ? "ok" : ""}" data-y="o${k}" ${worn ? "disabled" : ""}><div class="por"><span class="sw" style="background:linear-gradient(180deg,${hat} 0 34%,${col} 34%)"></span></div><div class="tx"><b>${L(o.n)}</b><span>${worn ? "✓ " + L("надето") : own ? L("Куплено — нажми, чтобы надеть") : L("Наряд на все бухты")}</span></div>${worn ? `<div class="pr">✓</div>` : own ? `<div class="pr">${L("надеть")}</div>` : price(c)}</button>`; }).join("");
+  else {
+    const dc = S.cosCost(G, me, "dog"), rn = RIDES[(g.ride || 0) + 1], rc = S.cosCost(G, me, "ride"), cur = RIDES[g.ride || 0];
+    body = `<button class="hc up ${g.dog ? "on" : money >= dc ? "ok" : ""}" data-y="dog" ${g.dog ? "disabled" : ""}><div class="por"><span class="em">🐕</span></div><div class="tx"><b>${L(PET.n)}</b><span>${L(PET.d)}</span><small>${g.dog ? "✓ " + L("уже бегает с тобой") : L("радиус") + " " + PET.r + " " + L("м")}</small></div>${g.dog ? `<div class="pr">✓</div>` : price(dc)}</button>`
+      + (rn ? `<button class="hc up ${money >= rc ? "ok" : ""}" data-y="ride"><div class="por"><span class="em">${(g.ride || 0) ? "🛶" : "🛷"}</span></div><div class="tx"><b>${L(rn.n)}</b><span>${L(rn.d)}: <b class="ba">${L("скорость")} +${Math.round(((cur && cur.sp) || 0) * 100)}%&nbsp;→&nbsp;+${Math.round(rn.sp * 100)}%</b></span></div>${price(rc)}</button>` : `<div class="hc on"><div class="por"><span class="em">🛶</span></div><div class="tx"><b>${L(cur.n)}</b><span>✓ ${L("скорость")} +${Math.round(cur.sp * 100)}%</span></div></div>`);
+  }
+  const html = tabs + body;
   if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
 }
 function updAds() {
@@ -811,6 +982,7 @@ function updAds() {
 }
 const WHY = { angry: "Очередь злится — покупатели уходят, репутация падает", empty: "На прилавке пусто, а очередь ждёт", ads: "Мало рекламы — поставь вывеску", rep: "Плохая репутация — обслуживай быстрее" };
 function hireClick(ev) {
+  const tb = ev.target.closest("[data-tab]"); if (tb) { hutTab = +tb.dataset.tab; play("select"); hireKey = ""; updHire(); return; }
   const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad],[data-y]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
   const op = b.dataset.y ? ["y", hireOpen, b.dataset.y] : b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
   if (!doOp(op)) { play("error", { vol: 0.5 }); haptic("notify", "warning"); toast(L("Не хватает денег"), "bad", 1.8); return; }
@@ -998,12 +1170,14 @@ function settings(back) {
     <button class="b" id="s-snd"><span>${SET.snd ? "🔊" : "🔇"}</span><span class="t">${L("Звук")}: ${SET.snd ? L("вкл") : L("выкл")}</span></button>
     <button class="b" id="s-mus"><span>🎵</span><span class="t">${L("Музыка")}: ${SET.mus ? L("вкл") : L("выкл")}</span></button>
     <button class="b" id="s-q"><span>✨</span><span class="t">${L("Графика")}: ${[L("быстрая"), L("обычная"), L("красивая")][quality]}</span></button>
+    <button class="b ${quality === 0 ? "on" : ""}" id="s-fast"><span>⚡</span><span class="t">${L("Быстрая графика")}: ${quality === 0 ? L("вкл") : L("выкл")}<small>${L("Для слабых телефонов: без теней, проще картинка")}</small></span></button>
     <button class="b ghost" id="s-x">${L("Готово")}</button>`);
   draw();
   const wire = () => {
     $("s-snd").onclick = () => { SET.snd = SET.snd ? 0 : 1; saveSet(); draw(); wire(); };
     $("s-mus").onclick = () => { SET.mus = SET.mus ? 0 : 1; saveSet(); draw(); wire(); };
-    $("s-q").onclick = () => { quality = (quality + 1) % 3; qLock = true; applyQuality(); draw(); wire(); };
+    $("s-q").onclick = () => { const was = quality; quality = (quality + 1) % 3; qLock = true; if ((was === 0) !== (quality === 0)) { quality = was; setFast(was !== 0); } else applyQuality(); draw(); wire(); };
+    $("s-fast").onclick = () => { setFast(quality !== 0); draw(); wire(); };
     $("s-x").onclick = () => { hideDlg(); if (back) back(); };
   };
   wire();
@@ -1017,12 +1191,19 @@ function openPause() {
     ${role === "host" ? `<button class="b" id="p-inv"><span>📨</span><span class="t">${L("Ссылка другу ещё раз")}</span></button>` : ""}
     ${G.pl.length > 1 && role === "local" && G.mode !== "vs" ? "" : ""}
     ${G.done >= 0 && G.mode !== "vs" && role !== "guest" ? `<button class="b" id="p-next"><span>⛵</span><span class="t">${L("Новая бухта")}</span></button>` : ""}
+    ${archOk() ? `<button class="b" id="p-arch"><span>🗺</span><span class="t">${L("Архипелаг")}<small>${L("Острова, сундуки, торговые пути")}</small></span></button>` : ""}
+    <div class="b2"><button class="b" id="p-day">📅 ${L("Задания")} ${daily().tasks.filter((t) => t.got >= t.need).length}/3</button><button class="b" id="p-book">📖 ${L("Улов")} ${RARE.filter((r) => (prof.book || {})[r.id]).length}/${RARE.length}</button></div>
     <div class="b2"><button class="b" id="p-help">❓ ${L("Как играть")}</button><button class="b" id="p-set">⚙️ ${L("Настройки")}</button></div>
+    <button class="b ${quality === 0 ? "on" : ""}" id="p-fast"><span>⚡</span><span class="t">${L("Быстрая графика")}: ${quality === 0 ? L("вкл") : L("выкл")}<small>${L("Для слабых телефонов: без теней, проще картинка")}</small></span></button>
     <button class="b" id="p-menu"><span>🏠</span><span class="t">${L("В меню")}<small>${L("Прогресс сохранится")}</small></span></button>`);
   $("p-go").onclick = () => hideDlg();
   if ($("p-inv")) $("p-inv").onclick = () => sendInvite();
   if ($("p-next")) $("p-next").onclick = () => bayDone();
   $("p-help").onclick = () => showHelp(openPause);
+  if ($("p-arch")) $("p-arch").onclick = () => archMenu(openPause);
+  $("p-day").onclick = () => dailyMenu(openPause);
+  $("p-book").onclick = () => bookMenu(openPause);
+  $("p-fast").onclick = () => { setFast(quality !== 0); openPause(); };
   $("p-set").onclick = () => settings(openPause);
   $("p-menu").onclick = () => { hideDlg(); toMenu(); };
 }
@@ -1106,7 +1287,7 @@ function loop(now) {
     if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
     const ce = 1 - Math.exp(-dt * 3.6); cam.x += (tx - cam.x) * ce; cam.z += (tz - cam.z) * ce;
     cam.dist += (camDist() * (cam.zk || 1) + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
-    hudT += dt; if (hudT > 0.1) { hudT = 0; updAuto(0.1); updHud(); updHint(); updHire(); netWatch(); }
+    hudT += dt; if (hudT > 0.1) { hudT = 0; updAuto(0.1); updHud(); updHint(); updHire(); netWatch(); dailyPoll(); }
     const nd = role === "guest" ? gtm : G.pl[me];
     if (nd.noDest != null) { noDest(nd.noDest); nd.noDest = null; }
     saveT += dt; if (saveT > 5) { saveT = 0; save(false); }
@@ -1136,6 +1317,9 @@ function loop(now) {
     if (Math.random() < 0.02 * sea) play(Math.random() < 0.5 ? "gull1" : "gull2", { vol: 0.18 + Math.random() * 0.15 });
     if (Math.random() < 0.03 * sea) play(Math.random() < 0.5 ? "wave1" : "wave2", { vol: 0.15 + sea * 0.2 });
   }
+  // быстрая графика: картинку рисуем не чаще 30 раз в секунду (игра считается как обычно)
+  if (quality === 0 && !loop.forced && now - (loop.lastR || 0) < 31) return;
+  loop.lastR = now;
   renderer.render(scene, camera);
   if (started) {
     fpsAcc += rdt; fpsN++; fpsCheck += rdt;

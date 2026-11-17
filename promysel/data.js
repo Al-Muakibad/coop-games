@@ -422,3 +422,58 @@ export function recText(e) { return e.rec ? e.rec.in.map((i) => ITEMS[IT[i]].n).
 
 // порядок мест в сохранениях версии до «Хижины» (для переноса старых сохранений по названиям мест)
 export const IDS_V2 = {"b0": ["spot1", "artel", "stall_fish", "fisher0", "stall_fillet", "table1", "runner1", "bag", "boots", "net", "su_table1", "fisher1", "stall_salt", "salt", "su_salt", "feed_salt", "runner_salt", "board", "stall_smoked", "smoke", "wood", "su_smoke", "su_wood", "woodman", "feed_smoke", "runner3", "cashier", "table2", "su_table2", "fisher2", "runner2", "stall_soup", "kettle", "su_kettle", "fisher_soup", "woodman2", "runner_soup", "light"], "b1": ["spot1", "artel", "stall_salmon", "fisher0", "stall_steak", "steak", "runner1", "bag", "boots", "net", "su_steak", "fisher1", "stall_caviar", "caviar", "su_caviar", "fisher2", "runner2", "board", "pier", "spot2", "fisher3", "dock", "cannery", "su_cannery", "feed_can", "loader", "cashier", "pack", "su_pack", "packer", "packer2", "loader2", "light"], "b2": ["spot1", "artel", "stall_crab", "fisher0", "stall_crabc", "boil", "runner1", "bag", "boots", "net", "su_boil", "fisher1", "stall_mussel", "farm", "su_farm", "musselman", "board", "dock", "icehouse", "icehole", "su_icehouse", "fisher2", "iceman", "loader", "cashier", "stall_platter", "bar", "su_bar", "runner_bar", "mussel2", "runner_plat", "light"], "b3": ["spot1", "artel", "stall_cod", "fisher0", "stall_stock", "dryer", "runner1", "bag", "boots", "net", "su_dryer", "fisher1", "stall_sea", "plant", "planter", "su_plant", "board", "stall_pie", "bakery", "su_bakery", "feed_bake", "runner_pie", "dock", "render", "su_render", "fisher2", "loader", "cashier", "stall_liver", "liverhouse", "su_liver", "fisher3", "runner_liver", "light"], "vs": ["spot1", "stall_fish", "fisher0", "stall_fillet", "table1", "bag", "boots", "net", "runner1", "su_table1", "fisher1", "stall_smoked", "smoke", "wood", "su_smoke", "woodman", "feed_smoke", "runner3", "stall_caviar", "caviar", "pier", "spot2", "fisher3", "runner5", "cashier", "light", "artel", "spot1@1", "stall_fish@1", "fisher0@1", "stall_fillet@1", "table1@1", "bag@1", "boots@1", "net@1", "runner1@1", "su_table1@1", "fisher1@1", "stall_smoked@1", "smoke@1", "wood@1", "su_smoke@1", "woodman@1", "feed_smoke@1", "runner3@1", "stall_caviar@1", "caviar@1", "pier@1", "spot2@1", "fisher3@1", "runner5@1", "cashier@1", "light@1", "artel@1"]};
+
+/* ---------- архипелаг (раунд 7) ---------- */
+// острова на карте архипелага (координаты в процентах карты) и торговые пути: что один остров везёт другому
+export const ISLES = [{ x: 22, y: 70 }, { x: 30, y: 22 }, { x: 74, y: 30 }, { x: 72, y: 76 }];
+export const ROUTES = [
+  { a: 0, b: 1, it: "salted", n: "Солёная сельдь для фьорда", cost: 2500 },
+  { a: 1, b: 2, it: "can", n: "Консервы для крабовых лодок", cost: 5000 },
+  { a: 2, b: 3, it: "mussel", n: "Мидии для пирогов гавани", cost: 9000 },
+  { a: 3, b: 0, it: "seaweed", n: "Ламинария в уху Тихой бухты", cost: 9000 },
+  { a: 0, b: 2, it: "smoked", n: "Копчёности на мыс", cost: 6000 },
+  { a: 1, b: 3, it: "caviar", n: "Икра на ярмарку", cost: 12000 },
+];
+export const ARCH = { cap: 7200, routeK: 0.25, routeT: 90, srcBonus: 0.1 };     // сундук острова — до 2 часов дохода; путь: 25% дохода острова-поставщика
+
+/* ---------- хижина: наряды, пёс, санки и лодка (за деньги в игре, переносятся) ---------- */
+export const OUTFITS = [
+  { n: "Рабочая куртка", cost: 0 },          // свой цвет игрока
+  { n: "Штормовка", coat: "#f2c230", hat: "#2f3b4a", cost: 600 },
+  { n: "Тельняшка", coat: "#e8eef5", hat: "#1f4d8f", cost: 1500 },
+  { n: "Шуба", coat: "#8a5a3a", hat: "#e9dcc6", cost: 3500 },
+  { n: "Капитанский китель", coat: "#1d2c4f", hat: "#f2f2f2", cost: 7000 },
+  { n: "Праздничный кафтан", coat: "#c8323c", hat: "#f4c542", cost: 12000 },
+];
+export const PET = { n: "Пёс-помощник", d: "Сам бегает к прилавкам и приносит выручку", cost: 2500, r: 9, cd: 3.5, speed: 6.2 };
+export const RIDES = [
+  null,
+  { n: "Санки", d: "Ходишь быстрее", sp: 0.1, cost: 1800 },
+  { n: "Лёгкая лодка", d: "Ещё быстрее, а по мелководью — как по суше", sp: 0.2, cost: 8000 },
+];
+
+/* ---------- книга улова: редкие рыбы и находки ---------- */
+// bay — где попадается (-1 — везде), p — шанс на один улов игрока, v — сколько стоит (умножается на цены бухты)
+export const RARE = [
+  { id: "gold", n: "Золотая сельдь", d: "Блестит, как монета", ic: "🐟", f: "sepia(1) saturate(4) hue-rotate(5deg)", bay: 0, p: 1 / 500, v: 300 },
+  { id: "bottle", n: "Бутылка с запиской", d: "«Ищи там, где спит маяк»", ic: "🍾", bay: 0, p: 1 / 800, v: 150, tr: 1 },
+  { id: "king", n: "Королевский лосось", d: "Вдвое больше обычного", ic: "🐠", f: "hue-rotate(-30deg) saturate(1.6)", bay: 1, p: 1 / 500, v: 600 },
+  { id: "ice", n: "Ледяной кристалл", d: "Не тает даже в руке", ic: "💎", bay: 1, p: 1 / 800, v: 400, tr: 1 },
+  { id: "blue", n: "Голубой краб", d: "Один на две тысячи", ic: "🦀", f: "hue-rotate(190deg) saturate(1.5)", bay: 2, p: 1 / 500, v: 900 },
+  { id: "pearl", n: "Жемчужина", d: "Нашлась в мидии", ic: "🦪", bay: 2, p: 1 / 800, v: 1200, tr: 1 },
+  { id: "giant", n: "Гигантская треска", d: "Еле влезла в короб", ic: "🐡", f: "hue-rotate(60deg)", bay: 3, p: 1 / 500, v: 1200 },
+  { id: "anchor", n: "Старинный якорь", d: "С затонувшего брига", ic: "⚓", bay: 3, p: 1 / 800, v: 2000, tr: 1 },
+  { id: "moon", n: "Рыба-луна", d: "Говорят, приносит удачу", ic: "🌕", bay: -1, p: 1 / 5000, v: 5000 },
+];
+
+/* ---------- задания дня ---------- */
+export const DAILY = [
+  { k: "served", n: "Обслужи покупателей", need: [120, 200, 300] },
+  { k: "orders", n: "Выполни заказы с доски", need: [3, 5, 7] },
+  { k: "catch", n: "Поймай рыбы сам", need: [80, 150, 250] },
+  { k: "buy", n: "Открой новые места", need: [5, 8, 12] },
+  { k: "earn", n: "Заработай", need: [20000, 50000, 120000] },
+  { k: "rare", n: "Поймай редкую рыбу", need: [1, 1, 2] },
+  { k: "cash", n: "Собери выручку с прилавков", need: [40, 70, 110] },
+];
+export const DAILY_RW = { task: 3, streak: [4, 5, 6, 8, 10, 12, 15] };     // якоря за задание и за все три (по дню серии)

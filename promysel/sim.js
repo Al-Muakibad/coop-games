@@ -2,7 +2,7 @@
 // Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layoutOf(G).
 // Действия игроков — «операции» (op): поймать, положить, взять, заплатить, собрать выручку. Гость применяет их у себя сразу
 // и отправляет хозяину; хозяин проверяет и применяет у себя (см. coop.js).
-import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z, EVENTS, DECO_MAX, IDS_V2 } from "./data.js";
+import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z, EVENTS, DECO_MAX, IDS_V2, OUTFITS, PET, RIDES, RARE, ROUTES, ARCH, BAYS } from "./data.js";
 
 const TAU = Math.PI * 2;
 const hyp = Math.hypot;
@@ -148,8 +148,125 @@ export const pk = (G, id) => (G.mode === "vs" ? 0 : (G.perks && G.perks[id]) || 
 export const mt = (G, id) => (G.mode === "vs" ? 0 : (G.meta && G.meta[id]) || 0);
 
 // что переносится в следующую бухту: всё снаряжение игроков и вся артель — целиком
+// цена косметики: -1 — нельзя (уже есть / нет такого), 0 — уже куплено (наряд можно надеть)
+export function cosCost(G, pi, u) {
+  const g = gearOf(G, pi);
+  if (u === "dog") return g.dog ? -1 : PET.cost;
+  if (u === "ride") { const n = RIDES[(g.ride || 0) + 1]; return n ? n.cost : -1; }
+  const k = +String(u).slice(1), o = OUTFITS[k]; if (!o) return -1;
+  if (k === 0 || ((g.ow || 0) & (1 << k))) return (g.out || 0) === k ? -1 : 0;
+  return o.cost;
+}
+// редкий улов: только у хозяина мира (у гостя бросок не делаем — придёт событием)
+function rollRare(G, a, e) {
+  if (G.gst || G.mode === "vs" || (G.v || 1) < 2) return;
+  const bay = (G.bay || 0) % 4, k = a[0] === "p" ? 1 : 0.2;
+  for (const r of RARE) {
+    if (r.bay !== -1 && r.bay !== bay) continue;
+    if (rnd(G) < r.p * k) { const v = Math.round(r.v * priceMul(G)); G.money[0] += v; G.earned[0] += v; G.nrare = (G.nrare || 0) + 1; G.ev.push({ t: "rare", id: r.id, a, v, x: e.zin.x, z: e.zin.z }); return; }
+  }
+}
+// пёс-помощник: бегает к ближайшей кучке выручки и приносит её хозяину
+function stepDogs(G, dt) {
+  const L = layoutOf(G);
+  for (let pi = 0; pi < G.pl.length; pi++) {
+    const p = G.pl[pi], g = gearOf(G, pi);
+    if (!g.dog) { p.dg = null; continue; }
+    const d = p.dg || (p.dg = { x: p.x + 0.8, z: p.z + 0.4, s: 0, t: 0, e: -1, c: 0, dir: 0, mv: 0 });
+    const go = (tx, tz, sp) => { const dx = tx - d.x, dz = tz - d.z, l = hyp(dx, dz); if (l < 0.05) { d.mv = 0; return l; } const m = Math.min(l, sp * dt); d.x += dx / l * m; d.z += dz / l * m; d.dir = Math.atan2(dx, dz); d.mv = 1; return l - m; };
+    d.t = Math.max(0, d.t - dt);
+    if (d.s === 0) {      // рядом с хозяином
+      const ox = p.x + Math.sin(p.dir + 2.2) * 0.9, oz = p.z + Math.cos(p.dir + 2.2) * 0.9;
+      if (hyp(ox - d.x, oz - d.z) > 0.4) go(ox, oz, Math.max(PET.speed * 0.8, speedOf(G, pi) * 1.1)); else d.mv = 0;
+      if (hyp(p.x - d.x, p.z - d.z) > 12) { d.x = ox; d.z = oz; }
+      if (d.t <= 0) {
+        let best = -1, bc = 4;
+        for (const e of L.E) { if (!e.zcash || (G.mode === "vs" && e.team !== p.team) || !G.e[e.i].o) continue; const c = G.e[e.i].cash || 0; if (c < bc) continue; if (hyp(e.zcash.x - p.x, e.zcash.z - p.z) > PET.r) continue; bc = c; best = e.i; }
+        if (best >= 0) { d.s = 1; d.e = best; } else d.t = 1;
+      }
+    } else if (d.s === 1) {      // бежит к кучке
+      const z = L.E[d.e].zcash;
+      if (go(z.x, z.z, PET.speed) < 0.3) { const s = G.e[d.e]; d.c = s.cash || 0; s.cash = 0; d.s = 2; if (d.c > 0) G.ev.push({ t: "dogpick", a: "p" + pi, e: d.e, amt: d.c }); }
+    } else {      // несёт хозяину
+      if (go(p.x, p.z, PET.speed) < 0.7) { if (d.c > 0) { G.money[p.team] += d.c; p.nk = (p.nk || 0) + 1; G.ev.push({ t: "cash", a: "p" + pi, e: d.e, amt: d.c, dog: 1 }); } d.c = 0; d.s = 0; d.e = -1; d.t = PET.cd; }
+    }
+  }
+}
+
+/* ---------- архипелаг: старые острова торгуют сами, торговые пути возят товар ---------- */
+// доход острова без игроков (в секунду) — как «пока тебя не было»
+export function isleRate(G) {
+  const helpers = G.hp.length; if (!helpers || !(G.rate > 0)) return 0;
+  const ai = autoInfo(G, 0);
+  const k = Math.min(0.6, 0.06 + helpers * 0.02 + (ai.n ? 0.35 * ai.ok / ai.n : 0) + (G.safe ? 0.08 : 0)) * (1 + 0.25 * mt(G, "m_off"));
+  return G.rate * k;
+}
+export function archOf(G) { return G.arch || (G.arch = { ac: 0, isl: {}, rt: [], top: G.bay || 0 }); }
+const routeOn = (A, k) => A.rt.some((r) => r.k === k);
+// доход острова b с учётом путей (свой остров поставщика +10%, путь даёт острову-получателю долю дохода поставщика)
+function rateOfIsle(G, A, b) {
+  const rec = A.isl[b]; const base = b === G.bay ? isleRate(G) : rec ? rec.r : 0;
+  let r = base; for (const t of A.rt) { const R = ROUTES[t.k]; if (R.a === b) r += base * ARCH.srcBonus; }
+  return r;
+}
+export function routeIncome(G, k) { const A = archOf(G), R = ROUTES[k]; return rateOfIsle(G, A, R.a) * ARCH.routeK; }
+// сколько накопилось в сундуке острова b
+export function chestOf(G, b) {
+  const A = archOf(G), rec = A.isl[b]; if (!rec || b === G.bay) return 0;
+  let r = rateOfIsle(G, A, b); for (const t of A.rt) if (ROUTES[t.k].b === b) r += routeIncome(G, t.k);
+  return Math.min(r * ARCH.cap, (rec.ch || 0) + r * Math.max(0, A.ac - rec.left));
+}
+export function chestCap(G, b) { const A = archOf(G); let r = rateOfIsle(G, A, b); for (const t of A.rt) if (ROUTES[t.k].b === b) r += routeIncome(G, t.k); return r * ARCH.cap; }
+// пока играешь: часы архипелага идут, шхуны по путям в эту бухту приходят каждые 90 с
+function stepArch(G, dt) {
+  const A = G.arch; if (!A) return;
+  A.ac += dt;
+  for (const t of A.rt) {
+    const R = ROUTES[t.k];
+    if (R.b !== G.bay) continue;
+    t.t = (t.t || 0) + dt;
+    if (t.t >= ARCH.routeT) { t.t = 0; const v = Math.round(routeIncome(G, t.k) * ARCH.routeT); if (v > 0) { G.money[0] += v; G.earned[0] += v; G.ev.push({ t: "route", k: t.k, v, it: IT[R.it] }); } }
+  }
+}
+// путь можно проложить, когда оба острова открыты, а на острове-поставщике маяк уже горит
+export function isleKnown(G, b) { const A = archOf(G); return b === G.bay || !!A.isl[b]; }
+export function isleLit(G, b) { const A = archOf(G); return b === G.bay ? G.done >= 0 : !!(A.isl[b] && A.isl[b].lit); }
+export function canRoute(G, k) { const A = archOf(G), R = ROUTES[k]; if (!R || routeOn(A, k) || G.mode === "vs") return false; return isleKnown(G, R.a) && isleKnown(G, R.b) && isleLit(G, R.a); }
+export const routeCost = (G, k) => Math.round(ROUTES[k].cost * costMul(G));
+export function buyRoute(G, k) {
+  if (!canRoute(G, k)) return false; const c = routeCost(G, k); if (G.money[0] < c) return false;
+  G.money[0] -= c; G.spent[0] += c; archOf(G).rt.push({ k, t: 0 }); G.ev.push({ t: "routeon", k }); return true;
+}
+// снимок острова, который покидаем (без покупателей — им всё равно уходить)
+function isleRec(G) {
+  const o = JSON.parse(serialize(G)); delete o.arch; o.cu = []; o.ev = [];
+  return { s: o, r: isleRate(G), left: G.arch ? G.arch.ac : 0, ch: 0, lap: G.lap || 0, lit: G.done >= 0 ? 1 : 0, m: Math.floor(G.money[0]) };
+}
+// плыть на остров b: новый (если ещё не был) или вернуться к старому. Снаряжение, знаки, артель — с собой.
+// Казна у каждого острова своя: деньги острова и его сундук ждут тебя там.
+export function sailTo(G, b, o) {
+  o = o || {};
+  const A = archOf(G); A.isl[G.bay] = isleRec(G); A.top = Math.max(A.top || 0, b, G.bay);
+  const cr = carryOf(G); const rec = A.isl[b];
+  let N;
+  if (rec && (o.lap == null || o.lap === rec.lap)) {
+    N = deserialize(JSON.parse(JSON.stringify(rec.s)));
+    const ch = Math.floor(chestOf(G, b)); N.money[0] += ch; N.earned[0] += ch; N.chestGot = ch;
+    for (let i = 0; i < N.pl.length && i < cr.gear.length; i++) N.pl[i].g = Object.assign({}, cr.gear[i]);
+    for (const u of ["crew", "crewspd"]) N.upg[0][u] = Math.max(N.upg[0][u] || 0, cr.upg[u] || 0);
+    N.perks = Object.assign({}, G.perks); N.meta = Object.assign({}, G.meta || {}); N.diff = G.diff;
+    N.rateBase = N.earned[0]; N.rateAcc = 0;
+  } else {
+    N = newGame({ mode: G.mode, seed: o.seed || ((G.rs >>> 0) ^ 0x5bd1e995) + b, bay: b, lap: o.lap || 0, perks: G.perks, meta: G.meta, upg: cr.upg, gear: cr.gear, diff: G.diff });
+    if (rec) { const ch = Math.floor(chestOf(G, b)) + (rec.m || 0); N.money[0] += ch; N.chestGot = ch; }      // новый круг на старом месте: казна старого острова переходит
+  }
+  delete A.isl[b];
+  for (const t of A.rt) t.t = 0;
+  N.arch = A;
+  return N;
+}
 // потолок уровня: в каждой следующей бухте открываются новые уровни (в первой — как раньше)
-export const upgMax = (G, u) => UPG[u].max + ((G.v || 1) >= 2 && G.mode !== "vs" ? (G.bay || 0) * (UPG[u].ext || 0) : 0);
+export const upgMax = (G, u) => UPG[u].max + ((G.v || 1) >= 2 && G.mode !== "vs" ? Math.max(G.bay || 0, (G.arch && G.arch.top) || 0) * (UPG[u].ext || 0) : 0);
 export function carryOf(G) { return { upg: { crew: G.upg[0].crew || 0, crewspd: G.upg[0].crewspd || 0 }, gear: G.pl.map((p) => Object.assign({}, p.g || {})) }; }
 /* ---------- запросы ---------- */
 export const teamOf = (G, pi) => (G.mode === "vs" ? pi : 0);
@@ -166,7 +283,7 @@ const gearMul = (G) => costMul(G);      // улучшения стоят оди�
 // снаряжение у каждого игрока своё (p.g): рюкзак, унты, сеть, длинные руки; покупается в «Своей хижине»
 export const gearOf = (G, pi) => { const p = G.pl[pi]; return (p && p.g) || (p && p.g === undefined && (p.g = { bag: 0, boots: 0, net: 0, reach: 0 })) || { bag: 0, boots: 0, net: 0, reach: 0 }; };
 export function capOf(G, pi) { return UPG.bag.v(gearOf(G, pi).bag || 0) + 2 * pk(G, "p_cap") + mt(G, "m_bag"); }
-export function speedOf(G, pi) { return UPG.boots.v(gearOf(G, pi).boots || 0) * (1 + 0.08 * pk(G, "p_spd")) * (1 + 0.04 * mt(G, "m_boots")); }
+export function speedOf(G, pi) { const g = gearOf(G, pi); return UPG.boots.v(g.boots || 0) * (1 + 0.08 * pk(G, "p_spd")) * (1 + 0.04 * mt(G, "m_boots")) * (1 + ((RIDES[g.ride || 0] || {}).sp || 0)); }
 export function catchOf(G, pi) { return UPG.net.v(gearOf(G, pi).net || 0) / (1 + 0.08 * mt(G, "m_net")); }
 export function gearCost(G, pi, u) { return upgCost(u, gearOf(G, pi)[u] || 0, gearMul(G)); }
 export function helperSpeed(G, team) { return UPG.crewspd.v(G.upg[team].crewspd) * (1 + 0.15 * pk(G, "h_spd")) * (1 + 0.06 * mt(G, "m_crew")); }
@@ -376,6 +493,7 @@ export function movePlayer(G, pi, jx, jz, dt) {
   if (m < 0.05) { p.mv = 0; return; }
   let s = speedOf(G, pi) * Math.min(1, m) * dt;
   if (pk(G, "p_wade") && p.z < shoreZ(layoutOf(G), p.x) + 2.5) s *= 1 + 0.25 * pk(G, "p_wade");
+  if ((gearOf(G, pi).ride || 0) >= 2 && p.z < shoreZ(layoutOf(G), p.x) + 1.5) s *= 1.15;     // лёгкая лодка: на мелководье ещё быстрее
   moveAgent(G, p, jx / m * s, jz / m * s, "p");
   p.dir = Math.atan2(jx, jz); p.mv = Math.min(1, m);
 }
@@ -423,6 +541,8 @@ export function applyOp(G, a, op) {
     case "c": {
       if (e.k !== "spot" || !s.o || s.f <= 0 || ag.st.length >= capFor(G, a)) return false;
       s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item }); made(G, e.item);
+      if (a[0] === "p") ag.nc = (ag.nc || 0) + 1;
+      rollRare(G, a, e);
       // ход лосося: каждый улов — двойной
       if (evOn(G, "run") && s.f > 0 && ag.st.length < capFor(G, a)) { s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item, dbl: 1 }); }
       if (a[0] === "p" && pk(G, "p_dbl") && s.f > 0 && ag.st.length < capFor(G, a) && rnd(G) < 0.2 * pk(G, "p_dbl")) { s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item, dbl: 1 }); }
@@ -484,7 +604,15 @@ export function applyOp(G, a, op) {
     }
     case "y": {      // своя хижина: op = ["y", хижина, "bag" | "boots" | "net" | "reach"] — только своя
       const pi = +a.slice(1); if (e.k !== "hut" || a[0] !== "p" || e.slot !== pi) return false;
-      const u = op[2], g = gearOf(G, pi); if (!["bag", "boots", "net", "reach"].includes(u) || (g[u] || 0) >= upgMax(G, u)) return false;
+      const u = op[2], g = gearOf(G, pi);
+      if (u === "dog" || u === "ride" || /^o\d+$/.test(u)) {      // наряды, пёс, санки/лодка — за деньги в игре, навсегда
+        const c = cosCost(G, pi, u); if (c < 0) return false;
+        if (c === 0 && u[0] === "o") { g.out = +u.slice(1); G.ev.push({ t: "cos", a, u, team }); return true; }      // уже куплен — надеть
+        if (G.money[team] < c) return false;
+        G.money[team] -= c; G.spent[team] += c;
+        if (u === "dog") g.dog = 1; else if (u === "ride") g.ride = (g.ride || 0) + 1; else { const k = +u.slice(1); g.ow = (g.ow || 0) | (1 << k); g.out = k; }
+        G.ev.push({ t: "cos", a, u, team, buy: 1 }); return true;
+      } if (!["bag", "boots", "net", "reach"].includes(u) || (g[u] || 0) >= upgMax(G, u)) return false;
       const cost = gearCost(G, pi, u); if (G.money[team] < cost) return false;
       G.money[team] -= cost; G.spent[team] += cost; g[u] = (g[u] || 0) + 1;
       G.ev.push({ t: "upg", e: ei, u, lv: g[u], team, a }); return true;
@@ -496,7 +624,7 @@ export function applyOp(G, a, op) {
     }
     case "k": {
       const amt = s.cash || 0; if (amt <= 0) return false;
-      s.cash = 0; G.money[team] += amt;
+      s.cash = 0; G.money[team] += amt; if (a[0] === "p") ag.nk = (ag.nk || 0) + 1;
       G.ev.push({ t: "cash", a, e: ei, amt }); return true;
     }
   }
@@ -644,7 +772,8 @@ export function step(G, dt, opt) {
   // сколько чего реально делается (штук в секунду, сглажено) — по этому считаются заказы
   G.prT = (G.prT || 0) + dt;
   if (G.prT >= 10) { G.pr = G.pr || []; G.prc = G.prc || []; for (let i = 0; i < NIT; i++) G.pr[i] = (G.pr[i] || 0) * 0.7 + ((G.prc[i] || 0) / G.prT) * 0.3; G.prc = []; G.prT = 0; }
-  if (G.mode !== "vs") { stepContract(G, dt); stepBig(G); stepMgr(G, dt); stepSafe(G, dt); stepIdle(G, dt); }
+  if (G.mode !== "vs") { stepContract(G, dt); stepBig(G); stepMgr(G, dt); stepSafe(G, dt); stepIdle(G, dt); stepArch(G, dt); }
+  stepDogs(G, dt);
   stepEvent(G, dt); stepAds(G, dt);
   // средний доход (для дохода, пока игры нет)
   G.rateAcc += dt;
@@ -1088,7 +1217,7 @@ export function deserialize(s) {
   try {
     const G = typeof s === "string" ? JSON.parse(s) : s;
     if (!G || !G.e || !G.pl) return null;
-    G.ev = [];
+    G.ev = []; delete G.gst;
     if (!G.v) G.v = 1;
     if (!G.perks) G.perks = {}; if (!G.meta) G.meta = {};
     if (G.con && G.con.ac == null) G.con.ac = 1;     // заказ из сохранения до «принять у доски» — уже идёт
