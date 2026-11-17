@@ -542,11 +542,11 @@ export class View {
       const carry = me.st;
       if (e.k === "spot") {
         this.drawSchool(e, s.f, dt, G, ctx);
-        if (mine) ring(e.zin, BLUE, carry.length < capOf(G, me.team), e.def.auto ? 1 : 1 + tideR(G) / e.zin.r);
+        if (mine) ring(e.zin, BLUE, carry.length < capOf(G, ctx.me), e.def.auto ? 1 : 1 + tideR(G) / e.zin.r);
       } else if (e.k === "proc") {
         for (let k = 0; k < e.rec.in.length; k++) this.drawPile(this.inBase(e, k), e.rec.in[k], s.ib[k], "e" + e.i + "i" + k, 3, 2);
         this.drawPile(this.pileSpot(e, "out"), e.rec.out, s.ob, "e" + e.i + "o", 3, 2);
-        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team)); this.label("i" + e.i, e.zin, e.rec.in.map((i) => ITEMS[i].id), "in", tr("СЮДА")); this.label("o" + e.i, e.zout, [ITEMS[e.rec.out].id], "out", tr("ЗАБРАТЬ")); }
+        if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, ctx.me)); this.label("i" + e.i, e.zin, e.rec.in.map((i) => ITEMS[i].id), "in", tr("СЮДА")); this.label("o" + e.i, e.zout, [ITEMS[e.rec.out].id], "out", tr("ЗАБРАТЬ")); }
         // работает сам — значок ⚙ над цехом
         if (this.autoSet && this.autoSet.has(e.i) && this.near(e, ctx.cam, 12)) this.bubble(e.x, 3.2 + Math.sin(t * 2 + e.i) * 0.06, e.z, BUB.gear, 0.55);
         // работа: подпрыгивает, дымит
@@ -555,7 +555,7 @@ export class View {
       } else if (e.k === "gen") {
         if (this.autoSet && this.autoSet.has(e.i) && this.near(e, ctx.cam, 12)) this.bubble(e.x, 2.8 + Math.sin(t * 2 + e.i) * 0.06, e.z, BUB.gear, 0.55);
         this.drawPile(this.pileSpot(e, "out"), e.item, s.ob, "e" + e.i + "o", 3, 2);
-        if (mine) { ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, me.team)); this.label("o" + e.i, e.zout, [ITEMS[e.item].id], "out", tr("ЗАБРАТЬ")); }
+        if (mine) { ring(e.zout, YEL, s.ob > 0 && carry.length < capOf(G, ctx.me)); this.label("o" + e.i, e.zout, [ITEMS[e.item].id], "out", tr("ЗАБРАТЬ")); }
       } else if (e.k === "stall") {
         this.drawPile(this.pileSpot(e, "shelf"), e.item, s.sh, "e" + e.i + "s", 4, 2);
         this.drawCash(e, s.cash, G);
@@ -568,6 +568,8 @@ export class View {
         const sh = this.world.ents[e.i].grp.userData.ship;
         if (sh && sh.visible) { sh.updateMatrixWorld(); for (let i = 0; i < Math.min(s.load.length, 24); i++) { const it = s.load[i]; P.set(((i % 3) - 1) * 0.5, 0.66 + Math.floor(i / 9) * 0.3, -0.3 - (Math.floor(i / 3) % 3) * 0.45); P.applyMatrix4(sh.matrixWorld); EU.set(0, Math.PI / 2, 0); Q.setFromEuler(EU); M4.compose(P, Q, S1); this.items[it].push(M4); } }
         if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); this.label("i" + e.i, e.zin, e.acc.map((i) => ITEMS[i].id), "in", tr("СЮДА")); }
+      } else if (e.k === "hut") {
+        if (e.slot === ctx.me && (G.pl.length > 1 || e.slot === 0) && (G.mode !== "vs" || e.team === myTeam)) { ring(e.zin, BLUE, true, 1); this.label("i" + e.i, e.zin, ["bag"], "hire", tr("ХИЖИНА")); }
       } else if (e.k === "ads") {
         if (mine) { ring(e.zin, YEL, true, 1); this.label("i" + e.i, e.zin, ["cash"], "hire", tr("РЕКЛАМА")); }
       } else if (e.k === "hire") {

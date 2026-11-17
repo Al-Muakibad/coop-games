@@ -341,6 +341,11 @@ export const BUILD = {
   adstand: () => { const b = new Build({ round: true, ao: true }); b.cyl(0.42, 0.46, 0.18, 12, PAL.stone, { p: [0, 0.09, 0] }); b.cyl(0.36, 0.36, 1.7, 12, "#e9dcc4", { p: [0, 1.0, 0] });
     for (let i = 0; i < 4; i++) b.box(0.42, 0.55, 0.03, ["#c9433a", "#3aa0c8", "#f2c14e", "#7ed957"][i], { p: [Math.sin(i * Math.PI / 2) * 0.37, 1.15, Math.cos(i * Math.PI / 2) * 0.37], r: [0, i * Math.PI / 2, 0], jit: 0.02 });
     b.cone(0.46, 0.4, 12, "#c9433a", { p: [0, 2.05, 0] }); b.cone(0.4, 0.2, 12, PAL.snow, { p: [0, 2.14, 0], jit: 0.02 }); b.cyl(0.02, 0.02, 0.6, 4, PAL.dark, { p: [0, 2.5, 0] }); b.box(0.32, 0.18, 0.02, "#f2c14e", { p: [0.16, 2.68, 0], jit: 0 }); return b.geo(); },
+  // своя хижина игрока: срубик с крыльцом, на двери — цвет хозяина
+  cabin: (w, d, slot) => { const b = new Build({ round: true, ao: true }); logWall(b, w - 0.35, 1.1, d - 0.4, "#b07a4c"); gable(b, w + 0.15, d + 0.1, 0.75, slot ? "#3a7fa8" : "#c4643a", 1.1);
+    b.box(0.5, 0.8, 0.06, slot ? "#3aa0c8" : "#e0703a", { p: [0.3, 0.4, d / 2 - 0.15] }); b.box(0.36, 0.3, 0.05, "#ffd98a", { p: [-0.45, 0.7, d / 2 - 0.15], jit: 0 });
+    b.box(w * 0.7, 0.08, 0.35, PAL.woodL, { p: [0, 0.04, d / 2 + 0.12] }); b.cyl(0.08, 0.1, 0.5, 6, "#8d96a0", { p: [w / 2 - 0.45, 1.85, -0.15] });
+    b.box(0.5, 0.35, 0.06, "#f2e3c0", { p: [-0.45, 1.25, d / 2 - 0.1] }); return b.geo(); },
   hut: () => { const b = new Build({ round: true, ao: true }); logWall(b, 1.6, 1.2, 1.3, PAL.wood); gable(b, 2.0, 1.6, 0.8, PAL.roofG, 1.2); b.box(0.5, 0.8, 0.05, PAL.wood2, { p: [0, 0.4, 0.68] }); return b.geo(); },
   barrel: () => { const b = new Build({ round: true, ao: true }); b.cyl(0.24, 0.24, 0.55, 9, PAL.wood, { p: [0, 0.27, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.12, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.42, 0] }); b.cyl(0.2, 0.2, 0.06, 9, PAL.snow, { p: [0, 0.56, 0], jit: 0.02 }); return b.geo(); },
   crates: () => { const b = new Build({ round: true, ao: true }); b.box(0.6, 0.5, 0.6, PAL.woodL, { p: [0, 0.25, 0] }); b.box(0.5, 0.42, 0.5, PAL.wood, { p: [0.55, 0.21, 0.1], r: [0, 0.3, 0] }); b.box(0.45, 0.4, 0.45, PAL.woodL, { p: [0.15, 0.7, 0.05], r: [0, -0.2, 0] }); b.box(0.46, 0.08, 0.46, PAL.snow, { p: [0.15, 0.93, 0.05], r: [0, -0.2, 0], jit: 0.02 }); return b.geo(); },

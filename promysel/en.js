@@ -90,7 +90,7 @@ window.I18N && I18N.add({
   "Якоря дают за каждую пройденную бухту. Улучшения действуют во всех забегах «Вместе» и «Одному».": "You get anchors for every bay you finish. Upgrades work in every Together and Solo run.",
   "сначала": "first", "максимум": "maxed", "Сам собирает выручку со всех прилавков": "Collects the takings from every stall", "Помощники несут": "Helpers carry", "Скорость помощников": "Helper speed",
   "даром": "free", "ещё": "need", "Уже работают": "Already working", "Все помощники наняты": "Everyone is hired", "Не хватает денег": "Not enough money", "Найми в артели": "Hire at the Crew house",
-  "Выбери, кого нанять — нажми на карточку": "Choose who to hire — tap a card", "Собери выручку — хватит нанять": "Collect the takings — enough to hire", "Стой в воде — улов сам прыгает в короб": "Stand in the water — the catch jumps into your basket",
+  "Выбери, кого нанять — нажми на карточку": "Choose who to hire — tap a card", "Улучши снаряжение — нажми на карточку": "Upgrade your gear — tap a card", "Собери выручку — хватит нанять": "Collect the takings — enough to hire", "Стой в воде — улов сам прыгает в короб": "Stand in the water — the catch jumps into your basket",
   "Иди на отмель ловить": "Go to the shallows to catch", "постой — и оплата пойдёт": "stand still and payment starts", "к прилавкам": "to the stalls", "Лыжи артели": "Crew skis", "Нанят": "Hired",
   "Ящик краба": "Crab crate", "Солёная сельдь": "Salted herring", "Краб": "Crab", "Варёный краб": "Boiled crab", "Мидии": "Mussels", "Треска": "Cod", "Вяленая треска": "Stockfish", "Морская капуста": "Sea kale", "Рыбий жир": "Fish oil", "Рыбник": "Fish pie",
   "Отмель: сельдь": "Shallows: herring", "Носильщик филе": "Fillet porter", "Рыбак у стола": "Table fisher", "Прилавок: солёная сельдь": "Stall: salted herring", "Засолка": "Salting shed", "Рыбак засолки": "Salting fisher", "Носильщик бочек": "Barrel porter",
@@ -148,3 +148,5 @@ window.I18N && I18N.add({
 });
 window.I18N && I18N.add({ "нанимай помощников и улучшай их": "hire helpers and upgrade them", "Мало покупателей — дай рекламу у рынка": "Few buyers — advertise by the market" });
 window.I18N && I18N.add({ "Выбери рекламу — нажми на карточку": "Pick an ad — tap a card" });
+window.I18N && I18N.add({ "Своя хижина": "Your cabin", "ХИЖИНА": "CABIN", "твоё снаряжение — переходит в каждую бухту": "your gear — it comes with you to every bay", "целиком": "all of it",
+  "Длинные руки": "Long arms", "Выручку собираешь издалека": "Collect takings from further away", "м": "m", "помощников": "helpers" });

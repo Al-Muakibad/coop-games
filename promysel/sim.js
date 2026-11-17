@@ -2,7 +2,7 @@
 // Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layoutOf(G).
 // Действия игроков — «операции» (op): поймать, положить, взять, заплатить, собрать выручку. Гость применяет их у себя сразу
 // и отправляет хозяину; хозяин проверяет и применяет у себя (см. coop.js).
-import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z, EVENTS, DECO_MAX } from "./data.js";
+import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z, EVENTS, DECO_MAX, IDS_V2 } from "./data.js";
 
 const TAU = Math.PI * 2;
 const hyp = Math.hypot;
@@ -48,6 +48,7 @@ export function layout(mode, bay, v) {
       if (e.k === "dock") { e.zin = { x: e.x, z: e.z, r: 1.05 }; e.zcash = { x: e.x + 0.9 * sg, z: e.z + 1.5, r: 0.8 }; e.berth = { x: e.x - 2.7 * sg, z: e.z - 0.8 }; }
       if (e.k === "board") { e.zin = { x: e.x - 0.55, z: e.z + 1.35, r: 1.05 }; e.zcash = { x: e.x + 1.0, z: e.z + 1.3, r: 0.8 }; e.box = [e.x - 1.1, e.z - 0.3, e.x + 1.1, e.z + 0.3]; }
       if (e.k === "goal") e.box = [e.x - 1.1, e.z - 1.1, e.x + 1.1, e.z + 1.1];
+      if (e.k === "hut") { e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; e.zin = { x: e.x, z: fz, r: 1.0 }; e.slot = (def.slot || 0) + (key === "vs" ? team : 0); }
       if (e.k === "hire") { e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; e.zin = { x: e.x, z: fz, r: 1.0 }; }
       if (e.k === "ads") { e.w = 1.0; e.d = 0.7; e.box = [e.x - 0.5, e.z - 0.35, e.x + 0.5, e.z + 0.35]; e.zin = { x: e.x, z: e.z + 0.35 + 0.85, r: 0.85 }; }
       if (e.k === "pier") e.pier = { x: def.x0 * sg, z0: def.z0, z1: def.z1 };
@@ -55,6 +56,14 @@ export function layout(mode, bay, v) {
       byId[team][def.id] = e.i;
       E.push(e);
     }
+  }
+  // цены одинаковы во всех бухтах: n-я постройка и n-й наём стоят как в первой бухте (ничего не дорожает от бухты к бухте)
+  if (key[0] === "b") {
+    const isB = (d) => ["stall", "proc", "gen", "pier", "dock"].includes(d.k) && !d.free && !d.auto, isH = (d) => d.k === "helper";
+    const B1 = BAYMAPS[0].ents, sb = B1.filter(isB).map((d) => d.cost), sh = B1.filter(isH).map((d) => d.cost);
+    const pick = (seq, k) => (k < seq.length ? seq[k] : seq[seq.length - 1] * Math.pow(1.2, k - seq.length + 1));
+    let kb = 0, kh = 0;
+    for (const e of E) { if (isB(e.def)) e.cost = Math.round(pick(sb, kb++)); else if (isH(e.def)) e.cost = Math.round(pick(sh, kh++)); }      // маяк — цель бухты, а не улучшение: его цена своя у каждой бухты
   }
   for (const e of E) {
     // помощники без своего места на карте (их нанимают в артели): ждут работы у прилавков
@@ -72,7 +81,7 @@ export function layout(mode, bay, v) {
   if (MAP.w[1] > x0 + 0.2) fences.push([x0, fz - 0.15, MAP.w[1], fz + 0.15]);
   const div = key === "vs" ? [[-0.15, -13.6, 0.15, fz]] : [];
   const deco = []; for (const d of MAP.deco || []) for (let t = 0; t < teams; t++) { const sg = t ? -1 : 1; deco.push({ m: d.m, x: d.x * sg, z: d.z, box: [d.x * sg - d.w / 2, d.z - d.d / 2, d.x * sg + d.w / 2, d.z + d.d / 2] }); }
-  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start, hire: E.filter((e) => e.k === "hire").map((e) => e.i), ads: E.filter((e) => e.k === "ads").map((e) => e.i) };
+  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start, hire: E.filter((e) => e.k === "hire").map((e) => e.i), ads: E.filter((e) => e.k === "ads").map((e) => e.i), huts: E.filter((e) => e.k === "hut").map((e) => e.i) };
   LAYOUTS[key] = L;
   return L;
 }
@@ -103,17 +112,18 @@ export function newGame(o) {
   };
   if (mode === "vs") G.perks = {};
   for (const t of [0, 1]) for (const u in UPG) G.upg[t][u] = (o.upg && o.upg[u]) || 0;
+  G.ids = L.E.map((e) => e.id + (e.team ? "@1" : ""));
   for (const e of L.E) G.e.push(entState(e));
   const np = mode === "solo" ? 1 : 2;
   for (let i = 0; i < np; i++) {
     const sg = mode === "vs" && i === 1 ? -1 : 1;
     const sx = L.start[0] * sg + (mode === "coop" ? (i ? 1.4 : -0.6) : 0);
-    G.pl.push({ x: sx, z: L.start[1], dir: Math.PI, st: [], team: mode === "vs" ? i : 0, xt: 0, ct: 0, mv: 0, on: 1 });
+    const g0 = o.gear && o.gear[i] ? o.gear[i] : o.gear && o.gear[0] ? o.gear[0] : null;
+    G.pl.push({ x: sx, z: L.start[1], dir: Math.PI, st: [], team: mode === "vs" ? i : 0, xt: 0, ct: 0, mv: 0, on: 1, g: Object.assign({ bag: 0, boots: 0, net: 0, reach: 0 }, g0 || {}) });
   }
   if (mode !== "vs" && v >= 2) {
     // подъёмные и запас в кармане — в деньгах этой бухты
-    const cm = L.MAP.cm || 1;
-    G.money[0] += Math.round((150 * pk(G, "e_start") + 60 * mt(G, "m_start")) * cm * (layoutOf(G).MAP.ck || 1));
+    G.money[0] += Math.round((150 * pk(G, "e_start") + 60 * mt(G, "m_start")) * (L.MAP.pl || 1));
     // готовый цех: первый цех бухты построен (с тем, без чего он не открылся бы) и ускорен
     if (pk(G, "s_pre")) {
       const first = L.E.find((e) => e.k === "proc");
@@ -137,31 +147,38 @@ function entState(e) {
 export const pk = (G, id) => (G.mode === "vs" ? 0 : (G.perks && G.perks[id]) || 0);
 export const mt = (G, id) => (G.mode === "vs" ? 0 : (G.meta && G.meta[id]) || 0);
 
+// что переносится в следующую бухту: всё снаряжение игроков и вся артель — целиком
+// потолок уровня: в каждой следующей бухте открываются новые уровни (в первой — как раньше)
+export const upgMax = (G, u) => UPG[u].max + ((G.v || 1) >= 2 && G.mode !== "vs" ? (G.bay || 0) * (UPG[u].ext || 0) : 0);
+export function carryOf(G) { return { upg: { crew: G.upg[0].crew || 0, crewspd: G.upg[0].crewspd || 0 }, gear: G.pl.map((p) => Object.assign({}, p.g || {})) }; }
 /* ---------- запросы ---------- */
 export const teamOf = (G, pi) => (G.mode === "vs" ? pi : 0);
 export function costMul(G) {
   if (G.mode === "vs") return 0.38;
   const base = DIFF[G.diff].cost * (G.mode === "coop" ? 1.15 : 1);
-  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * base : base * (layoutOf(G).MAP.ck || 1) * Math.pow(1.6, G.lap || 0);
+  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * base : base * Math.pow(1.6, G.lap || 0);
 }
 export function priceMul(G) {
   if (G.mode === "vs") return 2.5;
-  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)) : Math.pow(1.3, G.lap || 0) * (1 + 0.03 * (G.deco || 0));
+  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)) : Math.pow(1.6, G.lap || 0) * (1 + 0.12 * (G.bay || 0)) * (1 + 0.03 * (G.deco || 0));     // второй круг: цены растут ровно как стоимость; дальние бухты платят за товар чуть больше (+12% за бухту), стоимость улучшений не растёт
 }
-const gearMul = (G) => costMul(G) * (layoutOf(G).MAP.cm || 1);
-export function capOf(G, team) { return UPG.bag.v(G.upg[team].bag) + 2 * pk(G, "p_cap") + mt(G, "m_bag"); }
-export function speedOf(G, team) { return UPG.boots.v(G.upg[team].boots) * (1 + 0.08 * pk(G, "p_spd")) * (1 + 0.04 * mt(G, "m_boots")); }
-export function catchOf(G, team) { return UPG.net.v(G.upg[team].net) / (1 + 0.08 * mt(G, "m_net")); }
+const gearMul = (G) => costMul(G);      // улучшения стоят одинаково в любой бухте — зависят только от уровня
+// снаряжение у каждого игрока своё (p.g): рюкзак, унты, сеть, длинные руки; покупается в «Своей хижине»
+export const gearOf = (G, pi) => { const p = G.pl[pi]; return (p && p.g) || (p && p.g === undefined && (p.g = { bag: 0, boots: 0, net: 0, reach: 0 })) || { bag: 0, boots: 0, net: 0, reach: 0 }; };
+export function capOf(G, pi) { return UPG.bag.v(gearOf(G, pi).bag || 0) + 2 * pk(G, "p_cap") + mt(G, "m_bag"); }
+export function speedOf(G, pi) { return UPG.boots.v(gearOf(G, pi).boots || 0) * (1 + 0.08 * pk(G, "p_spd")) * (1 + 0.04 * mt(G, "m_boots")); }
+export function catchOf(G, pi) { return UPG.net.v(gearOf(G, pi).net || 0) / (1 + 0.08 * mt(G, "m_net")); }
+export function gearCost(G, pi, u) { return upgCost(u, gearOf(G, pi)[u] || 0, gearMul(G)); }
 export function helperSpeed(G, team) { return UPG.crewspd.v(G.upg[team].crewspd) * (1 + 0.15 * pk(G, "h_spd")) * (1 + 0.06 * mt(G, "m_crew")); }
 export function helperCap(G, team) { return UPG.crew.v(G.upg[team].crew) + 2 * pk(G, "h_cap") + mt(G, "m_hcap"); }
 export const shelfPlus = (G) => 12 * pk(G, "h_shelf");
-export const cashReach = (G) => 1.5 * pk(G, "p_mag") + 1.0 * mt(G, "m_cash");
+export const cashReach = (G, pi) => 1.5 * pk(G, "p_mag") + 1.0 * mt(G, "m_cash") + (pi == null ? 3 : UPG.reach.v(gearOf(G, pi).reach || 0));
 export function itemPrice(G, it) { const I = ITEMS[it]; return (I.price || I.ship || 0) * priceMul(G); }
 // цена найма помощника и улучшений артели (их покупают в «Артели», не на площадках)
 export function hireCost(G, ei) {
   const L = layoutOf(G), e = L.E[ei];
   if (e.def.id === "fisher0" && (pk(G, "h_free") || mt(G, "m_free"))) return 0;
-  return Math.round((e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
+  return Math.round((e.cost || e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
 }
 export function crewCost(G, team, u) { return upgCost(u, G.upg[team][u], gearMul(G)); }
 // можно ли нанять: зависимости открыты, ещё не нанят
@@ -176,7 +193,7 @@ const cheapK = (G) => ((G.nbuy || 0) < 6 && pk(G, "e_cheap") ? 1 - 0.35 * pk(G, 
 // площадка видна: зависимости открыты, сама ещё не куплена (улучшение — пока не максимум)
 export function padVisible(G, i) {
   const L = layoutOf(G), e = L.E[i], s = G.e[i];
-  if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire" || e.k === "ads") return false;
+  if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire" || e.k === "ads" || e.k === "hut") return false;
   if (e.k === "upg") { if (e.def.u === "crew" || e.def.u === "crewspd") return false; if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
   else if (e.k === "supg") { if (!G.e[e.tg].o || (G.e[e.tg].lv || 0) >= SUPG.max) return false; }
   else if (e.k === "goal" && !bigDone(G)) return false;
@@ -187,9 +204,9 @@ export function padVisible(G, i) {
 }
 export function padCost(G, i) {
   const L = layoutOf(G), e = L.E[i];
-  if (e.k === "upg") return upgCost(e.def.u, G.upg[e.team][e.def.u], gearMul(G));
-  if (e.k === "supg") { const t = L.E[e.tg]; return Math.round(Math.max(25, (t.def.cost || 50) * SUPG.k) * Math.pow(SUPG.mult, G.e[e.tg].lv || 0) * costMul(G) / 5) * 5; }
-  return Math.round((e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
+  if (e.k === "upg") return upgCost(e.def.u, G.upg[e.team][e.def.u], gearMul(G));     // старая карта: площадки снаряжения
+  if (e.k === "supg") { const t = L.E[e.tg]; return Math.round(Math.max(25, (t.cost || t.def.cost || 50) * SUPG.k) * Math.pow(SUPG.mult, G.e[e.tg].lv || 0) * costMul(G) / 5) * 5; }
+  return Math.round((e.cost || e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
 }
 // открыто ли автоматически (место лова на мостках открывается вместе с ними)
 function autoOpen(G) {
@@ -357,7 +374,7 @@ function goTo(G, a, tx, tz, spd, dt, who, near) {
 export function movePlayer(G, pi, jx, jz, dt) {
   const p = G.pl[pi]; const m = hyp(jx, jz);
   if (m < 0.05) { p.mv = 0; return; }
-  let s = speedOf(G, p.team) * Math.min(1, m) * dt;
+  let s = speedOf(G, pi) * Math.min(1, m) * dt;
   if (pk(G, "p_wade") && p.z < shoreZ(layoutOf(G), p.x) + 2.5) s *= 1 + 0.25 * pk(G, "p_wade");
   moveAgent(G, p, jx / m * s, jz / m * s, "p");
   p.dir = Math.atan2(jx, jz); p.mv = Math.min(1, m);
@@ -369,7 +386,7 @@ export function inZone(a, z, pad) { return z && hyp(a.x - z.x, a.z - z.z) < z.r 
    ["m", e, amt] заплатить в площадку       ["k", e] забрать выручку
    a — кто делает: "p0"/"p1" игрок, "h3" помощник. Возвращает true, если получилось. */
 function agentOf(G, a) { return a[0] === "p" ? G.pl[+a.slice(1)] : G.hp[+a.slice(1)]; }
-function capFor(G, a) { const ag = agentOf(G, a); return a[0] === "p" ? capOf(G, ag.team) : helperCap(G, ag.team); }
+function capFor(G, a) { const ag = agentOf(G, a); return a[0] === "p" ? capOf(G, +a.slice(1)) : helperCap(G, ag.team); }
 // есть ли у команды открытое место, куда этот товар можно отнести (иначе его не берём)
 export function hasDest(G, team, it) {
   const L = layoutOf(G);
@@ -432,7 +449,7 @@ export function applyOp(G, a, op) {
       if (amt <= 0) return false;
       G.money[team] -= amt; s.p += amt; G.spent[team] += amt;
       G.ev.push({ t: "padpay", a, e: ei, amt });
-      if (s.p >= cost - 0.001) unlock(G, ei);
+      if (s.p >= cost - 0.001) unlock(G, ei, null, a[0] === "p" ? +a.slice(1) : null);
       return true;
     }
     case "h": {      // нанять помощника в «Артели»: op = ["h", дом артели, номер помощника]
@@ -444,7 +461,7 @@ export function applyOp(G, a, op) {
     }
     case "u": {      // улучшить артель: op = ["u", дом артели, "crew" | "crewspd"]
       if (e.k !== "hire") return false;
-      const u = op[2]; if (u !== "crew" && u !== "crewspd" || G.upg[team][u] >= UPG[u].max) return false;
+      const u = op[2]; if (u !== "crew" && u !== "crewspd" || G.upg[team][u] >= upgMax(G, u)) return false;
       const cost = crewCost(G, team, u); if (G.money[team] < cost) return false;
       G.money[team] -= cost; G.spent[team] += cost; G.upg[team][u]++;
       G.ev.push({ t: "upg", e: ei, u, lv: G.upg[team][u], team }); return true;
@@ -465,6 +482,13 @@ export function applyOp(G, a, op) {
       G.money[team] -= cost; G.spent[team] += cost; (G.mgr || (G.mgr = {}))[op[2]] = 1;
       G.ev.push({ t: "mgr", e: op[2], team }); return true;
     }
+    case "y": {      // своя хижина: op = ["y", хижина, "bag" | "boots" | "net" | "reach"] — только своя
+      const pi = +a.slice(1); if (e.k !== "hut" || a[0] !== "p" || e.slot !== pi) return false;
+      const u = op[2], g = gearOf(G, pi); if (!["bag", "boots", "net", "reach"].includes(u) || (g[u] || 0) >= upgMax(G, u)) return false;
+      const cost = gearCost(G, pi, u); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; g[u] = (g[u] || 0) + 1;
+      G.ev.push({ t: "upg", e: ei, u, lv: g[u], team, a }); return true;
+    }
     case "s": {      // сейф с автосбором (в артели)
       if (e.k !== "hire" || G.safe || G.mode === "vs") return false;
       const cost = safeCost(G); if (G.money[team] < cost) return false;
@@ -478,11 +502,17 @@ export function applyOp(G, a, op) {
   }
   return false;
 }
-function unlock(G, ei, from) {
+function unlock(G, ei, from, payer) {
   const L = layoutOf(G), e = L.E[ei], s = G.e[ei];
   s.p = 0;
   if (e.k !== "upg" && e.k !== "supg" && e.k !== "helper") G.nbuy = (G.nbuy || 0) + 1;
-  if (e.k === "upg") { G.upg[e.team][e.def.u]++; G.ev.push({ t: "upg", e: ei, u: e.def.u, lv: G.upg[e.team][e.def.u], team: e.team }); return; }
+  if (e.k === "upg") {
+    const u = e.def.u;
+    if (u === "crew" || u === "crewspd" || payer == null) { G.upg[e.team][u]++; G.ev.push({ t: "upg", e: ei, u, lv: G.upg[e.team][u], team: e.team }); return; }
+    // старая карта: площадка снаряжения общая на команду (как было) — уровень растёт у всех игроков команды
+    G.upg[e.team][u]++; for (let pi = 0; pi < G.pl.length; pi++) if (G.pl[pi].team === e.team) { const g = gearOf(G, pi); g[u] = Math.max(g[u] || 0, G.upg[e.team][u]); }
+    G.ev.push({ t: "upg", e: ei, u, lv: G.upg[e.team][u], team: e.team, a: "p" + payer }); return;
+  }
   if (e.k === "supg") { const t = G.e[e.tg]; t.lv = (t.lv || 0) + 1; G.ev.push({ t: "supg", e: ei, of: e.tg, lv: t.lv, team: e.team }); return; }
   s.o = 1; G.bv++;
   if (e.k === "helper") {
@@ -517,9 +547,9 @@ export function proximityOps(G, pi, dt, loc) {
     const s = G.e[e.i];
     if (padVisible(G, e.i) && inZone(p, e.zpad)) { const d = hyp(p.x - e.zpad.x, p.z - e.zpad.z) - 0.3; if (d < zd) { zd = d; zk = e.i * 4; zz = e.zpad; zkind = "pad"; } }
     if (!s.o) continue;
-    if (e.zin && e.k !== "spot" && e.k !== "hire" && e.k !== "ads" && inZone(p, e.zin)) { const d = hyp(p.x - e.zin.x, p.z - e.zin.z); if (d < zd) { zd = d; zk = e.i * 4 + 1; zz = e.zin; zkind = "in"; } }
+    if (e.zin && e.k !== "spot" && e.k !== "hire" && e.k !== "ads" && e.k !== "hut" && inZone(p, e.zin)) { const d = hyp(p.x - e.zin.x, p.z - e.zin.z); if (d < zd) { zd = d; zk = e.i * 4 + 1; zz = e.zin; zkind = "in"; } }
     if (e.zout && inZone(p, e.zout)) { const d = hyp(p.x - e.zout.x, p.z - e.zout.z); if (d < zd) { zd = d; zk = e.i * 4 + 2; zz = e.zout; zkind = "out"; } }
-    if (e.zcash && (s.cash || 0) > 0 && inZone(p, e.zcash, 0.15 + cashReach(G))) ops.push(["k", e.i]);
+    if (e.zcash && (s.cash || 0) > 0 && inZone(p, e.zcash, 0.15 + cashReach(G, pi))) ops.push(["k", e.i]);
   }
   const mv = p.mv || 0;
   if (zk !== loc.zk) { loc.zk = zk; loc.dw = 0; loc.pacc = 0; }
@@ -544,7 +574,7 @@ export function proximityOps(G, pi, dt, loc) {
     const ei = zk >> 2;
     for (let k = p.st.length - 1; k >= 0; k--) if (accepts(G, ei, p.st[k])) { ops.push(["d", ei, p.st[k]]); loc.xt = PLAYER.xferT; break; }
   }
-  if (armed && loc.xt <= 0 && zkind === "out" && p.st.length < capOf(G, team)) {
+  if (armed && loc.xt <= 0 && zkind === "out" && p.st.length < capOf(G, pi)) {
     // взять готовое
     const ei = zk >> 2, e = L.E[ei];
     if (G.e[ei].ob > 0) {
@@ -553,20 +583,25 @@ export function proximityOps(G, pi, dt, loc) {
     }
   }
   // ловушки на отливе: стоишь у ловушки — крабы сами идут в короб
-  if (loc.ct <= 0 && G.traps && G.traps.length && p.st.length < capOf(G, team)) for (let k = 0; k < G.traps.length; k++) {
+  if (loc.ct <= 0 && G.traps && G.traps.length && p.st.length < capOf(G, pi)) for (let k = 0; k < G.traps.length; k++) {
     const tr = G.traps[k]; if (tr.n <= 0 || hyp(p.x - tr.x, p.z - tr.z) > 1.0) continue;
     if (!hasDest(G, team, IT.crab)) { loc.noDest = IT.crab; break; }
     ops.push(["t", k]); loc.ct = 0.18; break;
   }
   // ловля
-  if (loc.ct <= 0 && p.st.length < capOf(G, team)) for (const e of L.E) {
+  if (loc.ct <= 0 && p.st.length < capOf(G, pi)) for (const e of L.E) {
     if (!mine(e) || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin, e.def.auto ? 0 : tideR(G))) continue;
     if (!hasDest(G, team, e.item)) { loc.noDest = e.item; continue; }
-    ops.push(["c", e.i]); loc.ct = catchOf(G, team); break;
+    ops.push(["c", e.i]); loc.ct = catchOf(G, pi); break;
   }
   return ops;
 }
 // стоит ли игрок у дома артели (для окна найма)
+export function atHut(G, pi, loc) {
+  const L = layoutOf(G), p = loc || G.pl[pi];
+  for (const i of L.huts) { const e = L.E[i]; if (e.slot === pi && inZone(p, e.zin, 0.2)) return i; }
+  return -1;
+}
 export function atAds(G, pi, loc) {
   const L = layoutOf(G), p = loc || G.pl[pi], team = G.pl[pi].team;
   for (const i of L.ads) { const e = L.E[i]; if ((e.team === team || G.mode !== "vs") && inZone(p, e.zin, 0.2)) return i; }
@@ -865,7 +900,7 @@ export function autoInfo(G, team) {
 // управляющий цехом: сам подтягивает сырьё с выхода соседнего цеха (тележкой) — помощник на подноске не нужен
 export const mgrOn = (G, ei) => !!(G.mgr && G.mgr[ei]);
 function mgrSource(G, e, it) { const L = layoutOf(G); for (const o of L.E) if (o.team === e.team && G.e[o.i].o && (o.k === "proc" || o.k === "gen") && prodItem(o) === it) return o.i; return -1; }
-export function mgrCost(G, ei) { const e = layoutOf(G).E[ei]; return Math.round((e.def.cost || 100) * 3 * costMul(G) / 5) * 5; }
+export function mgrCost(G, ei) { const e = layoutOf(G).E[ei]; return Math.round((e.cost || e.def.cost || 100) * 3 * costMul(G) / 5) * 5; }
 export function canMgr(G, ei) { const e = layoutOf(G).E[ei]; return e && e.k === "proc" && G.e[ei].o && !mgrOn(G, ei); }
 function stepMgr(G, dt) {
   if (!G.mgr) return;
@@ -898,7 +933,7 @@ function stepSafe(G, dt) {
   const L = layoutOf(G);
   for (const e of L.E) { if (!e.zcash || !G.e[e.i].o || !(G.e[e.i].cash > 0) || (G.mode === "vs" && e.team !== 0)) continue; const amt = G.e[e.i].cash; G.e[e.i].cash = 0; G.money[e.team] += amt; G.ev.push({ t: "cash", a: "safe", e: e.i, amt }); }
 }
-export function safeCost(G) { const L = layoutOf(G), g = L.E.find((e) => e.k === "goal"); return Math.round(((g && g.def.cost) || 3000) * 0.18 * costMul(G) / 5) * 5; }
+export function safeCost(G) { const L = layoutOf(G), g = L.E.find((e) => e.k === "goal"); return Math.round(((g && (g.cost || g.def.cost)) || 3000) * 0.18 * costMul(G) / 5) * 5; }
 
 /* ---------- заказы (вместе / один) ---------- */
 // заказ на доске: сначала предложение (принять — постоять у доски, иначе само примется через OFFER с),
@@ -1058,8 +1093,23 @@ export function deserialize(s) {
     if (!G.perks) G.perks = {}; if (!G.meta) G.meta = {};
     if (G.con && G.con.ac == null) G.con.ac = 1;     // заказ из сохранения до «принять у доски» — уже идёт
     const L = layoutOf(G);
-    // карта дописалась (старые сохранения): новым местам — начальное состояние; карта другая — сохранение не подходит
+    // снаряжение стало личным: у старых сохранений берём общее снаряжение команды
+    for (const p of G.pl) if (!p.g) { const u = G.upg[p.team] || {}; p.g = { bag: u.bag || 0, boots: u.boots || 0, net: u.net || 0, reach: 0 }; }
+    // карта дописалась (старые сохранения): новым местам — начальное состояние
     if (G.e.length < L.E.length && L.key === "old") for (let i = G.e.length; i < L.E.length; i++) G.e.push(entState(L.E[i]));
+    // карта бухты поменялась: переносим состояние мест по названиям
+    const ids = L.E.map((e) => e.id + (e.team ? "@1" : ""));
+    const old = G.ids || (IDS_V2[L.key] && IDS_V2[L.key].length === G.e.length ? IDS_V2[L.key] : null);
+    if (old && old.join() !== ids.join()) {
+      const map = new Map(old.map((id, i) => [id, i])), ne = L.E.map((e, i) => { const k = map.get(ids[i]); return k != null ? G.e[k] : entState(e); });
+      const re = (i) => { const k = ids.indexOf(old[i]); return k; };
+      G.hp = G.hp.filter((h) => re(h.e) >= 0).map((h) => Object.assign(h, { e: re(h.e), tg: h.tg >= 0 ? re(h.tg) : -1 }));
+      for (const c of G.cu) if (c.st >= 0) c.st = re(c.st);
+      G.cu = G.cu.filter((c) => c.st == null || c.st >= -1);
+      if (G.mgr) { const m = {}; for (const k in G.mgr) { const n = re(+k); if (n >= 0) m[n] = 1; } G.mgr = m; }
+      G.e = ne; G.bv = (G.bv || 1) + 1;
+    }
+    G.ids = ids;
     if (G.e.length !== L.E.length) return null;
     return G;
   } catch (_) { return null; }

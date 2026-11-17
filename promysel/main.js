@@ -111,7 +111,7 @@ function makeDemo() {
   demo = S.newGame({ mode: "coop", seed: 4242 });
   const Ld = S.layoutOf(demo);
   for (const id of ["stall_fillet", "table1", "fisher0", "runner1", "fisher1", "stall_salt", "salt", "feed_salt", "runner_salt", "stall_smoked", "smoke", "wood", "woodman", "feed_smoke", "runner3", "cashier", "table2", "fisher2", "runner2"]) S.forceOpen(demo, Ld.byId[0][id]);
-  for (let i = 0; i < 5; i++) S.forceOpen(demo, Ld.byId[0].bag); demo.upg[0].crew = 5; demo.upg[0].crewspd = 5;
+  for (const p of demo.pl) p.g.bag = 5; demo.upg[0].crew = 5; demo.upg[0].crewspd = 5;
   demo.ev = [];
   demoBots = [makeBot(0, { seed: 3 }), makeBot(1, { seed: 9 })];
 }
@@ -533,7 +533,7 @@ function onEvents(list, remote) {
         break;
       }
       case "upg": {
-        const z = en.zpad, mine = G.mode !== "vs" || e.team === G.pl[me].team;
+        const z = en.zin || en.zpad, mine = e.a ? e.a === "p" + me : G.mode !== "vs" || e.team === G.pl[me].team;
         if (camNear(z.x, z.z, 14)) view.burst(z.x, 0.4, z.z, "gold", 26);
         if (mine) { play("upgrade", { vol: 0.8 }); haptic("notify", "success", true); toast(`⬆ ${L(UPG[e.u].n)} — ${L("ур.")}${e.lv}: ${upgText(e.u, e.lv)}`, "gold"); }
         break;
@@ -599,7 +599,7 @@ function onEvents(list, remote) {
     }
   }
 }
-function upgText(u, lv) { const v = UPG[u].v(lv); if (u === "bag" || u === "crew") return v + " " + L("мест"); if (u === "boots" || u === "crewspd") return L("скорость") + " +" + Math.round((v / UPG[u].v(0) - 1) * 100) + "%"; if (u === "net") return L("ловля") + " +" + Math.round((UPG[u].v(0) / v - 1) * 100) + "%"; return ""; }
+function upgText(u, lv) { const v = UPG[u].v(lv); if (u === "reach") return "+" + v.toFixed(1).replace(".0", "") + " " + L("м"); if (u === "bag" || u === "crew") return v + " " + L("мест"); if (u === "boots" || u === "crewspd") return L("скорость") + " +" + Math.round((v / UPG[u].v(0) - 1) * 100) + "%"; if (u === "net") return L("ловля") + " +" + Math.round((UPG[u].v(0) / v - 1) * 100) + "%"; return ""; }
 function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layoutOf(G).E[e.tg]); return L(e.def.n || e.id); }
 function entDesc(e) {
   if (e.k === "proc") return e.rec.in.map((i) => L(ITEMS[i].n)).join(" + ") + " → " + L(ITEMS[e.rec.out].n);
@@ -670,21 +670,21 @@ function perkStep() {
   }));
 }
 // что переносится в следующую бухту
-function carryUpg(u) { const c = {}; for (const k in u) c[k] = k === "crew" || k === "crewspd" ? u[k] : Math.floor(u[k] / 2); return c; }
+function carryUpg() { return S.carryOf(G); }
 function nextBayDlg() {
-  const nb = ((G.v || 1) < 2 ? G.bay + 1 : G.bay + 1) % BAYS.length, lap = (G.lap || 0) + (G.bay + 1 >= BAYS.length ? 1 : 0), B = BAYS[nb], c = carryUpg(G.upg[0]);
+  const nb = ((G.v || 1) < 2 ? G.bay + 1 : G.bay + 1) % BAYS.length, lap = (G.lap || 0) + (G.bay + 1 >= BAYS.length ? 1 : 0), B = BAYS[nb], cr = carryUpg(), c = cr.upg;
   const icons = B.news.map((k) => `<img src="${ICONURL[k] || ""}" title="${esc(L(ITEMS[IT[k]].n))}">`).join("");
   const nPerk = Object.values(G.perks).reduce((a, b) => a + b, 0);
   dialog(`<h2>⛵ ${L(B.n)}${lap ? " · " + L("круг") + " " + (lap + 1) : ""}</h2>
     <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p><p>✨ ${L("Особое")}: ${L(B.ev)}</p>
-    <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("половина")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
+    <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("целиком")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
     <button class="b primary" id="n-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}</span></button>
     <button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться пока здесь")}<small>${L("Уплыть можно из меню")}</small></span></button>`, true);
-  $("n-go").onclick = () => { hideDlg(); goNextBay(nb, lap, c); };
+  $("n-go").onclick = () => { hideDlg(); goNextBay(nb, lap, cr); };
   $("n-stay").onclick = () => hideDlg();
 }
-function goNextBay(nb, lap, c) {
-  const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: nb, lap, perks: G.perks, meta: prof.meta, upg: c, diff: G.diff });
+function goNextBay(nb, lap, cr) {
+  const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: nb, lap, perks: G.perks, meta: prof.meta, upg: cr.upg, gear: cr.gear, diff: G.diff });
   const wasBot = !!bot, r = role;
   start(r, g, 0, { bot: wasBot, newBay: 1 });
   if (hs) hs.go();
@@ -769,16 +769,17 @@ function updAuto(dt) {
 function updHire() {
   if (!G || !started) return;
   const busy = G.winner >= 0 || !$("dlg").classList.contains("hidden");
-  const hi = busy ? -1 : S.atHire(G, me, myLoc()), ai = busy || hi >= 0 ? -1 : S.atAds(G, me, myLoc());
-  const at = hi >= 0 ? hi : ai, kind = hi >= 0 ? "hire" : ai >= 0 ? "ads" : "";
+  const hi = busy ? -1 : S.atHire(G, me, myLoc()), ai = busy || hi >= 0 ? -1 : S.atAds(G, me, myLoc()), ui = busy || hi >= 0 || ai >= 0 ? -1 : S.atHut(G, me, myLoc());
+  const at = hi >= 0 ? hi : ai >= 0 ? ai : ui, kind = hi >= 0 ? "hire" : ai >= 0 ? "ads" : ui >= 0 ? "hut" : "";
   if (at < 0) { if (hireOpen >= 0) { hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); } return; }
-  if (hireOpen !== at) { hireOpen = at; boardKind = kind; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); $("hire").classList.toggle("ads", kind === "ads"); $("hire").querySelector(".hh").innerHTML = kind === "ads" ? `<b>${L("РЕКЛАМА")}</b><small>${L("больше покупателей — больше выручки")}</small>` : `<b>${L("АРТЕЛЬ")}</b><small>${L("нанимай помощников и улучшай их")}</small>`; }
+  if (hireOpen !== at) { hireOpen = at; boardKind = kind; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); $("hire").classList.toggle("ads", kind === "ads"); $("hire").classList.toggle("hut", kind === "hut"); $("hire").querySelector(".hh").innerHTML = kind === "ads" ? `<b>${L("РЕКЛАМА")}</b><small>${L("больше покупателей — больше выручки")}</small>` : kind === "hut" ? `<b>${L("ХИЖИНА")}</b><small>${L("твоё снаряжение — переходит в каждую бухту")}</small>` : `<b>${L("АРТЕЛЬ")}</b><small>${L("нанимай помощников и улучшай их")}</small>`; }
   if (kind === "ads") return updAds();
+  if (kind === "hut") return updHut();
   const Lr = S.layoutOf(G), team = G.pl[me].team, money = G.money[team];
   const mine = Lr.E.filter((e) => e.k === "helper" && (G.mode !== "vs" || e.team === team));
-  const card = (e) => { const c = S.hireCost(G, e.i), ok = money >= c; return `<button class="hc ${ok ? "ok" : ""}" data-h="${e.i}"><div class="por"><img src="${ICONURL[e.def.role === "cashier" ? "cashier" : "helper"]}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>${esc(jobText(e))}</span></div><div class="pr">${c ? "💵 " + fmt(c) : L("даром")}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; };
+  const card = (e) => { const c = S.hireCost(G, e.i), ok = money >= c; return `<button class="hc ${ok ? "ok" : ""}" data-h="${e.i}"><div class="por"><img src="${ICONURL[e.def.role === "cashier" ? "cashier" : "helper"]}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>${esc(jobText(e))}</span><small>${L("помощников")}: ${G.hp.filter((h) => h.team === team).length}&nbsp;→&nbsp;${G.hp.filter((h) => h.team === team).length + 1}</small></div><div class="pr">${c ? "💵 " + fmt(c) : L("даром")}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; };
   const avail = mine.filter((e) => S.canHire(G, e.i)), hired = mine.filter((e) => G.e[e.i].o), locked = mine.filter((e) => !G.e[e.i].o && !S.canHire(G, e.i));
-  const crew = hired.length ? ["crew", "crewspd"].filter((u) => G.upg[team][u] < UPG[u].max).map((u) => { const lv = G.upg[team][u], c = S.crewCost(G, team, u), ok = money >= c; return `<button class="hc up ${ok ? "ok" : ""}" data-u="${u}"><div class="por"><img src="${ICONURL[u === "crew" ? "crate2" : "skis"]}"></div><div class="tx"><b>${L(u === "crew" ? "Короба артели" : "Лыжи артели")} · ${L("ур.")}${lv + 1}</b><span>${esc(crewText(u, lv))}</span></div><div class="pr">💵 ${fmt(c)}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; }).join("") : "";
+  const crew = hired.length ? ["crew", "crewspd"].filter((u) => G.upg[team][u] < S.upgMax(G, u)).map((u) => { const lv = G.upg[team][u], c = S.crewCost(G, team, u), ok = money >= c; return `<button class="hc up ${ok ? "ok" : ""}" data-u="${u}"><div class="por"><img src="${ICONURL[u === "crew" ? "crate2" : "skis"]}"></div><div class="tx"><b>${L(u === "crew" ? "Короба артели" : "Лыжи артели")} · ${L("ур.")}${lv + 1}</b><span>${esc(crewText(u, lv))}</span></div><div class="pr">💵 ${fmt(c)}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; }).join("") : "";
   const lockHtml = locked.slice(0, 2).map((e) => { const need = e.after.find((a) => !G.e[a].o); return `<div class="hc lock"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>🔒 ${L("сначала открой")} «${esc(entName(Lr.E[need]))}»</span></div></div>`; }).join("");
   // управляющие цехами (цех сам тянет сырьё тележкой) и сейф с автосбором выручки
   const priceTag = (c) => `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`;
@@ -791,10 +792,18 @@ function doOp(op) {
   if (role === "guest") { if (!gs || !gs.G) return false; const n0 = G.ev.length; if (S.applyOp(G, "p" + me, op)) { gs.op(op); onEvents(G.ev.splice(n0), false); return true; } return false; }
   return S.applyOp(G, "p" + me, op);
 }
+// своя хижина: снаряжение игрока, на каждой карточке «было → станет»
+function updHut() {
+  const team = G.pl[me].team, money = G.money[team], g = S.gearOf(G, me);
+  const ic = { bag: "bag", boots: "boots", net: "net", reach: "cash" };
+  const html = ["bag", "boots", "net", "reach"].map((u) => { const lv = g[u] || 0, max = lv >= S.upgMax(G, u), c = S.gearCost(G, me, u), ok = !max && money >= c;
+    return `<button class="hc up ${ok ? "ok" : ""}" data-y="${u}" ${max ? "disabled" : ""}><div class="por"><img src="${ICONURL[ic[u]]}"></div><div class="tx"><b>${L(UPG[u].n)} · ${L("ур.")}${lv}${max ? "" : "&nbsp;→&nbsp;" + (lv + 1)}</b><span>${L(UPG[u].d)}: <b class="ba">${esc(upgText(u, lv)).replace(/ /g, "&nbsp;")}${max ? "" : "&nbsp;→&nbsp;" + esc(upgText(u, lv + 1)).replace(/ /g, "&nbsp;")}</b></span></div>${max ? `<div class="pr">✓</div>` : `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`}</button>`; }).join("");
+  if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
+}
 function updAds() {
   const team = G.pl[me].team, money = G.money[team], a = (G.ads && G.ads[team]) || {}, why = S.flowWhy(G, team);
   const card = (k, lv) => { const A = S.ADS[k], c = S.adCost(G, team, k), can = S.canAd(G, team, k), act = (a[k] || 0) > 0, cd = (a[k + "c"] || 0) - (a[k] || 0);
-    const st = k === "sign" ? (lv >= A.max ? "✓ " + L("максимум") : L("ур.") + lv + "&nbsp;→&nbsp;" + (lv + 1)) : act ? "▶ " + L("идёт") + " " + Math.ceil(a[k]) + L("с") : cd > 0 ? "⏳ " + Math.ceil(cd) + L("с") : "";
+    const st = k === "sign" ? (lv >= A.max ? "✓ " + L("максимум") : L("ур.") + lv + "&nbsp;→&nbsp;" + (lv + 1) + " · +" + lv * 15 + "%&nbsp;→&nbsp;+" + (lv + 1) * 15 + "%") : act ? "▶ " + L("идёт") + " " + Math.ceil(a[k]) + L("с") : cd > 0 ? "⏳ " + Math.ceil(cd) + L("с") : "";
     return `<button class="hc ad ${can && money >= c ? "ok" : ""} ${act ? "on" : ""}" data-ad="${k}" ${can ? "" : "disabled"}><div class="por"><span class="em">${k === "fl" ? "📜" : k === "sign" ? "🪧" : "📣"}</span></div><div class="tx"><b>${L(A.n)}</b><span>${L(A.d)}</span><small>${st}</small></div>${can ? `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>` : ""}</button>`; };
   const rep = S.repOf(G, team);
   const html = `<div class="flowbox"><div>👥 <b>${Math.round(G.flow || 0)}</b> ${L("покупателей в минуту")}</div><div class="rep">${L("Репутация")} <i><u style="width:${Math.round(rep * 100)}%"></u></i></div>${why ? `<small>⚠ ${L(WHY[why])}</small>` : ""}</div>${card("fl")}${card("sign", a.sign || 0)}${card("cr")}`;
@@ -802,8 +811,8 @@ function updAds() {
 }
 const WHY = { angry: "Очередь злится — покупатели уходят, репутация падает", empty: "На прилавке пусто, а очередь ждёт", ads: "Мало рекламы — поставь вывеску", rep: "Плохая репутация — обслуживай быстрее" };
 function hireClick(ev) {
-  const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
-  const op = b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
+  const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad],[data-y]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
+  const op = b.dataset.y ? ["y", hireOpen, b.dataset.y] : b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
   if (!doOp(op)) { play("error", { vol: 0.5 }); haptic("notify", "warning"); toast(L("Не хватает денег"), "bad", 1.8); return; }
   hireKey = ""; updHire();
 }
@@ -863,7 +872,7 @@ let hintTarget = null, tipE = -1, guideForce = false;
 // камера ненадолго показывает доску заказов
 function focusBoard(sec) { if (!G || G.mode === "vs") return; const Lr = S.layoutOf(G), bi = Lr.byId[0].board; if (bi == null) return; const e = Lr.E[bi]; cam.focus = { x: e.x, z: e.z + 0.5, t: sec || 2.2 }; }
 function computeHint() {
-  const Lr = S.layoutOf(G), p = G.pl[me], team = p.team, cap = S.capOf(G, team);
+  const Lr = S.layoutOf(G), p = G.pl[me], team = p.team, cap = S.capOf(G, me);
   const mine = (e) => G.mode !== "vs" || e.team === team;
   // площадка рядом — подсказка о ней
   let near = -1, nd = 1.5;
@@ -887,7 +896,7 @@ function computeHint() {
   let hireE = null, hc = np >= 0 ? S.padCost(G, np) - G.e[np].p : 1e18;
   if (house != null) for (const e of Lr.E) if (e.k === "helper" && mine(e) && S.canHire(G, e.i) && S.hireCost(G, e.i) < hc) { hc = S.hireCost(G, e.i); hireE = e; }
   if (hireE && hireOpen < 0) { if (G.money[team] >= hc) return { ic: "helper", tx: L("Найми в артели") + ": " + entName(hireE), t: Lr.E[house].zin }; np = -1; }
-  if (hireOpen >= 0) return boardKind === "ads" ? { ic: "cash", tx: L("Выбери рекламу — нажми на карточку"), t: null } : { ic: "helper", tx: L("Выбери, кого нанять — нажми на карточку"), t: null };
+  if (hireOpen >= 0) return boardKind === "ads" ? { ic: "cash", tx: L("Выбери рекламу — нажми на карточку"), t: null } : boardKind === "hut" ? { ic: "bag", tx: L("Улучши снаряжение — нажми на карточку"), t: null } : { ic: "helper", tx: L("Выбери, кого нанять — нажми на карточку"), t: null };
   let cashSum = 0, cashE = null, cd = 1e9;
   for (const e of Lr.E) if (mine(e) && e.zcash && G.e[e.i].o && G.e[e.i].cash > 0) { cashSum += G.e[e.i].cash; const d = Math.hypot(p.x - e.zcash.x, p.z - e.zcash.z); if (d < cd) { cd = d; cashE = e; } }
   if (np >= 0) { const need = S.padCost(G, np) - G.e[np].p; const e = Lr.E[np]; if (G.money[team] >= need) return { ic: "star", tx: (e.k === "goal" ? "🗼 " : "") + L("Открой") + ": " + entName(e), t: e.zpad }; if (G.money[team] + cashSum >= need && cashE) return { ic: "cash", tx: L("Собери выручку — хватит на") + " «" + entName(e) + "»", t: cashE.zcash }; }
