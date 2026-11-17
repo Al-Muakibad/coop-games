@@ -7,7 +7,8 @@ import { createView, PCOL } from "./view.js";
 const $ = (s) => document.querySelector(s);
 const tg = window.Telegram && window.Telegram.WebApp;
 try { tg && tg.ready(); tg && tg.expand(); tg && tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (_) {}
-const myName = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && (tg.initDataUnsafe.user.first_name || tg.initDataUnsafe.user.username)) || "Игрок";
+const tgName = tg && tg.initDataUnsafe && tg.initDataUnsafe.user && (tg.initDataUnsafe.user.first_name || tg.initDataUnsafe.user.username);
+let myName = tgName || localStorage.getItem("fonar_name") || "Игрок";
 const BOT = "barled_game_bot";
 if (new URLSearchParams(location.search).get("broker")) window.NET_BROKERS = [new URLSearchParams(location.search).get("broker")]; // для автотестов
 
@@ -54,11 +55,20 @@ function startWorld(fresh) {
 }
 
 $("#solo").onclick = () => { mode = "solo"; me = "solo"; const has = loadGame(); if (has && has.night > 1) { modal(`<h2>Продолжить?</h2><p>Сохранена банда: ночь ${has.night}, в кассе 💰 ${has.money}.</p><button class="gold" id="cont">Продолжить</button><button class="ghost" id="anew">Начать заново</button>`, (b) => { b.querySelector("#cont").onclick = () => { closeModal(); begin(false); }; b.querySelector("#anew").onclick = () => { closeModal(); begin(true); }; }); } else begin(true); };
-$("#host").onclick = async () => { mode = "host"; showLobby("Создаю комнату…"); try { room = await Net.openParty("fonar", null, { name: myName, max: 4, late: true }); } catch (e) { showLobby("Нет связи с сервером встреч. Проверь интернет и попробуй снова."); return; } me = room.me.id; hookHost(); showLobby(); };
+$("#host").onclick = async () => { mode = "host"; showLobby("Создаю комнату…"); try { room = await Net.openParty("fonar", null, { name: myName, max: 4, late: true, p2pRetry: true }); } catch (e) { showLobby(`Нет связи с сервером встреч (${(e && e.message || "").slice(0, 60)}). Попробуй другую сеть или VPN.`); return; } me = room.me.id; hookHost(); showLobby(); };
 $("#join").onclick = () => { const c = $("#codeIn").value.trim().toLowerCase(); if (/^[a-z0-9]{6}$/.test(c)) joinRoom(c); else toast("Код — 6 букв и цифр"); };
+function askName(then) {
+  if (tgName || localStorage.getItem("fonar_name")) return then();
+  $("#start").style.display = "none";
+  modal(`<h2>Как тебя звать в банде?</h2><input id="nm" maxlength="14" placeholder="Имя" style="width:100%;padding:12px;border-radius:12px;border:1px solid #6a3a4a;background:#1a0a14;color:#fff;font:800 17px Nunito"><button class="gold" id="nmOk" style="margin-top:10px">Войти в комнату</button>`, (b) => {
+    b.querySelector("#nmOk").onclick = () => { const v = b.querySelector("#nm").value.trim(); myName = v || "Гость " + Math.floor(Math.random() * 90 + 10); localStorage.setItem("fonar_name", myName); closeModal(); then(); };
+  }, "name");
+}
 async function joinRoom(id) {
-  mode = "guest"; showLobby("Подключаюсь к банде…");
-  try { room = await Net.openParty("fonar", id, { name: myName, max: 4 }); } catch (e) { showLobby("Не получилось подключиться. Проверь интернет."); return; }
+  mode = "guest"; room = null; showLobby("Подключаюсь к банде…");
+  let err = null;
+  for (let i = 0; i < 3 && !room; i++) { try { room = await Net.openParty("fonar", id, { name: myName, max: 4, p2pRetry: true }); } catch (e) { err = e; showLobby(`Подключаюсь к банде… попытка ${i + 2} из 3`); } }
+  if (!room) { const lb = $("#lobby"); lb.innerHTML = `<h2>Не получилось подключиться</h2><p class="muted">Сервер встреч не ответил (${(err && err.message || "нет связи").slice(0, 80)}). Обычно помогает другая сеть (Wi-Fi ↔ мобильный интернет) или VPN.</p><button class="gold" id="retry">Попробовать ещё раз</button><button class="ghost" onclick="location.href=location.pathname">В меню</button>`; $("#retry").onclick = () => joinRoom(id); return; }
   me = room.me.id; hookGuest();
   setTimeout(() => { if (!V) showLobby("Жду ответа хозяина… Если долго — пусть он откроет игру и проверит код."); }, 6000);
 }
@@ -75,14 +85,15 @@ function showLobby(msg) {
   const pl = room ? room.players : [];
   lb.innerHTML = `<h2>Банда собирается</h2><div class="muted">Код комнаты</div><div class="roomcode">${room.id}</div>
     <div class="pl">${pl.map((p, i) => `<div style="background:${PCOL[i % 4]}">${p.name}${p.host ? " 👑" : ""}</div>`).join("")}</div>
-    <p class="muted">Друзья жмут ссылку-приглашение или вводят код на стартовом экране. Можно зайти и посреди игры. Баланс подстраивается под число игроков (1–4).</p>
-    <button class="gold" id="inv">📨 Позвать друзей</button>${mode === "host" ? `<button class="gold" id="go">Начать (${pl.length}/4)</button>` : `<p>Ждём, когда хозяин начнёт…</p>`}`;
+    <p class="muted">Друг жмёт ссылку — и сразу попадает в эту комнату. Код — запасной вариант. Можно зайти и посреди игры. Баланс подстраивается под число игроков (1–4).</p>
+    <button class="gold" id="inv">📨 Отправить ссылку другу</button><button class="ghost" id="cp">🔗 Скопировать ссылку</button>${mode === "host" ? `<button class="gold" id="go">Начать (${pl.length}/4)</button>` : `<p>Ждём, когда хозяин начнёт…</p>`}`;
   $("#inv").onclick = invite;
+  $("#cp").onclick = () => { try { navigator.clipboard.writeText(inviteLink()); toast("Ссылка скопирована — отправь её другу"); } catch (_) { prompt("Ссылка в комнату:", inviteLink()); } };
   const go = $("#go"); if (go) go.onclick = () => { begin(false); };
 }
-function inviteLink() { return `https://t.me/${BOT}?startapp=r${room.id}`; }
+function inviteLink() { return `https://al-muakibad.github.io/coop-games/fonar/?room=${room.id}`; }
 function invite() {
-  const text = `Залетай в банду «Красный фонарь»! Код комнаты: ${room.id}`;
+  const text = `Залетай в банду «Красный фонарь»! Жми ссылку — сразу попадёшь в нашу комнату`;
   const url = `https://t.me/share/url?url=${encodeURIComponent(inviteLink())}&text=${encodeURIComponent(text)}`;
   try { if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, "_blank"); } catch (_) { window.open(url, "_blank"); }
 }
@@ -129,7 +140,7 @@ $("#ready").onclick = () => { op(["ready"]); haptic("light"); };
 $("#menuBtn").onclick = () => modal(`<h2>Меню</h2>${room ? `<p class="muted">Комната <b>${room.id}</b> · игроков: ${Object.keys(V.P).length}</p><button class="gold" id="inv2">📨 Позвать друзей</button>` : `<button class="gold" id="toHost">👥 Позвать друзей (сделать комнату)</button>`}
   <button class="ghost" id="how">❓ Как играть</button>${mode !== "guest" ? `<button class="ghost" id="cash">+500 💰 (тест)</button><button class="ghost" id="skip">⏭ Закончить ночь (тест)</button><button class="ghost" id="reset" style="color:#ff8a7a">🗑 Начать заново</button>` : ""}<button class="ghost" data-close>Закрыть</button>`, (b) => {
   const i = b.querySelector("#inv2"); if (i) i.onclick = invite;
-  const th = b.querySelector("#toHost"); if (th) th.onclick = async () => { closeModal(); toast("Создаю комнату…"); try { room = await Net.openParty("fonar", null, { name: myName, max: 4, late: true }); const old = me; me = room.me.id; const p = G.P[old]; delete G.P[old]; p.id = me; G.P[me] = p; mode = "host"; hookHost(); invite(); toast("Комната " + room.id + " — друзья могут заходить"); } catch (_) { toast("Нет связи"); } };
+  const th = b.querySelector("#toHost"); if (th) th.onclick = async () => { closeModal(); toast("Создаю комнату…"); try { room = await Net.openParty("fonar", null, { name: myName, max: 4, late: true, p2pRetry: true }); const old = me; me = room.me.id; const p = G.P[old]; delete G.P[old]; p.id = me; G.P[me] = p; mode = "host"; hookHost(); invite(); toast("Комната " + room.id + " — друзья могут заходить"); } catch (_) { toast("Нет связи"); } };
   b.querySelector("#how").onclick = howTo;
   const c = b.querySelector("#cash"); if (c) c.onclick = () => { G.money += 500; closeModal(); };
   const sk = b.querySelector("#skip"); if (sk) sk.onclick = () => { if (G.ph === "night") G.pt = 0.01; closeModal(); };
@@ -285,7 +296,7 @@ requestAnimationFrame(frame);
 const sp = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get("tgWebAppStartParam") || "";
 const qroom = new URLSearchParams(location.search).get("room");
 const inv = (/^r([a-z0-9]{6})$/.exec(sp) || [])[1] || qroom;
-if (inv) joinRoom(inv);
+if (inv) askName(() => joinRoom(inv));
 // для автотестов
 const qs = new URLSearchParams(location.search);
 if (qs.get("go")) { mode = "solo"; begin(true); }

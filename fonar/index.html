@@ -31,7 +31,7 @@
   #lives { font-size: 14px; letter-spacing: -2px; } #menuBtn { width: 38px; justify-content: center; padding: 0; font-size: 18px; }
   #roster { display: flex; gap: 4px; flex-wrap: wrap; } #roster .pc { font-size: 11.5px; height: 24px; padding: 0 8px; border-radius: 10px; display: flex; align-items: center; gap: 4px; font-weight: 900; color: #111; }
   #tip { left: 50%; transform: translateX(-50%); bottom: calc(110px + var(--sab)); max-width: 92%; background: rgba(255, 211, 77, .96); color: #2a1406; padding: 7px 14px; border-radius: 14px; font-weight: 900; font-size: 13.5px; text-align: center; display: none; }
-  #toast { left: 50%; transform: translateX(-50%); top: calc(118px + var(--sat)); max-width: 90%; background: rgba(20,8,20,.92); border: 1px solid var(--line); padding: 8px 14px; border-radius: 14px; font-weight: 800; font-size: 13.5px; text-align: center; opacity: 0; transition: opacity .25s; }
+  #toast { z-index: 30; left: 50%; transform: translateX(-50%); top: calc(118px + var(--sat)); max-width: 90%; background: rgba(20,8,20,.92); border: 1px solid var(--line); padding: 8px 14px; border-radius: 14px; font-weight: 800; font-size: 13.5px; text-align: center; opacity: 0; transition: opacity .25s; }
   #toast.on { opacity: 1; }
   #raid { left: 8px; right: 8px; top: calc(118px + var(--sat)); background: linear-gradient(90deg, #8a0010, #c01020); border-radius: 14px; padding: 9px 12px; font-weight: 900; font-size: 14px; text-align: center; display: none; box-shadow: 0 0 30px rgba(255,0,40,.6); animation: blink .6s infinite alternate; }
   @keyframes blink { to { box-shadow: 0 0 6px rgba(255,0,40,.3); } }
