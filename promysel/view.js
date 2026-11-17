@@ -2,7 +2,7 @@
 // летящие предметы, деньги, площадки покупки с заполнением, пузыри над покупателями, частицы, снег, стрелка-подсказка.
 import * as THREE from "three";
 import { ITEMS, IT, UPG, PAD_R, YAW } from "./data.js";
-import { layout, padVisible, padCost, accepts, capOf, itemPrice } from "./sim.js";
+import { layout, padVisible, padCost, accepts, capOf, itemPrice, deckY } from "./sim.js";
 import { torsoGeo, legGeo, armGeo, packGeo, ITEM_GEO, ITEM_H, schoolFishGeo, Build, PAL } from "./art.js";
 import { ICON, BUB, bubbleAtlas } from "./icons.js";
 
@@ -307,7 +307,7 @@ export class View {
   /* ---------- главный кадр ---------- */
   // ctx: {me, cam:{x,z}, local:{x,z,dir} — предсказанная позиция своего игрока, hot: ei площадки под ногами}
   update(G, dt, ctx) {
-    this.t += dt;
+    this.t += dt; this.G0 = G;
     const L = this.L, t = this.t;
     this.torso.begin(); this.leg.begin(); this.arm.begin(); this.pack.begin(); for (const p of this.items) p.begin(); for (const f of this.fish) f.begin();
     this.fu.value = this.t; this.blobN = 0;
@@ -385,7 +385,7 @@ export class View {
     this.blobs.count = this.blobN; if (this.blobN) this.blobs.instanceMatrix.needsUpdate = true;
   }
   near(d, c, r) { return Math.abs(d.x - c.x) < r && Math.abs(d.z - c.z) < r * 1.4; }
-  groundY(x, z) { return Math.max(this.world.height(x, z), -0.42); }
+  groundY(x, z) { const g = this.G0 && deckY(this.G0, x, z); return g != null ? Math.max(g, this.world.height(x, z)) : Math.max(this.world.height(x, z), -0.42); }
   // человек: туловище, ноги, руки; стопка — на коробе за спиной (pack) или в руках (покупатель)
   person(d, col, dt, stack, key, pack, G, scale) {
     const mvx = d.x - d.ox, mvz = d.z - d.oz; d.ox = d.x; d.oz = d.z;

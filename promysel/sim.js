@@ -193,6 +193,20 @@ function pushOut(G, p, r) {
     if (!moved) break;
   }
 }
+// высота настила под точкой (мостки, причал) — чтобы люди стояли на досках, а не «тонули»; null — настила нет
+let deckCache = { g: null, bv: -1, list: [] };
+export function deckY(G, x, z) {
+  if (deckCache.g !== G || deckCache.bv !== G.bv) {
+    const L = layout(G.mode), list = [];
+    for (const e of L.E) {
+      if (e.k === "pier" && G.e[e.i].o) list.push([e.pier.x - 1.0, e.pier.z1 - 0.45, e.pier.x + 1.0, e.pier.z0 + 0.45, 0.4]);
+      if (e.k === "dock" && G.e[e.i].o) list.push([e.x - 1.35, e.z - 1.35, e.x + 1.35, e.z + 1.35, 0.21]);
+    }
+    deckCache = { g: G, bv: G.bv, list };
+  }
+  for (const d of deckCache.list) if (x > d[0] && x < d[2] && z > d[1] && z < d[3]) return d[4];
+  return null;
+}
 // вода: вернуть точку на ближайшую сушу/отмель/мостки
 function pullFromWater(G, L, p) {
   if (!inWater(G, L, p.x, p.z)) return;
