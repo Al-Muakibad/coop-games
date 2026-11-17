@@ -15,16 +15,16 @@ const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a)
 export const THEMES = [
   // Тихая бухта — снег, ели, тёплый настил
   { sky: "#9fd3f2", sky2: "#d6e6f5", fog: "#d3e2f1", deep: "#1a56b8", mid: "#2a76d2", shal: "#55aee8", sun: "#ffefd6", hemi: "#e4eeff", ground: "#8a98b8", sunI: 1.95,
-    snow: ["#f1f5fb", "#d3e0f0"], deck: [0.85, 0.53, 0.4], trees: 0, fall: 1 },
+    snow: ["#f1f5fb", "#d3e0f0"], deck: [0.85, 0.53, 0.4], trees: 0, fall: 1, outfit: 0 },
   // Ледяной фьорд — синий холод, скалы по краям, льдины в воде, серый настил
   { sky: "#a9c6e6", sky2: "#dbe8f6", fog: "#cddcee", deep: "#103a66", mid: "#1d5a8e", shal: "#4e9cc8", sun: "#eef4ff", hemi: "#d8e6ff", ground: "#7d8fb0", sunI: 2.05,
     snow: ["#f4f8fd", "#d9e6f4"], deck: [0.36, 0.42, 0.54], trees: 0, fall: 1, cliffs: 1, bergs: 1 },
   // Крабовый мыс — летняя тундра: мох, валуны, кусты с ягодой, ловушки на берегу, без снега
   { sky: "#f4dcb8", sky2: "#fbeedd", fog: "#efe2cf", deep: "#185f6e", mid: "#23808c", shal: "#5fbfbd", sun: "#fff0d4", hemi: "#fff6e8", ground: "#8f8a72", sunI: 2.15,
-    snow: ["#a3ad78", "#8d9a62"], sand: "#d8c49a", deck: [0.78, 0.62, 0.42], trees: 1, fall: 0, shrubs: 1, traps: 1 },
+    snow: ["#a3ad78", "#8d9a62"], sand: "#d8c49a", deck: [0.78, 0.62, 0.42], trees: 1, fall: 0, shrubs: 1, traps: 1, outfit: 1 },
   // Ярмарочная гавань — вечер, тёплый свет, домики за рынком, флажки, каменная мостовая
   { sky: "#f2b98e", sky2: "#fde3cb", fog: "#f0d6c0", deep: "#1b4474", mid: "#2b6296", shal: "#62a6d0", sun: "#ffd2a0", hemi: "#ffe6d0", ground: "#8a7f8e", sunI: 2.0,
-    snow: ["#f6f1ec", "#e3dbd6"], deck: [0.6, 0.6, 0.56], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1 },
+    snow: ["#f6f1ec", "#e3dbd6"], deck: [0.6, 0.6, 0.56], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1, outfit: 2 },
 ];
 
 export const figMat = () => {
@@ -38,7 +38,8 @@ export class World {
     this.scene = scene; this.renderer = renderer; this.q = opt.quality; this.mode = opt.mode; this.L = opt.L || layout(opt.mode); this.theme = THEMES[opt.theme || 0];
     this.time = 0; this.ents = []; this.pops = [];
     this.root = new THREE.Group(); scene.add(this.root);
-    this.buildSky(); this.buildLights(); this.buildGround(); this.buildWater(); this.buildDecor(); this.buildEnts();
+    this.buildSky(); this.buildLights(); this.buildGround(); this.buildWater(); this.buildDecor(); this.buildEnts(); this.buildFestive();
+    this.wx = 0; this.tide = 0; this.decoLv = -1;
   }
   dispose() { this.scene.remove(this.root); this.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); for (const l of [this.hemi, this.sun, this.sun.target]) this.scene.remove(l); }
   /* ---------- небо и свет ---------- */
@@ -277,6 +278,28 @@ export class World {
       this.ents[e.i] = { e, grp, open: false, pop: 0 };
     }
   }
+  // украшения базы (награда за большие заказы): 1 — фонари у рынка, 2 — гирлянда флажков над рынком, 3 — флажки и бочки с цветами на дворе
+  buildFestive() {
+    const L = this.L, M = L.MAP, mat = figMat(), mk = (geo, x, z, r) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, z); m.rotation.y = r || 0; m.castShadow = true; return m; };
+    this.festive = [new THREE.Group(), new THREE.Group(), new THREE.Group()];
+    for (const g of this.festive) { g.visible = false; this.root.add(g); }
+    const lamp = lampGeo(); for (let x = M.w[0] + 1.4; x < M.w[1] - 1; x += 3.2) this.festive[0].add(mk(lamp, x, L.fz + 0.55));
+    const fl = BUILD.flags(5.6); for (let x = M.w[0] + 3.2; x < M.w[1] - 2; x += 6.0) this.festive[1].add(mk(fl, x, L.fz + 0.9));
+    const fl2 = BUILD.flags(4.2); for (const [x, z] of [[-11.5, 4.6], [11.5, 4.6]]) this.festive[2].add(mk(fl2, x, z, Math.PI / 2));
+    const tub = BUILD.flowers(); for (let x = M.w[0] + 2.2; x < M.w[1] - 1.5; x += 4.4) this.festive[2].add(mk(tub, x, L.fz - 0.65));
+  }
+  // погода события: буран — туман и сумрак; отлив — вода ниже
+  weather(G, dt) {
+    const v = G && G.evt, on = (k) => v && v.k === k && v.ph === 2;
+    this.wx += ((on("storm") ? 1 : 0) - this.wx) * Math.min(1, dt * 1.5);
+    this.tide += ((on("tide") ? 1 : 0) - this.tide) * Math.min(1, dt * 0.8);
+    const f = this.scene.fog; f.near = 38 - this.wx * 26; f.far = 80 - this.wx * 46;
+    this.wu.fogNear.value = f.near; this.wu.fogFar.value = f.far;
+    this.hemi.intensity = 1.05 - this.wx * 0.25; this.sun.intensity = this.theme.sunI * (1 - this.wx * 0.45);
+    this.water.position.y = -this.tide * 0.16;
+    const lv = (G && G.deco) || 0;
+    if (lv !== this.decoLv) { this.decoLv = lv; this.festive.forEach((g, i) => (g.visible = i < lv)); }
+  }
   // мягкое тёмное пятно под постройкой (вместо запечённой окклюзии)
   aoMat() {
     if (this._ao) return this._ao;
@@ -300,6 +323,7 @@ export class World {
   update(dt, G) {
     this.time += dt;
     this.wu.uTime.value = this.time;
+    if (G) this.weather(G, dt);
     for (const w of this.ents) {
       if (w.pop > 0) { w.pop += dt; const t = Math.min(1, w.pop / 0.55); const s = t < 1 ? 1 + Math.sin(t * Math.PI) * 0.25 * (1 - t) + (1 - Math.pow(1 - t, 3)) - 1 : 1; w.grp.scale.setScalar(Math.max(0.01, t < 1 ? Math.min(1.2, (1 - Math.pow(1 - t, 3)) * (1 + Math.sin(t * Math.PI) * 0.22)) : 1)); if (t >= 1) { w.pop = 0; w.grp.scale.setScalar(1); } void s; }
       // судно у причала

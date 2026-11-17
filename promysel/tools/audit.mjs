@@ -53,6 +53,8 @@ function check(why) {
     if (!S.chainOK(G, 0, it)) bad(`[${why}] заказ на «${ITEMS[it].n}», а цепочка не открыта`);
     if (!S.hasDest(G, 0, it)) bad(`[${why}] заказ на «${ITEMS[it].n}», а сдать некуда`);
   }
+  // 1б) большой заказ судна — тоже только на то, что уже можно сделать
+  const bs = S.bigStage(G); if (bs && !S.chainOK(G, 0, bs.it)) bad(`[${why}] большой заказ на «${ITEMS[bs.it].n}», а цепочка не открыта`);
   for (const e of L.E) {
     const s = G.e[e.i];
     // 2) входы/выходы спереди, сбыт открыт

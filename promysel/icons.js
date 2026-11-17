@@ -93,6 +93,7 @@ export function bubbleAtlas() {
   cell("switch", (x) => { bubble(x, "#ffb547", "rgba(120,70,20,.5)"); x.strokeStyle = "#fff"; x.lineWidth = 8; x.lineCap = "round"; x.beginPath(); x.moveTo(36, 54); x.lineTo(90, 54); x.moveTo(74, 36); x.lineTo(92, 54); x.lineTo(74, 72); x.stroke(); });
   for (let d = 1; d <= 9; d++) cell("x" + d, (x) => { x.font = "900 54px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.lineWidth = 9; x.strokeStyle = "rgba(30,40,60,.85)"; x.strokeText("×" + d, 64, 66); x.fillStyle = "#fff"; x.fillText("×" + d, 64, 66); });
   cell("full", (x) => { x.font = "900 30px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#ff5a4a"; rr(x, 6, 42, 116, 46, 18); x.fill(); x.fillStyle = "#fff"; x.fillText("ПОЛНО", 64, 66); });
+  cell("vip", (x) => { x.fillStyle = "#ffd34d"; x.strokeStyle = "#a8741a"; x.lineWidth = 7; x.beginPath(); x.moveTo(18, 96); x.lineTo(24, 40); x.lineTo(46, 66); x.lineTo(64, 28); x.lineTo(82, 66); x.lineTo(104, 40); x.lineTo(110, 96); x.closePath(); x.fill(); x.stroke(); x.fillStyle = "#ff5a4a"; for (const cx of [40, 64, 88]) { x.beginPath(); x.arc(cx, 82, 7, 0, 7); x.fill(); } });
   cell("zzz", (x) => { bubble(x, "#dfe9f3", "rgba(60,70,90,.35)"); x.font = "900 40px Nunito, Arial, sans-serif"; x.textAlign = "center"; x.fillStyle = "#6a7a90"; x.fillText("…", 64, 64); });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 2;
   return t;

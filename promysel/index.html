@@ -61,6 +61,11 @@
   #con .cbar i { display: block; height: 100%; background: var(--gold); }
   #con.late .cbar i { background: var(--red); }
   #con.ok { box-shadow: 0 0 0 3px rgba(126,217,87,.6); }
+  #big { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; height: auto; min-height: 40px; padding: 4px 12px 4px 6px; font-size: 13px; line-height: 1.15; background: linear-gradient(180deg, rgba(40, 70, 110, .85), rgba(20, 40, 70, .85)); }
+  #big img { width: 32px; height: 32px; flex: 0 0 32px; } #big .ct { display: flex; flex-direction: column; flex: 1; min-width: 0; } #big .ct span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #big .ct small { color: var(--muted2); font-size: 11px; font-weight: 800; } #big b { color: var(--gold); }
+  #big .dots { display: flex; gap: 3px; } #big .dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.2); } #big .dots i.on { background: var(--gold); }
+  #evc { flex: 0 0 auto; font-size: 13px; height: 40px; gap: 6px; } #evc b { font-family: "Rubik"; } #evc.warn { box-shadow: 0 0 0 2px rgba(255, 211, 77, .7); animation: pulse 1s infinite; } #evc.on { box-shadow: 0 0 0 2px rgba(143, 216, 255, .8); }
   #vs { gap: 6px; height: auto; padding: 6px 10px; flex-direction: column; align-items: stretch; flex: 1; }
   #vs .vr { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   #vs .vr b { width: 64px; overflow: hidden; text-overflow: ellipsis; }
@@ -199,6 +204,7 @@
     <div class="chip" id="prog"><span id="prog-t">Тихая бухта</span><div class="bar"><i id="prog-i"></i></div><b id="prog-n">0/30</b></div>
   </div>
   <div class="row"><div class="chip btn hidden" id="con"></div><div class="chip hidden" id="vs"></div></div>
+  <div class="row"><div class="chip btn hidden" id="big"></div><div class="chip hidden" id="evc"></div></div>
 </div>
 <div class="hud hidden" id="hint"></div>
 <div class="hud" id="tip"></div>

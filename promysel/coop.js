@@ -7,7 +7,7 @@ import * as S from "./sim.js";
 const R = (v) => Math.round(v * 100) / 100;
 const st2s = (st) => String.fromCharCode(...st.map((i) => 97 + i));
 const s2st = (s) => { const a = []; for (let i = 0; i < s.length; i++) a.push(s.charCodeAt(i) - 97); return a; };
-const MAJOR = { open: 1, upg: 1, goal: 1, contract: 1, ship: 1, switch: 1, angry: 1 };
+const MAJOR = { open: 1, upg: 1, goal: 1, contract: 1, ship: 1, switch: 1, angry: 1, big: 1, bayev: 1, deco: 1 };
 
 export function encode(G) {
   return {
@@ -15,8 +15,8 @@ export function encode(G) {
     e: G.e.map((s) => { const o = Object.assign({}, s); if (o.tm != null) o.tm = R(o.tm); if (o.rt != null) o.rt = R(o.rt); if (o.st != null) o.st = R(o.st); if (o.lt != null) o.lt = R(o.lt); if (o.cash != null) o.cash = R(o.cash); if (o.p) o.p = R(o.p); return o; }),
     pl: G.pl.map((p) => [R(p.x), R(p.z), R(p.dir), p.mv ? 1 : 0, st2s(p.st), p.team]),
     hp: G.hp.map((h) => [h.e, R(h.x), R(h.z), R(h.dir), h.mv ? 1 : 0, h.s, h.tg, st2s(h.st), R(h.tm)]),
-    cu: G.cu.map((c) => [c.id, R(c.x), R(c.z), R(c.dir), c.s, c.w, c.n, c.g, c.st, c.mood, c.sk, c.mv ? 1 : 0, Math.round(c.pat), Math.round(c.pm)]),
-    nb: G.nbuy || 0, con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd,
+    cu: G.cu.map((c) => [c.id, R(c.x), R(c.z), R(c.dir), c.s, c.w, c.n, c.g, c.st, c.mood, c.sk, c.mv ? 1 : 0, Math.round(c.pat), Math.round(c.pm), c.vip || 0]),
+    nb: G.nbuy || 0, big: G.big, bn: G.bigN || 0, bs: G.bigS || 0, dc: G.deco || 0, evt: G.evt ? { k: G.evt.k, ph: G.evt.ph, t: R(G.evt.t), n: G.evt.n } : null, tr: G.traps || [], con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd,
   };
 }
 // head — постоянные поля (режим, бухта, сложность…), их шлём в «go»
@@ -28,8 +28,8 @@ export function decode(h, s, prev) {
   G.e = s.e;
   G.pl = s.pl.map((a, i) => { const o = (prev && prev.pl && prev.pl[i]) || {}; return Object.assign(o, { x: a[0], z: a[1], dir: a[2], mv: a[3], st: s2st(a[4]), team: a[5] }); });
   G.hp = s.hp.map((a) => ({ e: a[0], x: a[1], z: a[2], dir: a[3], mv: a[4], s: a[5], tg: a[6], st: s2st(a[7]), tm: a[8], team: S.layout(h.mode, h.bay, h.v).E[a[0]].team, xt: 0 }));
-  G.cu = s.cu.map((a) => ({ id: a[0], x: a[1], z: a[2], dir: a[3], s: a[4], w: a[5], n: a[6], g: a[7], st: a[8], mood: a[9], sk: a[10], mv: a[11], pat: a[12], pm: a[13] }));
-  G.nbuy = s.nb || 0; G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd;
+  G.cu = s.cu.map((a) => ({ id: a[0], x: a[1], z: a[2], dir: a[3], s: a[4], w: a[5], n: a[6], g: a[7], st: a[8], mood: a[9], sk: a[10], mv: a[11], pat: a[12], pm: a[13], vip: a[14] || 0 }));
+  G.nbuy = s.nb || 0; G.big = s.big || null; G.bigN = s.bn || 0; G.bigS = s.bs || 0; G.deco = s.dc || 0; G.evt = s.evt || null; G.traps = s.tr || []; G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd;
   G.ev = G.ev || [];
   if (!G.rate) G.rate = 0; if (!G.rateAcc) G.rateAcc = 0;
   return G;
@@ -82,7 +82,9 @@ export class HostSync {
 }
 // гость стоит там, где делает действие? (с запасом на задержку)
 function zoneOk(G, pi, op) {
-  const L = S.layoutOf(G), e = L.E[op[1]], p = G.pl[pi]; if (!e) return false;
+  const L = S.layoutOf(G), p = G.pl[pi];
+  if (op[0] === "t") { const tr = G.traps && G.traps[op[1]]; return !!tr && Math.hypot(p.x - tr.x, p.z - tr.z) < 2.6; }
+  const e = L.E[op[1]]; if (!e) return false;
   const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
   if (!z) return false;
   return Math.hypot(p.x - z.x, p.z - z.z) < z.r + 1.6 + (op[0] === "k" ? S.cashReach(G) : 0);

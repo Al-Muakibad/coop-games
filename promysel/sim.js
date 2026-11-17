@@ -2,7 +2,7 @@
 // Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layoutOf(G).
 // Действия игроков — «операции» (op): поймать, положить, взять, заплатить, собрать выручку. Гость применяет их у себя сразу
 // и отправляет хозяину; хозяин проверяет и применяет у себя (см. coop.js).
-import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z } from "./data.js";
+import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z, EVENTS, DECO_MAX } from "./data.js";
 
 const TAU = Math.PI * 2;
 const hyp = Math.hypot;
@@ -97,6 +97,7 @@ export function newGame(o) {
     teams: L.teams, money: [o.money || 0, o.money || 0], earned: [0, 0], spent: [0, 0], nbuy: 0, ne: L.E.length,
     upg: [{}, {}], e: [], pl: [], hp: [], cu: [], nid: 1, ev: [], bv: 1,
     con: null, conT: 40, stars: 0, cdone: 0, cfail: 0, done: -1, winner: -1, rate: 0, rateAcc: 0, served: 0, lost: 0,
+    big: null, bigN: 0, bigS: 0, deco: 0, evt: null, traps: [],
     cid: o.cid || Math.random().toString(36).slice(2, 10),
   };
   if (mode === "vs") G.perks = {};
@@ -144,7 +145,7 @@ export function costMul(G) {
 }
 export function priceMul(G) {
   if (G.mode === "vs") return 2.5;
-  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)) : Math.pow(1.3, G.lap || 0);
+  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)) : Math.pow(1.3, G.lap || 0) * (1 + 0.03 * (G.deco || 0));
 }
 const gearMul = (G) => costMul(G) * (layoutOf(G).MAP.cm || 1);
 export function capOf(G, team) { return UPG.bag.v(G.upg[team].bag) + 2 * pk(G, "p_cap") + mt(G, "m_bag"); }
@@ -175,6 +176,7 @@ export function padVisible(G, i) {
   if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire") return false;
   if (e.k === "upg") { if (e.def.u === "crew" || e.def.u === "crewspd") return false; if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
   else if (e.k === "supg") { if (!G.e[e.tg].o || (G.e[e.tg].lv || 0) >= SUPG.max) return false; }
+  else if (e.k === "goal" && !bigDone(G)) return false;
   else if (s.o) return false;
   if (e.def.free) return false;
   for (const a of e.after) if (!G.e[a].o) return false;
@@ -211,7 +213,7 @@ const WADE = 0.6;
 function inWater(G, L, x, z) {
   if (z >= shoreZ(L, x) - WADE) return false;
   for (const e of L.E) {
-    if (e.k === "spot" && !e.def.auto && hyp(x - e.zin.x, z - e.zin.z) < e.zin.r + 0.35) return false;   // отмель — можно зайти в воду
+    if (e.k === "spot" && !e.def.auto && hyp(x - e.zin.x, z - e.zin.z) < e.zin.r + 0.35 + tideR(G)) return false;   // отмель — можно зайти в воду (на отливе шире)
     if (e.k === "pier" && G.e[e.i].o && Math.abs(x - e.pier.x) < 0.95 && z > e.pier.z1 - 0.3 && z < e.pier.z0 + 0.5) return false;
     if (e.k === "dock" && G.e[e.i].o && hyp(x - e.x, z - e.z) < 1.3) return false;
   }
@@ -370,7 +372,7 @@ export function hasDest(G, team, it) {
   const L = layoutOf(G);
   for (const e of L.E) { if (G.mode === "vs" && e.team !== team) continue; const s = G.e[e.i]; if (!s.o) continue;
     if (e.k === "proc" && e.rec.in.includes(it)) return true; if (e.k === "stall" && e.item === it) return true; if (e.k === "dock" && e.acc.includes(it)) return true; }
-  return !!(G.con && !G.con.end && G.con.it === it && G.mode !== "vs");
+  return !!(G.con && !G.con.end && G.con.it === it && G.mode !== "vs") || bigWants(G, it);
 }
 // чего не хватает, чтобы товар было куда нести (для подсказки)
 export function needFor(G, team, it) {
@@ -385,11 +387,15 @@ export function accepts(G, ei, it) {
   if (e.k === "proc") { const k = e.rec.in.indexOf(it); return k >= 0 && s.ib[k] < 24 + SUPG.cap * (s.lv || 0) + shelfPlus(G); }
   if (e.k === "stall") return e.item === it && s.sh < 24 + shelfPlus(G);
   if (e.k === "dock") return e.acc.includes(it) && s.pile.length < e.def.cap;
-  if (e.k === "board") return !!(G.con && G.con.it === it && G.con.got < G.con.n && !G.con.end);
+  if (e.k === "board") return !!(G.con && G.con.it === it && G.con.got < G.con.n && !G.con.end) || bigWants(G, it);
   return false;
 }
 export function applyOp(G, a, op) {
   const L = layoutOf(G), ag = agentOf(G, a); if (!ag) return false;
+  if (op[0] === "t") {      // ловушка с крабами на отливе: op = ["t", номер ловушки]
+    const tr = G.traps && G.traps[op[1]]; if (!tr || tr.n <= 0 || ag.st.length >= capFor(G, a)) return false;
+    tr.n--; ag.st.push(IT.crab); G.ev.push({ t: "trap", a, k: op[1], it: IT.crab }); return true;
+  }
   const ei = op[1], e = L.E[ei], s = G.e[ei]; if (!e || !s) return false;
   const team = ag.team;
   if (e.team !== team && G.mode === "vs" && op[0] !== "c") return false;
@@ -397,6 +403,8 @@ export function applyOp(G, a, op) {
     case "c": {
       if (e.k !== "spot" || !s.o || s.f <= 0 || ag.st.length >= capFor(G, a)) return false;
       s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item });
+      // ход лосося: каждый улов — двойной
+      if (evOn(G, "run") && s.f > 0 && ag.st.length < capFor(G, a)) { s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item, dbl: 1 }); }
       if (a[0] === "p" && pk(G, "p_dbl") && s.f > 0 && ag.st.length < capFor(G, a) && rnd(G) < 0.2 * pk(G, "p_dbl")) { s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item, dbl: 1 }); }
       return true;
     }
@@ -407,7 +415,7 @@ export function applyOp(G, a, op) {
       if (e.k === "proc") s.ib[e.rec.in.indexOf(it)]++;
       else if (e.k === "stall") s.sh++;
       else if (e.k === "dock") s.pile.push(it);
-      else if (e.k === "board") { G.con.got++; if (G.con.got >= G.con.n) finishContract(G, true); }
+      else if (e.k === "board") { if (G.con && G.con.it === it && G.con.got < G.con.n && !G.con.end) { G.con.got++; if (G.con.got >= G.con.n) finishContract(G, true); } else bigGot(G, ei); }
       G.ev.push({ t: "drop", a, e: ei, it, k }); return true;
     }
     case "p": {
@@ -519,9 +527,15 @@ export function proximityOps(G, pi, dt, loc) {
       if (!hasDest(G, team, it)) loc.noDest = it; else { ops.push(["p", ei]); loc.xt = PLAYER.xferT; }
     }
   }
+  // ловушки на отливе: стоишь у ловушки — крабы сами идут в короб
+  if (loc.ct <= 0 && G.traps && G.traps.length && p.st.length < capOf(G, team)) for (let k = 0; k < G.traps.length; k++) {
+    const tr = G.traps[k]; if (tr.n <= 0 || hyp(p.x - tr.x, p.z - tr.z) > 1.0) continue;
+    if (!hasDest(G, team, IT.crab)) { loc.noDest = IT.crab; break; }
+    ops.push(["t", k]); loc.ct = 0.18; break;
+  }
   // ловля
   if (loc.ct <= 0 && p.st.length < capOf(G, team)) for (const e of L.E) {
-    if (!mine(e) || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin)) continue;
+    if (!mine(e) || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin, e.def.auto ? 0 : tideR(G))) continue;
     if (!hasDest(G, team, e.item)) { loc.noDest = e.item; continue; }
     ops.push(["c", e.i]); loc.ct = catchOf(G, team); break;
   }
@@ -548,7 +562,10 @@ export function step(G, dt, opt) {
   }
   for (const e of L.E) {
     const s = G.e[e.i]; if (!s.o) continue;
-    if (e.k === "spot") { if (s.f < SCHOOL.max) { s.rt += dt; const per = SCHOOL.regen / (1 + 0.9 * helpersAt(G, e.i) + (s.f < 8 ? 1 : 0)); while (s.rt > per && s.f < SCHOOL.max) { s.rt -= per; s.f++; } } else s.rt = 0; }
+    if (e.k === "spot") {
+      if (evOn(G, "storm") && !e.def.auto) { s.f = Math.max(0, s.f - dt * 14); s.rt = 0; continue; }     // буран: косяк уходит
+      if (s.f < SCHOOL.max) { s.rt += dt; const per = SCHOOL.regen / (1 + 0.9 * helpersAt(G, e.i) + (s.f < 8 ? 1 : 0)) / (evOn(G, "run") ? 4 : 1); while (s.rt > per && s.f < SCHOOL.max) { s.rt -= per; s.f++; } } else s.rt = 0;
+    }
     else if (e.k === "proc") {
       const ready = s.ib.every((n) => n > 0) && s.ob < 30 + SUPG.cap * (s.lv || 0) + shelfPlus(G);
       if (ready) { s.tm += dt; if (s.tm >= e.rec.t / (1 + SUPG.speed * (s.lv || 0)) / (1 + 0.2 * pk(G, "s_speed"))) { s.tm = 0; for (let k = 0; k < s.ib.length; k++) s.ib[k]--; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.rec.out }); } }
@@ -559,7 +576,7 @@ export function step(G, dt, opt) {
   }
   stepHelpers(G, dt);
   stepCustomers(G, dt);
-  if (G.mode !== "vs") stepContract(G, dt);
+  if (G.mode !== "vs") { stepContract(G, dt); stepBig(G); stepEvent(G, dt); }
   // средний доход (для дохода, пока игры нет)
   G.rateAcc += dt;
   if (G.rateAcc >= 10) { const got = G.earned[0] - (G.rateBase || 0); G.rateBase = G.earned[0]; G.rate = G.rate ? G.rate * 0.8 + got / G.rateAcc * 0.2 : got / G.rateAcc; G.rateAcc = 0; }
@@ -617,7 +634,9 @@ function stepHelpers(G, dt) {
       h.mv = 0;
       if (h.st.length >= cap || (h.st.length && h.tm > 5)) { h.s = 2; h.tm = 0; continue; }
       if (h.xt <= 0) {
-        const ok = src.k === "spot" ? applyOp(G, a, ["c", src.i]) : applyOp(G, a, ["p", src.i]);
+        // большой заказ: у цеха, который делает нужное, помощники оставляют запас — его забирает игрок
+        const keep = src.k !== "spot" && bigWants(G, src.k === "gen" ? src.item : src.rec.out) && G.e[src.i].ob <= 8;
+        const ok = keep ? false : src.k === "spot" ? applyOp(G, a, ["c", src.i]) : applyOp(G, a, ["p", src.i]);
         h.xt = src.k === "spot" ? HELPER.catchT : HELPER.xferT;
         if (ok) h.tm = Math.min(h.tm, 3.5);
       }
@@ -655,12 +674,15 @@ function stepCustomers(G, dt) {
   G.spT = (G.spT || 0) - dt;
   if (items.length && G.spT <= 0) {
     const free = items.filter((it) => wantN[it] < (G.mode === "vs" ? 16 : 13));
-    G.spT = 1.15 / Math.sqrt(items.length) * (0.7 + rnd(G) * 0.6);
+    G.spT = 1.15 / Math.sqrt(items.length) * (0.7 + rnd(G) * 0.6) / (evOn(G, "fair") ? 1.6 : 1);
     if (free.length && G.cu.length < 64) {
-      const it = free[Math.floor(rnd(G) * free.length)];
+      let it = free[Math.floor(rnd(G) * free.length)];
+      // ярмарочный день: половина новых покупателей — важные гости: берут дорогое и больше, платят втрое
+      const vip = evOn(G, "fair") && rnd(G) < 0.5;
+      if (vip) { const best = free.reduce((a, b) => ((ITEMS[b].price || 0) > (ITEMS[a].price || 0) ? b : a)); if (rnd(G) < 0.6) it = best; }
       const pr = ITEMS[it].price || 1, nmax = pr < 10 ? 4 : pr < 35 ? 3 : 2;
       const cx = L.crowd;
-      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + ((G.v || 1) < 2 && G.bay > 0 ? 1 : 0)), g: 0, st: -1, pat: pat0, pm: pat0,
+      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + ((G.v || 1) < 2 && G.bay > 0 ? 1 : 0)) + (vip ? 1 : 0), g: 0, st: -1, pat: pat0 * (vip ? 1.5 : 1), pm: pat0 * (vip ? 1.5 : 1), vip: vip ? 1 : 0,
         tx: cx[0] + rnd(G) * (cx[1] - cx[0]), tz: cx[2] + rnd(G) * (cx[3] - cx[2]), lk: rnd(G) * 6, bt: 0, mood: 0, sk: Math.floor(rnd(G) * 6), mv: 0 });
     }
   }
@@ -701,7 +723,7 @@ function stepCustomers(G, dt) {
         if (c.g < c.n && s.sh > 0 && c.bt > CUSTOMER.buyT) { c.bt = 0; s.sh--; c.g++; G.ev.push({ t: "buy", c: c.id, e: c.st, it: c.w }); c.pat = Math.min(c.pm, c.pat + 4); }
         if (c.g >= c.n) {
           const tip = pk(G, "e_tip") && rnd(G) < 0.2 ? 0.5 * pk(G, "e_tip") : 0;
-          const amt = Math.round(itemPrice(G, c.w) * c.n * (c.mood === 2 ? 0.9 : 1) * (1 + tip) * 10) / 10;
+          const amt = Math.round(itemPrice(G, c.w) * c.n * (c.mood === 2 ? 0.9 : 1) * (1 + tip) * (c.vip ? 3 : 1) * 10) / 10;
           s.cash += amt; G.earned[e.team] += amt; G.served++;
           G.ev.push({ t: "pay", e: c.st, amt, c: c.id });
           s.q.splice(0, 1); c.s = 4; c.mood = 1; c.tx = c.x + (c.x < 0 ? -2 : 2); c.tz = ROAD_Z + 3;
@@ -755,6 +777,47 @@ function finishContract(G, ok) {
   if (ok) { G.e[L.byId[0].board].cash += c.rw; G.earned[0] += c.rw; G.cdone++; G.stars += DIFF[G.diff].star; G.ev.push({ t: "contract", s: "done", amt: c.rw }); }
   else { G.cfail++; G.ev.push({ t: "contract", s: "fail" }); }
 }
+
+/* ---------- большой заказ судна и финальная поставка: три ступени, сдаются у доски заказов ---------- */
+const bigList = (G) => ((G.v || 1) >= 2 && G.mode !== "vs" && layoutOf(G).MAP.big) || [];
+export function bigDone(G) { return (G.bigN || 0) >= bigList(G).length; }
+export function bigStage(G) { const b = G.big; if (!b) return null; const d = bigList(G)[b.i]; if (!d) return null; const st = d.st[b.s]; return { n: d.n, it: IT[st[0]], need: st[1], got: b.got, s: b.s, of: d.st.length, rw: d.rw }; }
+function bigWants(G, it) { const s = bigStage(G); return !!(s && s.it === it && s.got < s.need); }
+function bigGot(G, bi) {
+  const st = bigStage(G); if (!st) return;
+  G.big.got++;
+  if (G.big.got < st.need) return;
+  // ступень сдана: награда у доски, украшения базы растут
+  const amt = Math.round(st.rw * (0.25 + 0.15 * st.s) * priceMul(G));
+  G.e[bi].cash += amt; G.earned[0] += amt; G.bigS = (G.bigS || 0) + 1;
+  if (G.bigS % 2 === 1 && (G.deco || 0) < DECO_MAX) { G.deco = (G.deco || 0) + 1; G.ev.push({ t: "deco", lv: G.deco }); }
+  if (G.big.s + 1 < st.of) { G.big.s++; G.big.got = 0; G.ev.push({ t: "big", s: "stage", amt, k: G.big.s }); }
+  else { G.big = null; G.bigN = (G.bigN || 0) + 1; G.ev.push({ t: "big", s: "done", amt, last: bigDone(G) ? 1 : 0 }); }
+}
+function stepBig(G) {
+  const list = bigList(G); if (G.big || (G.bigN || 0) >= list.length) return;
+  const L = layoutOf(G), bi = L.byId[0].board, d = list[G.bigN];
+  if (bi == null || !G.e[bi].o || !G.e[L.byId[0][d.after]].o) return;
+  G.big = { i: G.bigN, s: 0, got: 0 }; G.ev.push({ t: "big", s: "new" });
+}
+/* ---------- события бухт: буран, ход лосося, отлив, ярмарочный день ----------
+   G.evt = { k, ph: 0 — ждём, 1 — предупреждение, 2 — идёт; t — сколько осталось до смены фазы, n — сколько уже было } */
+export function evOn(G, k) { return !!(G.evt && G.evt.ph === 2 && G.evt.k === k); }
+export const tideR = (G) => (evOn(G, "tide") ? 1.3 : 0);
+function stepEvent(G, dt) {
+  const k = (G.v || 1) >= 2 && layoutOf(G).MAP.event; if (!k) return;
+  const E = EVENTS[k];
+  if (!G.evt) G.evt = { k, ph: 0, t: E.first, n: 0 };
+  const v = G.evt; v.t -= dt;
+  if (v.t > 0) return;
+  if (v.ph === 0) { v.ph = 1; v.t = E.warn; G.ev.push({ t: "bayev", s: "warn", k }); }
+  else if (v.ph === 1) {
+    v.ph = 2; v.t = E.dur; v.n++; G.ev.push({ t: "bayev", s: "start", k });
+    if (k === "tide") G.traps = (layoutOf(G).MAP.traps || []).map(([x, z]) => ({ x, z, n: 6 }));
+  } else { v.ph = 0; v.t = E.every - E.warn - E.dur; G.ev.push({ t: "bayev", s: "end", k }); if (k === "tide") G.traps = []; }
+}
+// принудительно запустить событие (отладка и проверки)
+export function forceEvent(G) { if (G.evt) { G.evt.ph = 0; G.evt.t = 0.001; } else { const k = layoutOf(G).MAP.event; if (k) G.evt = { k, ph: 0, t: 0.001, n: 0 }; } }
 
 /* ---------- цепочки ---------- */
 // товар можно сделать: открыто место, где он ловится/делается, и всё, что нужно на входе, тоже можно сделать

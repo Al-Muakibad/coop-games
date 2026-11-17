@@ -1,10 +1,11 @@
 // «Промысел» — бот-игрок (соперник в «друг против друга», напарник во «вместе», и он же гоняет баланс).
 // Бот не жульничает: только выбирает, куда идти, и «держит джойстик». Ловить, носить и платить его заставляет
 // та же самая близость к местам, что и человека (sim.proximityOps).
-import { layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
+import { bigStage, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
 import { UPG } from "./data.js";
 import { IT, ITEMS } from "./data.js";
 
+const bigNeeds = (G, it) => { const s = bigStage(G); return !!(s && s.it === it && s.got < s.need); };
 export function makeBot(pi, opt) {
   opt = opt || {};
   const skill = opt.skill || "good";
@@ -77,10 +78,12 @@ export function makeBot(pi, opt) {
     for (const e of L.E) {
       if ((e.team !== team && G.mode === "vs") || !G.e[e.i].o) continue;
       const s = G.e[e.i];
+      // большой заказ: встаём у цеха, который делает нужное, и ждём готового
+      if ((e.k === "proc" || e.k === "gen") && bigNeeds(G, e.k === "gen" ? e.item : e.rec.out)) { const sc = 500 + Math.min(s.ob, cap) - hyp(e.zout.x - p.x, e.zout.z - p.z) * 0.4; if (sc > bs) { bs = sc; best = { k: "pick", e: e.i, big: 1 }; } }
       if ((e.k === "proc" || e.k === "gen") && s.ob > 0) {
         const it = e.k === "gen" ? e.item : e.rec.out;
         if (!hasDest(G, L, team, it)) continue;
-        const v = (itemPrice(G, it) || 4) * (G.con && !G.con.end && G.con.it === it ? 3 : 1);
+        const v = (itemPrice(G, it) || 4) * (G.con && !G.con.end && G.con.it === it ? 3 : 1) * (bigNeeds(G, it) ? 3 : 1);
         const sc = Math.min(s.ob, cap) * v * 0.3 + (e.k === "gen" ? 2 : 0) - hyp(e.zout.x - p.x, e.zout.z - p.z) * 0.5 + (s.ob > 12 ? 6 : 0);
         if (sc > bs) { bs = sc; best = { k: "pick", e: e.i }; }
       }
@@ -107,7 +110,7 @@ export function makeBot(pi, opt) {
     if (t.k === "hire") return t.h != null ? !canHire(G, t.h) || G.money[p.team] < hireCost(G, t.h) : G.money[p.team] < crewCost(G, p.team, t.u);
     if (t.k === "cash") return !(s.cash > 0);
     if (t.k === "deliver") { if (t.e < 0) return true; for (const it of p.st) if (accepts(G, t.e, it)) return false; return true; }
-    if (t.k === "pick") return p.st.length >= cap || s.ob <= 0;
+    if (t.k === "pick") return p.st.length >= cap || (s.ob <= 0 && !(t.big && B.tt < 25)) || (t.big && p.st.length >= 4);
     if (t.k === "fish") return p.st.length >= cap || s.f <= 0;
     return true;
   }

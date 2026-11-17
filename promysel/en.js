@@ -117,3 +117,19 @@ window.I18N && I18N.add({
   "Маяк — конец бухты: выбери знак промысла (1 из 3) и плыви дальше. В каждой бухте свои товары. Якоря тратятся во «Флоте».": "The lighthouse ends a bay: pick a trade badge (1 of 3) and sail on. Every bay has its own goods. Spend anchors in the Fleet.",
   "деньги общие, доска заказов даёт награды за сроки.": "shared money, the order board pays for deadlines.",
 });
+window.I18N && I18N.add({
+  "Уха": "Fish soup", "Подарочный набор икры": "Caviar gift box", "Морское ассорти": "Seafood platter", "Печень трески": "Cod liver",
+  "Ларёк ухи": "Fish soup kiosk", "Котёл ухи": "Soup cauldron", "Рыбак для ухи": "Soup fisher", "Истопник": "Stoker", "Разносчик ухи": "Soup runner",
+  "Упаковочная": "Packing house", "Подносчик икры": "Caviar runner", "Подносчик банок": "Can runner", "Грузчик наборов": "Gift box loader",
+  "Прилавок: ассорти": "Stall: platters", "Закусочная": "Snack bar", "Подносчик краба": "Crab runner", "Подносчик мидий": "Mussel runner", "Разносчик ассорти": "Platter runner",
+  "Прилавок: печень трески": "Stall: cod liver", "Цех печени": "Liver works", "Рыбак цеха печени": "Liver works fisher", "Разносчик печени": "Liver runner",
+  "Большой заказ судна": "Big ship order", "Финальная поставка": "Final delivery", "Буран": "Blizzard", "Ход лосося": "Salmon run", "Отлив": "Low tide", "Ярмарочный день": "Fair day",
+  "Бураны: косяк уходит — держи запас": "Blizzards: the school swims off — keep a stock", "Ход лосося: улов вдвое": "Salmon run: double catch", "Приливы и отливы: на отливе — ловушки с крабами": "Tides: crab traps at low tide", "Ярмарочный день: важные гости платят втрое": "Fair day: important guests pay triple",
+  "Идёт буран!": "A blizzard is coming!", "Через 15 с косяк уйдёт на 40 с — запасись рыбой": "In 15 s the school leaves for 40 s — stock up", "Буран: косяк ушёл": "Blizzard: the school is gone", "Буран стих — рыба вернулась": "The blizzard is over — fish are back",
+  "Лосось идёт на нерест!": "Salmon are running!", "Скоро ход лосося — беги на отмель": "Salmon run soon — run to the shallows", "Ход лосося: каждый улов вдвое": "Salmon run: every catch is double", "Ход лосося закончился": "The salmon run is over",
+  "Начинается отлив": "Low tide is coming", "Вода уйдёт — на берегу появятся ловушки с крабами": "The water goes out — crab traps appear on the shore", "Отлив: отмель шире, ловушки на берегу": "Low tide: wider shallows, traps on the shore", "Прилив — ловушки ушли под воду": "High tide — the traps are under water",
+  "Скоро придут важные гости — запасись товаром": "Important guests are coming — stock up", "Важные гости платят втрое": "Important guests pay triple", "Ярмарка закончилась": "The fair is over",
+  "Большой заказ": "Big order", "Неси к доске заказов": "Bring it to the order board", "Заказ судна выполнен!": "Ship order done!", "Ступень сдана!": "Stage done!", "у доски заказов": "at the order board", "маяк можно строить": "the lighthouse can be built",
+  "База украшена": "The base is decorated", "Покупатели довольнее — цены выше на 3%": "Happier buyers — prices +3%", "через": "in", "ЛОВУШКА": "TRAP",
+});
+window.I18N && I18N.add({ "Ярмарочный день!": "Fair day!", "Особое": "Special" });

@@ -2,7 +2,7 @@
 // HUD, события → эффекты и звук, сохранения, кнопка «Назад».
 import * as THREE from "three";
 import * as S from "./sim.js";
-import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, anchorsFor, recText, YAW } from "./data.js";
+import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
@@ -395,6 +395,7 @@ function setupInput() {
   $("b-menu").onclick = () => openPause();
   $("partner").onclick = () => partnerMenu();
   $("con").onclick = () => { focusBoard(2.4); play("click"); };
+  $("big").onclick = () => { focusBoard(2.4); play("click"); };
   $("hirel").addEventListener("click", hireClick);
 }
 function stick() {
@@ -456,7 +457,7 @@ function onEvents(list, remote) {
   const Lr = L_();
   for (const e of list) {
     const isMe = e.a === "p" + me;
-    if (remote && isMe && (e.t === "catch" || e.t === "drop" || e.t === "pick" || e.t === "padpay" || e.t === "cash")) continue;   // свои — уже показаны
+    if (remote && isMe && (e.t === "catch" || e.t === "drop" || e.t === "pick" || e.t === "padpay" || e.t === "cash" || e.t === "trap")) continue;   // свои — уже показаны
     const en = e.e != null ? Lr.E[e.e] : null;
     switch (e.t) {
       case "catch": {
@@ -556,6 +557,27 @@ function onEvents(list, remote) {
         break;
       case "switch": { const to = Lr.E[e.e]; if (G.mode === "vs") { if (to.team === G.pl[me].team) toast("😊 " + L("Покупатель перешёл к тебе"), "good"); else toast("💢 " + L("Покупатель ушёл к сопернику"), "bad"); } break; }
       case "goal": onGoal(e); break;
+      case "bayev": {
+        const E = EVENTS[e.k], txt = {
+          storm: ["🌨 " + L("Идёт буран!"), L("Через 15 с косяк уйдёт на 40 с — запасись рыбой"), L("Буран: косяк ушёл"), L("Буран стих — рыба вернулась")],
+          run: ["🐟 " + L("Лосось идёт на нерест!"), L("Скоро ход лосося — беги на отмель"), L("Ход лосося: каждый улов вдвое"), L("Ход лосося закончился")],
+          tide: ["🌊 " + L("Начинается отлив"), L("Вода уйдёт — на берегу появятся ловушки с крабами"), L("Отлив: отмель шире, ловушки на берегу"), L("Прилив — ловушки ушли под воду")],
+          fair: ["🎪 " + L("Ярмарочный день!"), L("Скоро придут важные гости — запасись товаром"), L("Важные гости платят втрое"), L("Ярмарка закончилась")],
+        }[e.k];
+        if (!txt) break;
+        if (e.s === "warn") { banner(txt[0], txt[1], "gold"); play("bell", { vol: 0.7 }); haptic("notify", "warning", true); }
+        else if (e.s === "start") { toast(txt[2], "gold", 3.5); play(e.k === "storm" ? "gull2" : "levelup", { vol: 0.5 }); if (e.k === "storm") cam.shake = 0.3; }
+        else toast(txt[3], "good", 3);
+        void E; break;
+      }
+      case "big": {
+        const b = S.bigStage(G);
+        if (e.s === "new") { banner("🚢 " + L(b ? b.n : "Большой заказ"), L("Неси к доске заказов") + ": " + (b ? L(ITEMS[b.it].n) + " ×" + b.need : ""), "gold"); play("bell"); focusBoard(2.4); }
+        else { play("levelup"); haptic("notify", "success", true); banner(e.s === "done" ? "✅ " + L("Заказ судна выполнен!") : "✅ " + L("Ступень сдана!"), "+" + fmt(e.amt) + " — " + L("у доски заказов") + (e.last ? " · " + L("маяк можно строить") : ""), "gold"); const bi = Lr.byId[0].board; if (bi != null) { const be = Lr.E[bi]; view.burst(be.x, 2.5, be.z, "conf", 40); } }
+        break;
+      }
+      case "deco": banner("🏮 " + L("База украшена"), L("Покупатели довольнее — цены выше на 3%"), "gold"); play("upgrade"); break;
+      case "trap": { const tp = G.traps && G.traps[e.k]; if (tp) view.fly(e.it, { x: tp.x, y: 0.1, z: tp.z }, () => view.topOf(e.a), { key: e.a, dur: 0.3, h: 0.8 }); if (isMe) { play("plop", { vol: 0.45 }); haptic("impact", "light"); } break; }
       case "perk": { const pp = PERKS.find((x) => x.id === e.id); if (pp) banner("🎖 " + L(pp.n), L(pp.d), "gold"); break; }
       case "supg": { const z = en.zpad, mine = G.mode !== "vs" || e.team === G.pl[me].team; if (camNear(z.x, z.z, 14)) view.burst(z.x, 0.4, z.z, "gold", 22); if (mine) { play("upgrade", { vol: 0.8 }); toast(`⚙ ${entName(Lr.E[e.of])} — ${L("ур.")}${e.lv}: ${L("быстрее и вмещает больше")}`, "gold"); } break; }
     }
@@ -638,7 +660,7 @@ function nextBayDlg() {
   const icons = B.news.map((k) => `<img src="${ICONURL[k] || ""}" title="${esc(L(ITEMS[IT[k]].n))}">`).join("");
   const nPerk = Object.values(G.perks).reduce((a, b) => a + b, 0);
   dialog(`<h2>⛵ ${L(B.n)}${lap ? " · " + L("круг") + " " + (lap + 1) : ""}</h2>
-    <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p>
+    <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p><p>✨ ${L("Особое")}: ${L(B.ev)}</p>
     <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("половина")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
     <button class="b primary" id="n-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}</span></button>
     <button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться пока здесь")}<small>${L("Уплыть можно из меню")}</small></span></button>`, true);
@@ -771,6 +793,20 @@ function updHud(force) {
     if (ce.dataset.h !== html) { ce.innerHTML = html; ce.dataset.h = html; }
     ce.classList.toggle("late", c.t < c.T * 0.25 && !c.end); ce.classList.toggle("ok", !!(c.end && c.ok));
   } else ce.classList.add("hidden");
+  // большой заказ судна
+  const be = $("big"), bs = G.mode !== "vs" ? S.bigStage(G) : null;
+  if (bs) {
+    be.classList.remove("hidden");
+    const html = `<img src="${ICONURL[ITEMS[bs.it].id]}"><div class="ct"><span>🚢 ${L(bs.n)}: ${L(ITEMS[bs.it].n)} <b>${bs.got}/${bs.need}</b></span><small class="dots">${Array.from({ length: bs.of }, (_, k) => `<i class="${k < bs.s ? "on" : ""}"></i>`).join("")}</small></div>`;
+    if (be.dataset.h !== html) { be.innerHTML = html; be.dataset.h = html; }
+  } else be.classList.add("hidden");
+  // событие бухты: предупреждение и таймер
+  const ec = $("evc"), ev = G.evt;
+  if (ev && ev.ph > 0 && G.mode !== "vs") {
+    ec.classList.remove("hidden"); ec.classList.toggle("warn", ev.ph === 1); ec.classList.toggle("on", ev.ph === 2);
+    const ic = { storm: "🌨", run: "🐟", tide: "🌊", fair: "🎪" }[ev.k] || "⏱";
+    setText(ec, `${ic} ${L(EVENTS[ev.k].n)} ${ev.ph === 1 ? L("через") + " " : ""}${Math.ceil(Math.max(0, ev.t))}${L("с")}`);
+  } else ec.classList.add("hidden");
   // против
   const ve = $("vs");
   if (G.mode === "vs") {
@@ -806,6 +842,8 @@ function computeHint() {
     const np0 = S.nextPad(G, team), afford = np0 >= 0 && G.money[team] >= S.padCost(G, np0) - G.e[np0].p;
     if (!G.cdone && !p.st.length && !afford) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
   }
+  const bst = G.mode !== "vs" ? S.bigStage(G) : null;
+  if (bst && bi != null && G.e[bi].o && p.st.includes(bst.it)) { guideForce = true; return { ic: ITEMS[bst.it].id, tx: "🚢 " + L("Неси") + " «" + L(ITEMS[bst.it].n) + "» " + L("к доске заказов"), t: Lr.E[bi].zin }; }
   let np = S.nextPad(G, team);
   // нанять в артели дешевле, чем ближайшая площадка? — подсказываем артель
   const house = Lr.hire.find((h) => Lr.E[h].team === team || G.mode !== "vs");
