@@ -52,7 +52,7 @@
   @keyframes pulse { 50% { opacity: .35; } }
   /* строка задач: заказ, заказ судна, событие — коротко; #top.exp — подробно */
   #tasks { flex-wrap: wrap; } #tasks:empty { display: none; }
-  #tasks .chip { position: relative; overflow: hidden; height: 34px; padding: 0 10px 0 4px; gap: 5px; font-size: 13px; flex: 0 1 auto; min-width: 0; }
+  #tasks .chip { width: auto; margin: 0; position: relative; overflow: hidden; height: 34px; padding: 0 10px 0 4px; gap: 5px; font-size: 13px; flex: 0 1 auto; min-width: 0; }
   #tasks .chip img { width: 28px; height: 28px; flex: 0 0 28px; } #tasks .chip .ic { font-size: 16px; } #tasks .chip b { font-family: "Rubik", sans-serif; font-size: 14px; color: var(--gold); }
   #tasks .chip .tm { font-family: "Rubik", sans-serif; font-size: 13px; color: var(--cream); }
   #tasks .chip .full { font-size: 12px; font-weight: 800; color: var(--muted2); white-space: normal; line-height: 1.15; }
@@ -60,7 +60,7 @@
   #con.late .bar { background: var(--red); } #con.late .tm { color: #ffb0a6; } #con.ok { box-shadow: 0 0 0 2px rgba(126,217,87,.7); } #con.offer { box-shadow: 0 0 0 2px rgba(255,211,77,.6); }
   #big { background: linear-gradient(180deg, rgba(40, 70, 110, .85), rgba(20, 40, 70, .85)); }
   #big .dots { display: flex; gap: 3px; } #big .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); } #big .dots i.on { background: var(--gold); }
-  #evc.warn { box-shadow: 0 0 0 2px rgba(255, 211, 77, .7); animation: pulse 1s infinite; } #evc.on { box-shadow: 0 0 0 2px rgba(143, 216, 255, .8); }
+  #evc.warn { box-shadow: 0 0 0 2px rgba(255, 211, 77, .7); animation: glow 1s infinite; } @keyframes glow { 50% { box-shadow: 0 0 0 4px rgba(255, 211, 77, .25); } } #evc.on { box-shadow: 0 0 0 2px rgba(143, 216, 255, .8); }
   #top.exp #tasks .chip { flex: 1 1 100%; height: auto; min-height: 36px; padding: 4px 10px 6px 4px; }
   #vs { gap: 6px; height: auto; padding: 6px 10px; flex-direction: column; align-items: stretch; flex: 1; }
   #vs .vr { display: flex; align-items: center; gap: 6px; font-size: 12px; }

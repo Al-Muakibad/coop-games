@@ -85,7 +85,7 @@ function zoneOk(G, pi, op) {
   const L = S.layoutOf(G), p = G.pl[pi];
   if (op[0] === "t") { const tr = G.traps && G.traps[op[1]]; return !!tr && Math.hypot(p.x - tr.x, p.z - tr.z) < 2.6; }
   const e = L.E[op[1]]; if (!e) return false;
-  const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
+  const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" || op[0] === "a" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
   if (!z) return false;
   return Math.hypot(p.x - z.x, p.z - z.z) < z.r + 1.6 + (op[0] === "k" ? S.cashReach(G) : 0);
 }

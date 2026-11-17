@@ -906,6 +906,7 @@ export function deserialize(s) {
     G.ev = [];
     if (!G.v) G.v = 1;
     if (!G.perks) G.perks = {}; if (!G.meta) G.meta = {};
+    if (G.con && G.con.ac == null) G.con.ac = 1;     // заказ из сохранения до «принять у доски» — уже идёт
     const L = layoutOf(G);
     // карта дописалась (старые сохранения): новым местам — начальное состояние; карта другая — сохранение не подходит
     if (G.e.length < L.E.length && L.key === "old") for (let i = G.e.length; i < L.E.length; i++) G.e.push(entState(L.E[i]));
