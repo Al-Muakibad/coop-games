@@ -184,7 +184,7 @@ export class World {
     // скалы за краем карты (море по бокам)
     for (let i = 0; i < 40; i++) { const sx = R(i, 18) > 0.5 ? 1 : -1; const x = sx * (16 + R(i, 19) * 14), z = -24 + R(i, 20) * 18; if (z > shoreZ(L, x) - 1) continue; rocks.push({ x, z, s: 0.8 + R(i, 21) * 1.0, r: R(i, 22) * 6, y: -0.3 }); }
     // сугробы в игровой зоне по краям
-    for (let i = 0; i < 40; i++) { const x = M.w[0] + R(i, 23) * (M.w[1] - M.w[0]), z = -6 + R(i, 24) * 28; if (Math.abs(x) < M.w[1] - 1.2 && z < 19) continue; drifts.push({ x, z, s: 0.6 + R(i, 25) * 0.9, r: R(i, 26) * 6 }); }
+    for (let i = 0; i < 40; i++) { const x = M.w[0] + R(i, 23) * (M.w[1] - M.w[0]), z = -6 + R(i, 24) * 28; if ((Math.abs(x) < M.w[1] - 1.2 && z < 19) || nearEnt(x, z, 1.4)) continue; drifts.push({ x, z, s: 0.6 + R(i, 25) * 0.9, r: R(i, 26) * 6 }); }
     for (let x = -26; x <= 26; x += 6.5) { lamps.push({ x, z: 19.0 }); }
     // мелочи на снегу: сухая трава, камешки, бугорки — чтобы снег не был пустым
     const tufts = [], pebbles = [];
@@ -234,7 +234,7 @@ export class World {
     for (const d of L.deco) { const m = new THREE.Mesh(BUILD[d.m](), mat); m.position.set(d.x, 0, d.z); m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
     // бочки и ящики у мест — для уюта (вне зон)
     for (const e of L.E) { if (!(e.k === "proc" || e.k === "gen")) continue; const sx = e.x + (e.w / 2 + 0.35) * (e.x > 0 ? 1 : -1) * (hash(e.i, 3) > 0.5 ? 1 : -1), sz = e.z - e.d / 2 + 0.3; const m = new THREE.Mesh(hash(e.i, 9) > 0.5 ? barrel : crates, mat); m.scale.setScalar(0.8); m.position.set(sx, 0, sz); m.rotation.y = hash(e.i, 5) * 6; m.castShadow = true; e.decoM = m; this.root.add(m); m.visible = false; }
-    for (const [geo, x, z, r] of deco) { const m = new THREE.Mesh(geo, mat); m.position.set(x, this.height(x, z) < -0.2 ? -0.05 : this.height(x, z), z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
+    for (const [geo, x, z, r] of deco) { if (nearEnt(x, z, 1.7)) continue; const m = new THREE.Mesh(geo, mat); m.position.set(x, this.height(x, z) < -0.2 ? -0.05 : this.height(x, z), z); m.rotation.y = r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
   }
   /* ---------- места ---------- */
   buildEnts() {
