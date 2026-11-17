@@ -1,7 +1,8 @@
 // «Промысел» — бот-игрок (соперник в «друг против друга», напарник во «вместе», и он же гоняет баланс).
 // Бот не жульничает: только выбирает, куда идти, и «держит джойстик». Ловить, носить и платить его заставляет
 // та же самая близость к местам, что и человека (sim.proximityOps).
-import { layout, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice } from "./sim.js";
+import { layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
+import { UPG } from "./data.js";
 import { IT, ITEMS } from "./data.js";
 
 export function makeBot(pi, opt) {
@@ -10,8 +11,9 @@ export function makeBot(pi, opt) {
   const B = { pi, task: null, tt: 0, think: 0, stuck: 0, lx: 0, lz: 0, wob: (opt.seed || 1) % 7, react: skill === "easy" ? 0.9 : skill === "hard" ? 0.15 : 0.4, tick };
   return B;
   function zoneOf(G, t) {
-    const e = layout(G.mode).E[t.e];
+    const e = layoutOf(G).E[t.e];
     if (t.k === "pad") return e.zpad;
+    if (t.k === "hire") return e.zin;
     if (t.k === "cash") return e.zcash;
     if (t.k === "deliver") return e.zin;
     if (t.k === "pick") return e.zout;
@@ -19,7 +21,7 @@ export function makeBot(pi, opt) {
     return null;
   }
   function choose(G) {
-    const L = layout(G.mode), p = G.pl[pi], team = p.team, cap = capOf(G, team);
+    const L = layoutOf(G), p = G.pl[pi], team = p.team, cap = capOf(G, team);
     const mine = L.E.filter((e) => e.team === team || G.mode !== "vs");
     // 1) площадка, на которую хватает денег
     let pad = -1, pc = 1e18;
@@ -28,7 +30,15 @@ export function makeBot(pi, opt) {
       const c = padCost(G, e.i) - G.e[e.i].p, w = c * (e.k === "upg" ? (e.def.u === "bag" ? 1.2 : 1.6) : e.k === "supg" ? 1.3 : 1);
       if (w < pc) { pc = w; pad = e.i; }
     }
-    const padNeed = pad >= 0 ? padCost(G, pad) - G.e[pad].p : 1e18;
+    // наём в артели и улучшения артели — как площадки, только покупаются в доме артели
+    const house = L.hire.find((h) => L.E[h].team === team || G.mode !== "vs");
+    let hireT = null;
+    if (house != null) {
+      for (const e of mine) { if (e.k !== "helper" || !canHire(G, e.i)) continue; const c = hireCost(G, e.i); if (c < pc) { pc = c; pad = -1; hireT = { k: "hire", e: house, h: e.i, c }; } }
+      for (const u of ["crew", "crewspd"]) { if (G.upg[team][u] >= UPG[u].max || !G.hp.some((h) => h.team === team)) continue; const c = crewCost(G, team, u), w = c * 1.6; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, u, c }; } }
+    }
+    if (hireT && G.money[team] >= hireT.c) return hireT;
+    const padNeed = pad >= 0 ? padCost(G, pad) - G.e[pad].p : hireT ? hireT.c : 1e18;
     if (pad >= 0 && G.money[team] >= padNeed) return { k: "pad", e: pad };
     // 2) несём то, что в руках
     if (p.st.length) {
@@ -49,7 +59,7 @@ export function makeBot(pi, opt) {
       if (best < 0 && p.st.length >= cap) { const c = cashTask(G, mine, p, 0); if (c) return c; return { k: "wait" }; }
     }
     // 3) выручка: если не хватает на площадку или её много скопилось
-    const ct = cashTask(G, mine, p, pad >= 0 && G.money[team] + cashSum(G, mine) >= padNeed ? 0.01 : 25 * (G.mode === "vs" ? 1 : 1));
+    const ct = cashTask(G, mine, p, (pad >= 0 || hireT) && G.money[team] + cashSum(G, mine) >= padNeed ? 0.01 : 25 * (G.mode === "vs" ? 1 : 1));
     if (ct) return ct;
     return freeWork(G, p, cap) || (p.st.length ? { k: "deliver", e: -1 } : { k: "wait" });
   }
@@ -61,7 +71,7 @@ export function makeBot(pi, opt) {
   }
   // взять готовое или ловить
   function freeWork(G, p, cap) {
-    const L = layout(G.mode), team = p.team;
+    const L = layoutOf(G), team = p.team;
     if (p.st.length >= cap) return null;
     let best = null, bs = -1e9;
     for (const e of L.E) {
@@ -94,6 +104,7 @@ export function makeBot(pi, opt) {
   function done(G, t) {
     const p = G.pl[pi], s = t.e >= 0 ? G.e[t.e] : null, cap = capOf(G, p.team);
     if (t.k === "pad") return !padVisible(G, t.e) || G.money[p.team] < 1;
+    if (t.k === "hire") return t.h != null ? !canHire(G, t.h) || G.money[p.team] < hireCost(G, t.h) : G.money[p.team] < crewCost(G, p.team, t.u);
     if (t.k === "cash") return !(s.cash > 0);
     if (t.k === "deliver") { if (t.e < 0) return true; for (const it of p.st) if (accepts(G, t.e, it)) return false; return true; }
     if (t.k === "pick") return p.st.length >= cap || s.ob <= 0;
@@ -107,7 +118,7 @@ export function makeBot(pi, opt) {
     if (!B.task || B.think <= 0 || (B.arr && done(G, B.task))) {
       if (!B.task || B.arr && done(G, B.task) || B.think <= 0) {
         const nt = choose(G);
-        if (!B.task || nt.k !== B.task.k || nt.e !== B.task.e) { B.task = nt; B.arr = false; B.tt = 0; }
+        if (!B.task || nt.k !== B.task.k || nt.e !== B.task.e) { B.task = nt; B.arr = false; B.tt = 0; } else if (nt.k === "hire") B.task = nt;
         B.think = B.arr ? 0.25 : 1.2 + B.react;
       }
     }
@@ -115,7 +126,12 @@ export function makeBot(pi, opt) {
     const z = zoneOf(G, t); if (!z) return { x: 0, z: 0 };
     // стоим в зоне — ждём (ловим, кладём, платим)
     const inside = inZone(p, z, -0.35);
-    if (inside) { if (!B.arr) { B.arr = true; B.think = 0.2; } return { x: 0, z: 0 }; }
+    if (inside) {
+      if (!B.arr) { B.arr = true; B.think = 0.2; }
+      // в артели бот «нажимает» карточку
+      if (t.k === "hire" && (B.ht = (B.ht || 0) + dt) > 0.6) { B.ht = 0; applyOp(G, "p" + pi, t.h != null ? ["h", t.e, t.h] : ["u", t.e, t.u]); B.think = 0; }
+      return { x: 0, z: 0 };
+    }
     if (B.arr && inZone(p, z, -0.1)) return { x: 0, z: 0 };
     B.arr = false;
     let tx = z.x + Math.sin(pi * 2.3 + B.wob) * z.r * 0.3, tz = z.z + Math.cos(pi * 2.3) * z.r * 0.2;

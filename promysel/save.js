@@ -66,8 +66,14 @@ export function wipe(slot) {
   try { if (cloudOk()) tg.CloudStorage.setItem(CK[slot] + "_n", "0", () => {}); } catch (_) {}
 }
 /* ---------- профиль ---------- */
-const PROF0 = { perks: { p_cap: 0, p_spd: 0, p_price: 0 }, bays: 0, vsWin: 0, vsLoss: 0, stars: 0, best: {} };
-export function profile() { try { const o = JSON.parse(localStorage.getItem("pm_prof") || "null"); return Object.assign(JSON.parse(JSON.stringify(PROF0)), o || {}); } catch (_) { return JSON.parse(JSON.stringify(PROF0)); } }
+// meta — уровни «Флота», anchors — якоря. Старые «знаки навсегда» (perks) один раз меняем на якоря: по 4 за знак
+const PROF0 = { perks: {}, meta: {}, anchors: 0, bays: 0, vsWin: 0, vsLoss: 0, stars: 0, best: {}, v: 2 };
+function migrate(p) {
+  if ((p.v || 1) < 2) { const n = Object.values(p.perks || {}).reduce((a, b) => a + (+b || 0), 0); p.anchors = (p.anchors || 0) + n * 4; p.perks = {}; p.v = 2; }
+  if (!p.meta) p.meta = {};
+  return p;
+}
+export function profile() { try { const o = JSON.parse(localStorage.getItem("pm_prof") || "null"); return migrate(Object.assign(JSON.parse(JSON.stringify(PROF0)), o ? Object.assign({ v: 1 }, o) : {})); } catch (_) { return JSON.parse(JSON.stringify(PROF0)); } }
 export function saveProfile(p) {
   const s = JSON.stringify(p);
   try { localStorage.setItem("pm_prof", s); } catch (_) {}

@@ -2,13 +2,14 @@
 // 1) заливка сетки 0,2 м от точки старта: до каждой зоны (вход/выход цеха, прилавок, выручка, площадка, место лова) можно дойти;
 // 2) прогулки «как человек» (джойстик прямо на цель + обход зданий) между случайными парами зон — никто не застревает;
 // 3) зоны разных мест, открытые одновременно, не налезают друг на друга.
-// Запуск из корня репозитория: node --experimental-default-type=module promysel/tools/walk.mjs [coop|vs]
+// Запуск из корня репозитория: node --experimental-default-type=module promysel/tools/walk.mjs [coop|vs] [бухта 0..3]
 import * as S from "../sim.js";
 import { makeBot } from "../bot.js";
 
 const mode = process.argv[2] || "coop";
-const G0 = S.newGame({ mode, seed: 3 });
-const L = S.layout(mode);
+const bay = +(process.argv[3] || 0);
+const G0 = S.newGame({ mode, seed: 3, bay });
+const L = S.layoutOf(G0);
 const bots = G0.pl.map((_, i) => makeBot(i, { seed: 5 + i }));
 const stages = [];
 const snap = (G, why) => stages.push({ why, g: S.deserialize(S.serialize(G)) });
@@ -33,7 +34,7 @@ function zonesOf(G) {
     const s = G.e[e.i];
     if (S.padVisible(G, e.i)) z.push({ n: (e.def.n || e.id) + " (площадка)", z: e.zpad, e });
     if (!s.o) continue;
-    for (const k of ["zin", "zout", "zcash"]) if (e[k]) z.push({ n: (e.def.n || e.id) + "." + k, z: e[k], e });
+    for (const k of ["zin", "zout", "zcash"]) if (e[k] && e.k !== "spot") z.push({ n: (e.def.n || e.id) + "." + k, z: e[k], e });
   }
   return z;
 }

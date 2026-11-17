@@ -99,9 +99,24 @@ export const ITEM_GEO = {
   can: () => { const b = new Build(); b.cyl(0.13, 0.13, 0.2, 10, "#c9d2da", { p: [0, 0.1, 0] }); b.cyl(0.133, 0.133, 0.12, 10, "#3b78b5", { p: [0, 0.1, 0] }); b.cyl(0.06, 0.06, 0.122, 6, "#f2d36b", { p: [0.08, 0.1, 0.06], s: [1, 1, 1] }); return b.geo(); },
   ice: () => { const b = new Build(); b.box(0.32, 0.28, 0.32, "#c7ecfb", { p: [0, 0.14, 0], jit: 0.12 }); b.box(0.2, 0.06, 0.2, "#ffffff", { p: [0.03, 0.28, 0.02], jit: 0.05 }); return b.geo(); },
   crate: () => { const b = new Build(); b.box(0.5, 0.3, 0.38, PAL.woodL, { p: [0, 0.15, 0] }); for (const y of [0.05, 0.25]) b.box(0.52, 0.04, 0.4, PAL.wood2, { p: [0, y, 0], jit: 0 }); b.box(0.42, 0.06, 0.3, "#cdeffd", { p: [0, 0.32, 0], jit: 0.15 }); fishB(b, "#9aaebb", "#f2b7a2", "#6d8394", 0.42, 0.12, 0.36); return b.geo(); },
+  salted: () => { const b = new Build(); b.cyl(0.15, 0.13, 0.26, 9, PAL.wood, { p: [0, 0.13, 0] }); for (const y of [0.05, 0.21]) b.cyl(0.155, 0.155, 0.03, 9, PAL.dark, { p: [0, y, 0], jit: 0 }); b.cyl(0.13, 0.13, 0.02, 9, "#e8eef0", { p: [0, 0.265, 0], jit: 0.05 });
+    fishB(b, "#9db0a8", "#e2e8e0", "#6f8580", 0.3, 0.09, 0.3); return b.geo(); },
+  crab: () => { const b = new Build(); b.sph(0.5, 1, "#c9503a", { p: [0, 0.08, 0], s: [0.36, 0.13, 0.28] }); b.sph(0.5, 1, "#e6875f", { p: [0, 0.05, 0], s: [0.3, 0.07, 0.22] });
+    for (const sx of [-1, 1]) { for (let i = 0; i < 3; i++) b.cyl(0.02, 0.018, 0.2, 4, "#b8442f", { p: [sx * (0.17 + i * 0.02), 0.05, -0.08 + i * 0.08], r: [0, 0, sx * 1.1] }); b.sph(0.5, 0, "#d65a40", { p: [sx * 0.08, 0.1, 0.19], s: [0.1, 0.07, 0.12] }); }
+    b.ball(0.022, "#1d2228", { p: [-0.05, 0.16, 0.12], jit: 0 }); b.ball(0.022, "#1d2228", { p: [0.05, 0.16, 0.12], jit: 0 }); return b.geo(); },
+  crabc: () => { const b = new Build(); b.cyl(0.24, 0.22, 0.04, 12, "#f4f1ea", { p: [0, 0.02, 0], jit: 0.02 }); b.sph(0.5, 1, "#ff6a3d", { p: [0, 0.1, 0], s: [0.3, 0.11, 0.24] });
+    for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) b.cyl(0.018, 0.016, 0.16, 4, "#ff7a4a", { p: [sx * (0.15 + i * 0.02), 0.06, -0.06 + i * 0.07], r: [0, 0, sx * 1.2] }); b.box(0.06, 0.02, 0.06, "#7ed957", { p: [0.06, 0.17, 0.02], jit: 0.1 }); return b.geo(); },
+  mussel: () => { const b = new Build(); b.cyl(0.2, 0.17, 0.08, 10, "#b9c4cc", { p: [0, 0.04, 0], jit: 0.02 });
+    for (let i = 0; i < 6; i++) { const a = i * 1.05; b.sph(0.5, 0, i % 2 ? "#2f3554" : "#3d4466", { p: [Math.cos(a) * 0.09, 0.11 + (i % 3) * 0.02, Math.sin(a) * 0.08], s: [0.13, 0.05, 0.07], r: [0, a, 0.2] }); } b.ball(0.03, "#f2c14e", { p: [0.02, 0.15, 0], jit: 0 }); return b.geo(); },
+  cod: () => { const b = new Build(); fishB(b, "#8f8a5c", "#e8e2c8", "#6b6644", 0.72, 0.24, 0.12); b.cyl(0.006, 0.006, 0.08, 3, "#6b6644", { p: [0.3, 0.05, 0], r: [0, 0, 0.3], jit: 0 }); return b.geo(); },
+  stockfish: () => { const b = new Build(); b.box(0.56, 0.05, 0.22, "#d8c08a", { p: [0, 0.03, 0] }); b.cone(0.11, 0.18, 4, "#c4a46a", { p: [-0.34, 0.03, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.3] }); b.box(0.5, 0.06, 0.06, "#bfa06c", { p: [0, 0.06, 0], jit: 0 }); b.box(0.03, 0.12, 0.03, PAL.rope, { p: [0.24, 0.08, 0], jit: 0 }); b.box(0.56, 0.05, 0.22, "#cdb37c", { p: [0.02, 0.09, 0.02], r: [0, 0.15, 0] }); return b.geo(); },
+  seaweed: () => { const b = new Build(); for (let i = 0; i < 5; i++) b.box(0.5, 0.04, 0.1, i % 2 ? "#3f8a4a" : "#56a85a", { p: [0, 0.03 + i * 0.035, (i - 2) * 0.03], r: [0, (i - 2) * 0.12, 0], jit: 0.08 }); b.box(0.06, 0.2, 0.16, PAL.rope, { p: [0, 0.1, 0], jit: 0 }); return b.geo(); },
+  oil: () => { const b = new Build(); b.cyl(0.11, 0.12, 0.26, 9, "#e8b33c", { p: [0, 0.13, 0] }); b.cyl(0.115, 0.115, 0.1, 9, "#f4efe4", { p: [0, 0.14, 0], jit: 0 }); b.cyl(0.05, 0.08, 0.08, 8, "#e8b33c", { p: [0, 0.3, 0] }); b.cyl(0.055, 0.055, 0.05, 8, "#7c5233", { p: [0, 0.36, 0] }); return b.geo(); },
+  pie: () => { const b = new Build(); b.cyl(0.22, 0.24, 0.1, 12, "#d9934a", { p: [0, 0.05, 0] }); b.sph(0.5, 1, "#e8a85a", { p: [0, 0.1, 0], s: [0.44, 0.1, 0.44] }); for (let i = 0; i < 3; i++) b.box(0.2, 0.02, 0.03, "#b87536", { p: [0, 0.155, (i - 1) * 0.08], jit: 0 }); return b.geo(); },
   cash: () => { const b = new Build(); b.box(0.42, 0.1, 0.22, PAL.cash, { p: [0, 0.05, 0], jit: 0.04 }); b.box(0.43, 0.02, 0.23, PAL.cash2, { p: [0, 0.1, 0], jit: 0 }); b.box(0.08, 0.104, 0.225, "#f4f0d8", { p: [0, 0.05, 0], jit: 0 }); return b.geo(); },
 };
-export const ITEM_H = { herring: 0.2, fillet: 0.13, log: 0.22, smoked: 0.21, salmon: 0.25, steak: 0.14, caviar: 0.26, can: 0.2, ice: 0.3, crate: 0.36, cash: 0.1 };
+export const ITEM_H = { herring: 0.2, fillet: 0.13, log: 0.22, smoked: 0.21, salmon: 0.25, steak: 0.14, caviar: 0.26, can: 0.2, ice: 0.3, crate: 0.36, cash: 0.1,
+  salted: 0.28, crab: 0.17, crabc: 0.14, mussel: 0.16, cod: 0.24, stockfish: 0.12, seaweed: 0.19, oil: 0.38, pie: 0.17 };
 
 // рыба для косяка в воде (лёгкая)
 export function schoolFishGeo(salmon) {
@@ -115,16 +130,17 @@ export function schoolFishGeo(salmon) {
 
 /* ---------- природа ---------- */
 // ель под снегом: пухлые ярусы, сверху почти белые, снизу — сине-зелёная тень
-export function pineGeo(v) {
+export function pineGeo(v, summer) {
   const b = new Build();
   b.cyl(0.13, 0.17, 0.6, 7, "#8a5a3c", { p: [0, 0.3, 0] });
   const lv = v ? 4 : 3;
   for (let i = 0; i < lv; i++) {
     const r = 1.15 - i * 0.26, y = 0.5 + i * 0.55;
     b.cone(r, 0.9, 8, i % 2 ? "#4f7f86" : "#47757f", { p: [0, y + 0.42, 0], r: [0, i * 0.4, 0], jit: 0.05 });
-    b.cone(r * 0.94, 0.62, 8, i % 2 ? "#e8f0f8" : "#dde8f4", { p: [0, y + 0.66, 0], r: [0, i * 0.4, 0], jit: 0.04 });
+    if (summer) b.cone(r * 0.9, 0.7, 8, i % 2 ? "#4f8a4a" : "#3f7a44", { p: [0, y + 0.6, 0], r: [0, i * 0.4, 0], jit: 0.06 });
+    else b.cone(r * 0.94, 0.62, 8, i % 2 ? "#e8f0f8" : "#dde8f4", { p: [0, y + 0.66, 0], r: [0, i * 0.4, 0], jit: 0.04 });
   }
-  b.sph(0.12, 1, "#eef4fa", { p: [0, 0.5 + lv * 0.55 + 0.32, 0], s: [1, 0.8, 1], jit: 0.02 });
+  if (!summer) b.sph(0.12, 1, "#eef4fa", { p: [0, 0.5 + lv * 0.55 + 0.32, 0], s: [1, 0.8, 1], jit: 0.02 });
   return b.geo();
 }
 export function rockGeo() { const b = new Build(); b.sph(0.55, 0, PAL.stone, { p: [0, 0.22, 0], s: [1.2, 0.7, 1] }); b.sph(0.45, 0, PAL.snow, { p: [0.05, 0.42, 0], s: [1.05, 0.35, 0.9], jit: 0.03 }); return b.geo(); }
@@ -211,10 +227,52 @@ export const BUILD = {
   gear: () => { const b = new Build({ round: true, ao: true }); logWall(b, 2.6, 1.2, 1.2, PAL.wood); gable(b, 3.0, 1.6, 0.8, PAL.roofB, 1.2);
     b.box(0.08, 1.3, 0.08, PAL.woodL, { p: [-1.1, 0.65, 0.72], r: [0.25, 0, 0.1] }); b.box(0.08, 1.3, 0.08, PAL.woodL, { p: [-0.95, 0.65, 0.72], r: [0.25, 0, 0.05] });
     b.box(1.0, 0.7, 0.04, "#e0c58e", { p: [0.4, 0.75, 0.64], jit: 0.15 }); b.box(0.9, 0.36, 0.06, "#f8f0dc", { p: [0, 1.75, 0.82] }); b.box(0.3, 0.3, 0.3, PAL.woodL, { p: [1.1, 0.15, 0.85] }); return b.geo(); },
+  // Артель: изба найма с вывеской-доской и скамьёй
+  artel: (w, d) => { const b = new Build({ round: true, ao: true }); logWall(b, w - 0.3, 1.3, d - 0.4, "#a8744a"); gable(b, w + 0.2, d + 0.1, 0.8, "#5f8f6f", 1.3);
+    b.box(0.55, 0.9, 0.05, PAL.wood2, { p: [0.45, 0.45, d / 2 - 0.17] }); b.box(0.42, 0.32, 0.05, "#ffd98a", { p: [-0.5, 0.82, d / 2 - 0.17], jit: 0 });
+    b.box(1.5, 0.5, 0.08, "#f2e3c0", { p: [0, 1.75, d / 2 - 0.05], r: [-0.12, 0, 0] }); b.box(1.6, 0.06, 0.1, PAL.wood2, { p: [0, 2.02, d / 2 - 0.03] });
+    for (const sx of [-1, 1]) b.box(0.07, 0.75, 0.07, PAL.wood2, { p: [sx * 0.76, 1.6, d / 2 - 0.02] });
+    b.box(1.1, 0.08, 0.3, PAL.woodL, { p: [-0.1, 0.4, d / 2 + 0.25] }); for (const sx of [-1, 1]) b.box(0.08, 0.4, 0.25, PAL.wood2, { p: [-0.1 + sx * 0.45, 0.2, d / 2 + 0.25] }); return b.geo(); },
+  // засолка: навес с бочками
+  saltery: (w, d) => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.13, 1.6, 0.13, PAL.wood2, { p: [sx * (w / 2 - 0.12), 0.8, sz * (d / 2 - 0.12)] });
+    gable(b, w + 0.25, d + 0.3, 0.6, "#6f9a5a", 1.6); for (let i = 0; i < 4; i++) { b.cyl(0.3, 0.27, 0.7, 10, PAL.wood, { p: [-w / 2 + 0.45 + i * 0.62, 0.35, -0.05] }); b.cyl(0.31, 0.31, 0.05, 10, PAL.dark, { p: [-w / 2 + 0.45 + i * 0.62, 0.55, -0.05], jit: 0 }); b.cyl(0.27, 0.27, 0.03, 10, "#e8eef0", { p: [-w / 2 + 0.45 + i * 0.62, 0.71, -0.05], jit: 0.04 }); }
+    b.box(0.5, 0.3, 0.3, "#e8eef0", { p: [w / 2 - 0.4, 0.15, d / 2 - 0.1], jit: 0.06 }); return b.geo(); },
+  // варочная: котлы над огнём под навесом
+  boiler: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.2, 0.5, d - 0.3, PAL.stone, { p: [0, 0.25, 0] }); for (const sx of [-0.55, 0.55]) { b.cyl(0.42, 0.34, 0.5, 12, "#3b3f46", { p: [sx * w * 0.5, 0.75, 0] }); b.cyl(0.36, 0.36, 0.04, 12, "#ffb07a", { p: [sx * w * 0.5, 1.0, 0], jit: 0.05 }); }
+    for (const sx of [-1, 1]) b.box(0.12, 1.9, 0.12, PAL.wood2, { p: [sx * (w / 2 - 0.1), 0.95, -d / 2 + 0.15] }); b.box(w + 0.2, 0.08, 0.9, "#c9503a", { p: [0, 1.95, -d / 2 + 0.45], r: [-0.25, 0, 0] }); b.box(w + 0.1, 0.06, 0.8, PAL.snow, { p: [0, 2.02, -d / 2 + 0.45], r: [-0.25, 0, 0], jit: 0.02 }); return b.geo(); },
+  // мидийная ферма: рама с канатами и буями у воды
+  musselfarm: (w, d) => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 1]) b.box(0.14, 1.4, 0.14, PAL.wood2, { p: [sx * (w / 2 - 0.1), 0.7, -0.1] }); b.box(w, 0.1, 0.12, PAL.wood2, { p: [0, 1.38, -0.1] });
+    for (let i = 0; i < 5; i++) { const x = -w / 2 + 0.4 + i * (w - 0.8) / 4; b.cyl(0.015, 0.015, 1.0, 4, PAL.rope, { p: [x, 0.85, -0.1], jit: 0 }); for (let j = 0; j < 3; j++) b.sph(0.5, 0, "#2f3554", { p: [x, 0.5 + j * 0.24, -0.1], s: [0.12, 0.16, 0.12] }); }
+    b.cyl(0.18, 0.18, 0.18, 8, "#ff7a3a", { p: [-w / 2 + 0.2, 0.09, d / 2 - 0.2] }); b.box(0.7, 0.35, 0.45, PAL.woodL, { p: [w / 2 - 0.45, 0.17, d / 2 - 0.25] }); return b.geo(); },
+  // сушильня: вешала с треской
+  dryer: (w, d) => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 0, 1]) b.box(0.12, 1.9, 0.12, PAL.wood2, { p: [sx * (w / 2 - 0.12), 0.95, 0] }); for (const y of [1.25, 1.75]) b.box(w, 0.08, 0.08, PAL.wood, { p: [0, y, 0] });
+    for (let i = 0; i < 9; i++) for (const y of [1.25, 1.75]) b.box(0.1, 0.45, 0.04, i % 2 ? "#d8c08a" : "#c4a46a", { p: [-w / 2 + 0.3 + i * (w - 0.6) / 8, y - 0.25, 0.04], jit: 0.08 });
+    b.box(w * 0.98, 0.08, d * 0.5, PAL.snow, { p: [0, 1.95, 0], jit: 0.02 }); b.box(0.6, 0.35, 0.4, PAL.woodL, { p: [w / 2 - 0.4, 0.17, d / 2 - 0.2] }); return b.geo(); },
+  // плантация морской капусты: столбы и сетка с зелёными лентами
+  seafarm: (w, d) => { const b = new Build({ round: true, ao: true }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.12, 1.1, 0.12, PAL.wood2, { p: [sx * (w / 2 - 0.1), 0.55, sz * (d / 2 - 0.1)] });
+    for (let i = 0; i < 4; i++) { const z = -d / 2 + 0.25 + i * (d - 0.5) / 3; b.box(w, 0.03, 0.03, PAL.rope, { p: [0, 0.95, z], jit: 0 }); for (let j = 0; j < 6; j++) b.box(0.08, 0.6, 0.03, j % 2 ? "#3f8a4a" : "#56a85a", { p: [-w / 2 + 0.25 + j * (w - 0.5) / 5, 0.65, z], r: [0.1, 0, (j % 3 - 1) * 0.15], jit: 0.1 }); }
+    b.box(0.5, 0.3, 0.35, "#5a7d99", { p: [w / 2 - 0.3, 0.15, d / 2 + 0.1] }); return b.geo(); },
+  // пекарня: беленый дом с печной трубой
+  bakery: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.3, 1.4, d - 0.4, "#f0e6d4", { p: [0, 0.7, 0] }); b.box(w - 0.2, 0.25, d - 0.3, PAL.wood2, { p: [0, 0.12, 0] }); gable(b, w + 0.15, d + 0.1, 0.85, "#c46a3a", 1.4);
+    b.box(0.45, 1.3, 0.45, "#b85a3a", { p: [w / 2 - 0.6, 2.1, -0.2] }); b.box(0.5, 0.1, 0.5, PAL.snow, { p: [w / 2 - 0.6, 2.78, -0.2], jit: 0.02 }); b.box(0.6, 0.85, 0.05, "#7a4d2e", { p: [0.35, 0.43, d / 2 - 0.19] }); b.box(0.5, 0.4, 0.05, "#ffd98a", { p: [-0.6, 0.85, d / 2 - 0.19], jit: 0 });
+    b.cyl(0.25, 0.25, 0.06, 12, "#e8a85a", { p: [-0.6, 1.5, d / 2 - 0.1], r: [Math.PI / 2, 0, 0] }); return b.geo(); },
+  // жиротопня: каменный цех с баком и трубой
+  render: (w, d) => { const b = new Build({ round: true, ao: true }); b.box(w - 0.3, 1.5, d - 0.4, "#9aa3ab", { p: [0, 0.75, 0] }); b.box(w - 0.1, 0.14, d - 0.2, PAL.dark, { p: [0, 1.57, 0] }); b.box(w - 0.4, 0.1, d - 0.5, PAL.snow, { p: [0, 1.68, 0], jit: 0.02 });
+    b.cyl(0.45, 0.45, 1.2, 12, "#c99a3a", { p: [-w / 2 + 0.2, 0.6, -0.1] }); b.cyl(0.47, 0.47, 0.06, 12, PAL.dark, { p: [-w / 2 + 0.2, 1.0, -0.1], jit: 0 }); b.cyl(0.18, 0.22, 1.4, 8, "#6a5a4a", { p: [w / 2 - 0.5, 2.3, -0.2] });
+    b.box(0.8, 0.9, 0.05, "#5d6b77", { p: [0.3, 0.45, d / 2 - 0.19] }); b.box(1.0, 0.25, 0.05, "#e8b33c", { p: [0.3, 1.2, d / 2 - 0.19], jit: 0 }); return b.geo(); },
+  // декор разных бухт
+  house: (c) => { const b = new Build({ round: true, ao: true }); b.box(2.2, 1.7, 1.8, c || "#e9dcc4", { p: [0, 0.85, 0] }); gable(b, 2.5, 2.0, 1.0, "#a8473b", 1.7); b.box(0.5, 0.9, 0.05, PAL.wood2, { p: [0, 0.45, 0.91] }); for (const sx of [-1, 1]) b.box(0.42, 0.42, 0.05, "#ffd98a", { p: [sx * 0.65, 1.05, 0.91], jit: 0 }); b.box(0.35, 0.8, 0.35, "#8a5a4a", { p: [0.6, 2.4, -0.3] }); return b.geo(); },
+  iceberg: () => { const b = new Build(); b.sph(1, 1, "#e8f6ff", { p: [0, 0.1, 0], s: [1.6, 0.9, 1.2], jit: 0.06 }); b.sph(1, 0, "#cfeaf8", { p: [0.4, 0.6, 0.2], s: [0.8, 0.9, 0.7], jit: 0.08 }); b.sph(1, 0, "#b9e0f2", { p: [-0.5, -0.2, 0], s: [1.2, 0.5, 1.0] }); return b.geo(); },
+  cliff: () => { const b = new Build(); b.sph(1, 0, "#7f8a96", { p: [0, 0.8, 0], s: [1.8, 1.8, 1.4] }); b.sph(1, 0, "#6f7983", { p: [1.0, 0.4, 0.5], s: [1.2, 1.2, 1.0] }); b.sph(1, 0, PAL.snow, { p: [0.1, 1.9, 0], s: [1.3, 0.5, 1.0], jit: 0.03 }); return b.geo(); },
+  shrub: () => { const b = new Build(); b.sph(0.5, 1, "#5f7d3a", { p: [0, 0.25, 0], s: [1.2, 0.8, 1.1] }); b.sph(0.35, 1, "#6f8f45", { p: [0.3, 0.35, 0.1], s: [1, 0.8, 1] }); b.ball(0.05, "#c9433a", { p: [0.2, 0.55, 0.3], jit: 0 }); b.ball(0.05, "#c9433a", { p: [-0.3, 0.45, 0.2], jit: 0 }); return b.geo(); },
+  trap: () => { const b = new Build({ round: true }); b.box(0.7, 0.4, 0.5, "#a06a3b", { p: [0, 0.2, 0], jit: 0.05 }); for (let i = 0; i < 3; i++) b.box(0.72, 0.03, 0.52, PAL.rope, { p: [0, 0.08 + i * 0.13, 0], jit: 0 }); b.cyl(0.1, 0.1, 0.12, 8, "#ff7a3a", { p: [0.45, 0.06, 0.3] }); return b.geo(); },
+  flags: (len) => { const b = new Build(); const cols = ["#c9433a", "#f2c14e", "#3aa0c8", "#7ed957", "#f4f1ea"]; for (const sx of [-1, 1]) b.cyl(0.05, 0.06, 3.2, 6, PAL.wood2, { p: [sx * len / 2, 1.6, 0] }); const n = Math.round(len / 0.45);
+    for (let i = 0; i < n; i++) { const x = -len / 2 + (i + 0.5) * len / n, sag = 2.9 - Math.sin((i + 0.5) / n * Math.PI) * 0.5; b.cone(0.16, 0.32, 3, cols[i % 5], { p: [x, sag - 0.16, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.2], jit: 0 }); } return b.geo(); },
   hut: () => { const b = new Build({ round: true, ao: true }); logWall(b, 1.6, 1.2, 1.3, PAL.wood); gable(b, 2.0, 1.6, 0.8, PAL.roofG, 1.2); b.box(0.5, 0.8, 0.05, PAL.wood2, { p: [0, 0.4, 0.68] }); return b.geo(); },
   barrel: () => { const b = new Build({ round: true, ao: true }); b.cyl(0.24, 0.24, 0.55, 9, PAL.wood, { p: [0, 0.27, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.12, 0] }); b.cyl(0.25, 0.25, 0.05, 9, PAL.dark, { p: [0, 0.42, 0] }); b.cyl(0.2, 0.2, 0.06, 9, PAL.snow, { p: [0, 0.56, 0], jit: 0.02 }); return b.geo(); },
   crates: () => { const b = new Build({ round: true, ao: true }); b.box(0.6, 0.5, 0.6, PAL.woodL, { p: [0, 0.25, 0] }); b.box(0.5, 0.42, 0.5, PAL.wood, { p: [0.55, 0.21, 0.1], r: [0, 0.3, 0] }); b.box(0.45, 0.4, 0.45, PAL.woodL, { p: [0.15, 0.7, 0.05], r: [0, -0.2, 0] }); b.box(0.46, 0.08, 0.46, PAL.snow, { p: [0.15, 0.93, 0.05], r: [0, -0.2, 0], jit: 0.02 }); return b.geo(); },
   boat: () => { const b = new Build({ round: true, ao: true }); b.box(0.9, 0.35, 2.2, "#b9573f", { p: [0, 0.1, 0] }); b.cone(0.46, 0.6, 4, "#b9573f", { p: [0, 0.1, -1.35], r: [Math.PI / 2, Math.PI / 4, 0], s: [1, 1, 0.55] }); b.box(0.75, 0.05, 2.0, PAL.woodL, { p: [0, 0.28, 0] }); b.box(0.85, 0.06, 0.15, PAL.wood2, { p: [0, 0.32, 0.3] }); return b.geo(); },
 };
 // цвет навеса прилавка по товару
-export const STALL_COL = { herring: "#4f8fc0", fillet: "#e2735c", smoked: "#c98432", steak: "#e65d4f", caviar: "#d4483a" };
+export const STALL_COL = { herring: "#4f8fc0", fillet: "#e2735c", smoked: "#c98432", steak: "#e65d4f", caviar: "#d4483a", salmon: "#e0866c", salted: "#6f9a5a",
+  crab: "#c9503a", crabc: "#e8743c", mussel: "#4a5a8a", cod: "#7f8a5c", stockfish: "#c4a05a", seaweed: "#3f9a5a", pie: "#d98a3a" };

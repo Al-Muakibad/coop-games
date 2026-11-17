@@ -1,8 +1,8 @@
 // «Промысел» — симуляция мира. Без DOM и three.js: её крутит хозяин (и одиночная игра), её же гоняет tools/balance.mjs.
-// Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layout(G.mode).
+// Состояние G сериализуется целиком (сохранение и снимки для гостя). Статичная раскладка карты — в layoutOf(G).
 // Действия игроков — «операции» (op): поймать, положить, взять, заплатить, собрать выручку. Гость применяет их у себя сразу
 // и отправляет хозяину; хозяин проверяет и применяет у себя (см. coop.js).
-import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, COOP, VS, BAYS, DIFF, SHORE, ROAD_Z } from "./data.js";
+import { ITEMS, IT, NIT, PLAYER, HELPER, SCHOOL, CUSTOMER, PAD_R, UPG, SUPG, upgCost, LEGACY, VS, BAYMAPS, BAYS_OLD, DIFF, ROAD_Z } from "./data.js";
 
 const TAU = Math.PI * 2;
 const hyp = Math.hypot;
@@ -10,10 +10,12 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 /* ---------- раскладка ---------- */
 const LAYOUTS = {};
-export function layout(mode) {
-  const key = mode === "vs" ? "vs" : "coop";
+// раскладка: «друг против друга» — одна карта; «вместе»/«один» — своя карта у каждой бухты; старые сохранения (v < 2) — старая карта
+export const layoutOf = (G) => layout(G.mode, G.bay, G.v);
+export function layout(mode, bay, v) {
+  const key = mode === "vs" ? "vs" : (v || 2) < 2 ? "old" : "b" + ((bay || 0) % BAYMAPS.length);
   if (LAYOUTS[key]) return LAYOUTS[key];
-  const MAP = key === "vs" ? VS : COOP, teams = key === "vs" ? 2 : 1;
+  const MAP = key === "vs" ? VS : key === "old" ? LEGACY : BAYMAPS[+key.slice(1)], teams = key === "vs" ? 2 : 1;
   const E = [], byId = [{}, {}];
   for (let team = 0; team < teams; team++) {
     const sg = team === 1 ? -1 : 1;     // правая база — зеркало левой
@@ -46,6 +48,7 @@ export function layout(mode) {
       if (e.k === "dock") { e.zin = { x: e.x, z: e.z, r: 1.05 }; e.zcash = { x: e.x + 0.9 * sg, z: e.z + 1.5, r: 0.8 }; e.berth = { x: e.x - 2.7 * sg, z: e.z - 0.8 }; }
       if (e.k === "board") { e.zin = { x: e.x - 0.55, z: e.z + 1.35, r: 1.05 }; e.zcash = { x: e.x + 1.0, z: e.z + 1.3, r: 0.8 }; e.box = [e.x - 1.1, e.z - 0.3, e.x + 1.1, e.z + 0.3]; }
       if (e.k === "goal") e.box = [e.x - 1.1, e.z - 1.1, e.x + 1.1, e.z + 1.1];
+      if (e.k === "hire") { e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; e.zin = { x: e.x, z: fz, r: 1.0 }; }
       if (e.k === "pier") e.pier = { x: def.x0 * sg, z0: def.z0, z1: def.z1 };
       if (e.k === "spot") e.school = { x: def.sx * sg, z: def.sz };
       byId[team][def.id] = e.i;
@@ -66,66 +69,109 @@ export function layout(mode) {
   if (MAP.w[1] > x0 + 0.2) fences.push([x0, fz - 0.15, MAP.w[1], fz + 0.15]);
   const div = key === "vs" ? [[-0.15, -13.6, 0.15, fz]] : [];
   const deco = []; for (const d of MAP.deco || []) for (let t = 0; t < teams; t++) { const sg = t ? -1 : 1; deco.push({ m: d.m, x: d.x * sg, z: d.z, box: [d.x * sg - d.w / 2, d.z - d.d / 2, d.x * sg + d.w / 2, d.z + d.d / 2] }); }
-  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start };
+  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start, hire: E.filter((e) => e.k === "hire").map((e) => e.i) };
   LAYOUTS[key] = L;
   return L;
 }
 // берег: где кончается суша (z меньше — море)
 const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 export function shoreZ(L, x) {
-  if (L.key === "vs") return SHORE + (-13.4 - SHORE) * (1 - ss(3.4, 5.0, Math.abs(x)));
-  return SHORE + (-13.2 - SHORE) * ss(9.2, 10.6, x);
+  const sh = L.MAP.shore; let z = sh.base;
+  for (const c of sh.capes) { const k = c[3] === 2 ? 1 - ss(c[0], c[1], Math.abs(x)) : c[3] < 0 ? 1 - ss(c[0], c[1], x) : ss(c[0], c[1], x); z += (c[2] - sh.base) * k; }
+  return z;
 }
-
 /* ---------- случайные числа (в состоянии, чтобы сохранение продолжало ту же цепочку) ---------- */
 function rnd(G) { let t = (G.rs = (G.rs + 0x6d2b79f5) | 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 
-/* ---------- новая игра ---------- */
+/* ---------- новая игра ----------
+   o: mode, seed, bay, diff, goal, perks (знаки забега), meta (уровни «Флота»), upg (улучшения, перенесённые из прошлой бухты), lap (круг), cid */
 export function newGame(o) {
   o = o || {};
-  const mode = o.mode || "solo";
-  const L = layout(mode);
+  const mode = o.mode || "solo", v = o.v || 2;
+  const L = layout(mode, o.bay || 0, v);
   const G = {
-    v: 1, mode, rs: (o.seed || 1) | 0, t: 0, bay: o.bay || 0, diff: o.diff == null ? 1 : o.diff, goal: o.goal || "light", tEnd: o.goal === "time" ? 600 : 0,
-    perks: o.perks || { p_cap: 0, p_spd: 0, p_price: 0 },
-    teams: L.teams, money: [o.money || 0, o.money || 0], earned: [0, 0], spent: [0, 0],
+    v, mode, rs: (o.seed || 1) | 0, t: 0, bay: o.bay || 0, lap: o.lap || 0, diff: o.diff == null ? 1 : o.diff, goal: o.goal || "light", tEnd: o.goal === "time" ? 600 : 0,
+    perks: Object.assign({}, o.perks || {}), meta: mode === "vs" ? {} : Object.assign({}, o.meta || {}),
+    teams: L.teams, money: [o.money || 0, o.money || 0], earned: [0, 0], spent: [0, 0], nbuy: 0, ne: L.E.length,
     upg: [{}, {}], e: [], pl: [], hp: [], cu: [], nid: 1, ev: [], bv: 1,
     con: null, conT: 40, stars: 0, cdone: 0, cfail: 0, done: -1, winner: -1, rate: 0, rateAcc: 0, served: 0, lost: 0,
     cid: o.cid || Math.random().toString(36).slice(2, 10),
   };
-  for (const t of [0, 1]) for (const u in UPG) G.upg[t][u] = 0;
-  for (const e of L.E) {
-    const s = { o: e.def.free ? 1 : 0, p: 0 };
-    if (e.k === "spot") { s.f = SCHOOL.max; s.rt = 0; }
-    if (e.k === "proc") { s.ib = e.rec.in.map(() => 0); s.ob = 0; s.tm = 0; }
-    if (e.k === "gen") { s.ob = 0; s.tm = 0; }
-    if (e.k === "stall") { s.sh = 0; s.cash = 0; s.q = []; }
-    if (e.k === "dock") { s.pile = []; s.ship = 0; s.st = 6; s.load = []; s.cash = 0; }
-    if (e.k === "board") { s.cash = 0; }
-    G.e.push(s);
-  }
+  if (mode === "vs") G.perks = {};
+  for (const t of [0, 1]) for (const u in UPG) G.upg[t][u] = (o.upg && o.upg[u]) || 0;
+  for (const e of L.E) G.e.push(entState(e));
   const np = mode === "solo" ? 1 : 2;
   for (let i = 0; i < np; i++) {
     const sg = mode === "vs" && i === 1 ? -1 : 1;
     const sx = L.start[0] * sg + (mode === "coop" ? (i ? 1.4 : -0.6) : 0);
     G.pl.push({ x: sx, z: L.start[1], dir: Math.PI, st: [], team: mode === "vs" ? i : 0, xt: 0, ct: 0, mv: 0, on: 1 });
   }
+  if (mode !== "vs" && v >= 2) {
+    // подъёмные и запас в кармане — в деньгах этой бухты
+    const cm = L.MAP.cm || 1;
+    G.money[0] += Math.round((120 * pk(G, "e_start") + 60 * mt(G, "m_start")) * cm);
+    // готовый цех: первый цех бухты построен (с тем, без чего он не открылся бы) и ускорен
+    if (pk(G, "s_pre")) {
+      const first = L.E.find((e) => e.k === "proc");
+      const openDeps = (e) => { for (const a of e.after) if (!G.e[a].o && L.E[a].k !== "helper") openDeps(L.E[a]); if (!G.e[e.i].o) { G.e[e.i].o = 1; } };
+      if (first) { openDeps(first); G.e[first.i].lv = 1; G.bv++; autoOpen(G); }
+    }
+  }
   return G;
 }
+function entState(e) {
+  const s = { o: e.def.free ? 1 : 0, p: 0 };
+  if (e.k === "spot") { s.f = SCHOOL.max; s.rt = 0; }
+  if (e.k === "proc") { s.ib = e.rec.in.map(() => 0); s.ob = 0; s.tm = 0; }
+  if (e.k === "gen") { s.ob = 0; s.tm = 0; }
+  if (e.k === "stall") { s.sh = 0; s.cash = 0; s.q = []; }
+  if (e.k === "dock") { s.pile = []; s.ship = 0; s.st = 6; s.load = []; s.cash = 0; }
+  if (e.k === "board") { s.cash = 0; }
+  return s;
+}
+// знак забега и уровень «Флота» (в «друг против друга» не действуют)
+export const pk = (G, id) => (G.mode === "vs" ? 0 : (G.perks && G.perks[id]) || 0);
+export const mt = (G, id) => (G.mode === "vs" ? 0 : (G.meta && G.meta[id]) || 0);
 
 /* ---------- запросы ---------- */
 export const teamOf = (G, pi) => (G.mode === "vs" ? pi : 0);
-export function costMul(G) { return G.mode === "vs" ? 0.38 : BAYS[G.bay].mult * DIFF[G.diff].cost * (G.mode === "coop" ? 1.15 : 1); }
-export function priceMul(G) { return G.mode === "vs" ? 2.5 : BAYS[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)); }
-export function capOf(G, team) { return UPG.bag.v(G.upg[team].bag) + (G.mode === "vs" ? 0 : 2 * (G.perks.p_cap || 0)); }
-export function speedOf(G, team) { return UPG.boots.v(G.upg[team].boots) * (G.mode === "vs" ? 1 : 1 + 0.08 * (G.perks.p_spd || 0)); }
-export function catchOf(G, team) { return UPG.net.v(G.upg[team].net); }
+export function costMul(G) {
+  if (G.mode === "vs") return 0.38;
+  const base = DIFF[G.diff].cost * (G.mode === "coop" ? 1.15 : 1);
+  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * base : base * Math.pow(1.6, G.lap || 0);
+}
+export function priceMul(G) {
+  if (G.mode === "vs") return 2.5;
+  return (G.v || 1) < 2 ? BAYS_OLD[G.bay].mult * (1 + 0.15 * (G.perks.p_price || 0)) : Math.pow(1.3, G.lap || 0);
+}
+const gearMul = (G) => costMul(G) * (layoutOf(G).MAP.cm || 1);
+export function capOf(G, team) { return UPG.bag.v(G.upg[team].bag) + 2 * pk(G, "p_cap") + mt(G, "m_bag"); }
+export function speedOf(G, team) { return UPG.boots.v(G.upg[team].boots) * (1 + 0.08 * pk(G, "p_spd")) * (1 + 0.04 * mt(G, "m_boots")); }
+export function catchOf(G, team) { return UPG.net.v(G.upg[team].net) / (1 + 0.08 * mt(G, "m_net")); }
+export function helperSpeed(G, team) { return UPG.crewspd.v(G.upg[team].crewspd) * (1 + 0.12 * pk(G, "h_spd")) * (1 + 0.06 * mt(G, "m_crew")); }
+export function helperCap(G, team) { return UPG.crew.v(G.upg[team].crew) + 2 * pk(G, "h_cap") + mt(G, "m_hcap"); }
+export const shelfPlus = (G) => 12 * pk(G, "h_shelf");
+export const cashReach = (G) => 1.5 * pk(G, "p_mag") + 1.0 * mt(G, "m_cash");
 export function itemPrice(G, it) { const I = ITEMS[it]; return (I.price || I.ship || 0) * priceMul(G); }
+// цена найма помощника и улучшений артели (их покупают в «Артели», не на площадках)
+export function hireCost(G, ei) {
+  const L = layoutOf(G), e = L.E[ei];
+  if (e.def.id === "fisher0" && (pk(G, "h_free") || mt(G, "m_free"))) return 0;
+  return Math.round((e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
+}
+export function crewCost(G, team, u) { return upgCost(u, G.upg[team][u], gearMul(G)); }
+// можно ли нанять: зависимости открыты, ещё не нанят
+export function canHire(G, ei) {
+  const L = layoutOf(G), e = L.E[ei]; if (!e || e.k !== "helper" || G.e[ei].o) return false;
+  for (const a of e.after) if (!G.e[a].o) return false;
+  return true;
+}
+const cheapK = (G) => (G.nbuy || 0) < 6 && pk(G, "e_cheap") ? 1 - 0.35 * pk(G, "e_cheap") : 1;
 // площадка видна: зависимости открыты, сама ещё не куплена (улучшение — пока не максимум)
 export function padVisible(G, i) {
-  const L = layout(G.mode), e = L.E[i], s = G.e[i];
-  if (e.k === "spot" || e.k === "board") return false;
-  if (e.k === "upg") { if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
+  const L = layoutOf(G), e = L.E[i], s = G.e[i];
+  if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire") return false;
+  if (e.k === "upg") { if (e.def.u === "crew" || e.def.u === "crewspd") return false; if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
   else if (e.k === "supg") { if (!G.e[e.tg].o || (G.e[e.tg].lv || 0) >= SUPG.max) return false; }
   else if (s.o) return false;
   if (e.def.free) return false;
@@ -133,14 +179,14 @@ export function padVisible(G, i) {
   return true;
 }
 export function padCost(G, i) {
-  const L = layout(G.mode), e = L.E[i];
-  if (e.k === "upg") return upgCost(e.def.u, G.upg[e.team][e.def.u], costMul(G));
+  const L = layoutOf(G), e = L.E[i];
+  if (e.k === "upg") return upgCost(e.def.u, G.upg[e.team][e.def.u], gearMul(G));
   if (e.k === "supg") { const t = L.E[e.tg]; return Math.round(Math.max(25, (t.def.cost || 50) * SUPG.k) * Math.pow(SUPG.mult, G.e[e.tg].lv || 0) * costMul(G) / 5) * 5; }
-  return Math.round((e.def.cost || 0) * costMul(G) / 5) * 5 || 5;
+  return Math.round((e.def.cost || 0) * costMul(G) * cheapK(G) / 5) * 5 || 5;
 }
 // открыто ли автоматически (место лова на мостках открывается вместе с ними)
 function autoOpen(G) {
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   for (const e of L.E) if (e.def.auto && !G.e[e.i].o && e.after.every((a) => G.e[a].o)) { G.e[e.i].o = 1; G.bv++; }
   for (const e of L.E) if (e.k === "board" && !G.e[e.i].o && e.after.every((a) => G.e[a].o)) { G.e[e.i].o = 1; G.bv++; }
 }
@@ -148,7 +194,7 @@ function autoOpen(G) {
 /* ---------- препятствия и ходьба ---------- */
 let boxCache = { key: "", bv: -1, list: [] };
 export function boxes(G) {
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   if (boxCache.key === L.key && boxCache.bv === G.bv && boxCache.g === G) return boxCache.list;
   const list = [];
   for (const e of L.E) if (e.box && G.e[e.i].o) list.push(e.box);
@@ -178,7 +224,7 @@ function walkable(G, L, x, z, r, who) {
   if (who !== "c") for (const b of boxes(G)) if (hitBox(x, z, r, b)) return false;
   return true;
 }
-export function canStand(G, x, z) { return walkable(G, layout(G.mode), x, z, 0.3, "p"); }
+export function canStand(G, x, z) { return walkable(G, layoutOf(G), x, z, 0.3, "p"); }
 // вытолкнуть точку из прямоугольников (скольжение вдоль стен и по углам)
 function pushOut(G, p, r) {
   for (let it = 0; it < 3; it++) {
@@ -197,7 +243,7 @@ function pushOut(G, p, r) {
 let deckCache = { g: null, bv: -1, list: [] };
 export function deckY(G, x, z) {
   if (deckCache.g !== G || deckCache.bv !== G.bv) {
-    const L = layout(G.mode), list = [];
+    const L = layoutOf(G), list = [];
     for (const e of L.E) {
       if (e.k === "pier" && G.e[e.i].o) list.push([e.pier.x - 1.0, e.pier.z1 - 0.45, e.pier.x + 1.0, e.pier.z0 + 0.45, 0.4]);
       if (e.k === "dock" && G.e[e.i].o) list.push([e.x - 1.35, e.z - 1.35, e.x + 1.35, e.z + 1.35, 0.21]);
@@ -222,7 +268,7 @@ function pullFromWater(G, L, p) {
 }
 // шаг: двигаемся, потом выталкиваемся из стен и воды. Застрять нельзя: если всё равно внутри — ищем свободное место рядом
 function moveAgent(G, a, dx, dz, who) {
-  const L = layout(G.mode), r = who === "c" ? 0.25 : 0.3, M = L.MAP;
+  const L = layoutOf(G), r = who === "c" ? 0.25 : 0.3, M = L.MAP;
   if (!dx && !dz) { if (who !== "c" && !walkable(G, L, a.x, a.z, r, who)) unstick(G, L, a, r, who); return; }
   if (who === "c") { a.x += dx; a.z += dz; return; }
   // пробуем прямо, а если упёрлись (угол, край воды) — чуть в сторону: берём вариант, что продвигает дальше всего
@@ -260,7 +306,7 @@ function segBox(ax, az, bx, bz, b, m) {
 // куда идти, чтобы обойти здания (один обходной угол)
 function via(G, ax, az, tx, tz) {
   // вода: сначала выйти на берег; в воду (отмель, мостки) — заходить с берега прямо
-  const L = layout(G.mode), aw = az < shoreZ(L, ax) + 0.05, tw = tz < shoreZ(L, tx) + 0.05;
+  const L = layoutOf(G), aw = az < shoreZ(L, ax) + 0.05, tw = tz < shoreZ(L, tx) + 0.05;
   if (aw && (!tw || Math.abs(ax - tx) > 1.4)) return [ax, shoreZ(L, ax) + 0.75];
   if (!aw && tw) { const ex = tx, ez = shoreZ(L, tx) + 0.55; if (Math.abs(ax - ex) > 0.45 || az > ez + 0.3) return viaBox(G, ax, az, ex, ez) || [ex, ez]; return null; }
   return viaBox(G, ax, az, tx, tz);
@@ -301,7 +347,8 @@ function goTo(G, a, tx, tz, spd, dt, who, near) {
 export function movePlayer(G, pi, jx, jz, dt) {
   const p = G.pl[pi]; const m = hyp(jx, jz);
   if (m < 0.05) { p.mv = 0; return; }
-  const s = speedOf(G, p.team) * Math.min(1, m) * dt;
+  let s = speedOf(G, p.team) * Math.min(1, m) * dt;
+  if (pk(G, "p_wade") && p.z < shoreZ(layoutOf(G), p.x) + 2.5) s *= 1 + 0.25 * pk(G, "p_wade");
   moveAgent(G, p, jx / m * s, jz / m * s, "p");
   p.dir = Math.atan2(jx, jz); p.mv = Math.min(1, m);
 }
@@ -312,39 +359,41 @@ export function inZone(a, z, pad) { return z && hyp(a.x - z.x, a.z - z.z) < z.r 
    ["m", e, amt] заплатить в площадку       ["k", e] забрать выручку
    a — кто делает: "p0"/"p1" игрок, "h3" помощник. Возвращает true, если получилось. */
 function agentOf(G, a) { return a[0] === "p" ? G.pl[+a.slice(1)] : G.hp[+a.slice(1)]; }
-function capFor(G, a) { const ag = agentOf(G, a); return a[0] === "p" ? capOf(G, ag.team) : UPG.crew.v(G.upg[ag.team].crew); }
+function capFor(G, a) { const ag = agentOf(G, a); return a[0] === "p" ? capOf(G, ag.team) : helperCap(G, ag.team); }
 // есть ли у команды открытое место, куда этот товар можно отнести (иначе его не берём)
 export function hasDest(G, team, it) {
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   for (const e of L.E) { if (G.mode === "vs" && e.team !== team) continue; const s = G.e[e.i]; if (!s.o) continue;
     if (e.k === "proc" && e.rec.in.includes(it)) return true; if (e.k === "stall" && e.item === it) return true; if (e.k === "dock" && e.acc.includes(it)) return true; }
   return !!(G.con && !G.con.end && G.con.it === it && G.mode !== "vs");
 }
 // чего не хватает, чтобы товар было куда нести (для подсказки)
 export function needFor(G, team, it) {
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   for (const e of L.E) { if (G.mode === "vs" && e.team !== team) continue; if (G.e[e.i].o) continue;
     if ((e.k === "proc" && e.rec.in.includes(it)) || (e.k === "stall" && e.item === it) || (e.k === "dock" && e.acc.includes(it))) return e.i; }
   return -1;
 }
 export function accepts(G, ei, it) {
-  const L = layout(G.mode), e = L.E[ei], s = G.e[ei];
+  const L = layoutOf(G), e = L.E[ei], s = G.e[ei];
   if (!s.o) return false;
-  if (e.k === "proc") { const k = e.rec.in.indexOf(it); return k >= 0 && s.ib[k] < 24 + SUPG.cap * (s.lv || 0); }
-  if (e.k === "stall") return e.item === it && s.sh < 24;
+  if (e.k === "proc") { const k = e.rec.in.indexOf(it); return k >= 0 && s.ib[k] < 24 + SUPG.cap * (s.lv || 0) + shelfPlus(G); }
+  if (e.k === "stall") return e.item === it && s.sh < 24 + shelfPlus(G);
   if (e.k === "dock") return e.acc.includes(it) && s.pile.length < e.def.cap;
   if (e.k === "board") return !!(G.con && G.con.it === it && G.con.got < G.con.n && !G.con.end);
   return false;
 }
 export function applyOp(G, a, op) {
-  const L = layout(G.mode), ag = agentOf(G, a); if (!ag) return false;
+  const L = layoutOf(G), ag = agentOf(G, a); if (!ag) return false;
   const ei = op[1], e = L.E[ei], s = G.e[ei]; if (!e || !s) return false;
   const team = ag.team;
   if (e.team !== team && G.mode === "vs" && op[0] !== "c") return false;
   switch (op[0]) {
     case "c": {
       if (e.k !== "spot" || !s.o || s.f <= 0 || ag.st.length >= capFor(G, a)) return false;
-      s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item }); return true;
+      s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item });
+      if (a[0] === "p" && pk(G, "p_dbl") && s.f > 0 && ag.st.length < capFor(G, a) && rnd(G) < 0.2 * pk(G, "p_dbl")) { s.f--; ag.st.push(e.item); G.ev.push({ t: "catch", a, e: ei, it: e.item, dbl: 1 }); }
+      return true;
     }
     case "d": {
       const it = op[2]; const k = ag.st.lastIndexOf(it);
@@ -370,6 +419,20 @@ export function applyOp(G, a, op) {
       if (s.p >= cost - 0.001) unlock(G, ei);
       return true;
     }
+    case "h": {      // нанять помощника в «Артели»: op = ["h", дом артели, номер помощника]
+      if (e.k !== "hire") return false;
+      const hi = op[2], he = L.E[hi]; if (!he || he.team !== team || !canHire(G, hi)) return false;
+      const cost = hireCost(G, hi); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; G.nbuy = (G.nbuy || 0) + 1;
+      unlock(G, hi, ei); return true;
+    }
+    case "u": {      // улучшить артель: op = ["u", дом артели, "crew" | "crewspd"]
+      if (e.k !== "hire") return false;
+      const u = op[2]; if (u !== "crew" && u !== "crewspd" || G.upg[team][u] >= UPG[u].max) return false;
+      const cost = crewCost(G, team, u); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; G.upg[team][u]++;
+      G.ev.push({ t: "upg", e: ei, u, lv: G.upg[team][u], team }); return true;
+    }
     case "k": {
       const amt = s.cash || 0; if (amt <= 0) return false;
       s.cash = 0; G.money[team] += amt;
@@ -378,13 +441,18 @@ export function applyOp(G, a, op) {
   }
   return false;
 }
-function unlock(G, ei) {
-  const L = layout(G.mode), e = L.E[ei], s = G.e[ei];
+function unlock(G, ei, from) {
+  const L = layoutOf(G), e = L.E[ei], s = G.e[ei];
   s.p = 0;
+  if (e.k !== "upg" && e.k !== "supg" && e.k !== "helper") G.nbuy = (G.nbuy || 0) + 1;
   if (e.k === "upg") { G.upg[e.team][e.def.u]++; G.ev.push({ t: "upg", e: ei, u: e.def.u, lv: G.upg[e.team][e.def.u], team: e.team }); return; }
   if (e.k === "supg") { const t = G.e[e.tg]; t.lv = (t.lv || 0) + 1; G.ev.push({ t: "supg", e: ei, of: e.tg, lv: t.lv, team: e.team }); return; }
   s.o = 1; G.bv++;
-  if (e.k === "helper") G.hp.push({ e: ei, team: e.team, x: e.zpad.x, z: e.zpad.z, dir: 0, st: [], s: 0, tm: 0, xt: 0, mv: 0, tg: -1 });
+  if (e.k === "helper") {
+    // новый помощник выходит из дверей артели и идёт на своё место
+    const hz = from != null ? L.E[from].zin : (L.hire.length ? L.E[L.hire.find((h) => L.E[h].team === e.team) ?? L.hire[0]].zin : e.zpad);
+    G.hp.push({ e: ei, team: e.team, x: hz.x, z: hz.z, dir: 0, st: [], s: 0, tm: 0, xt: 0, mv: 0, tg: -1, born: G.t });
+  }
   G.ev.push({ t: "open", e: ei, team: e.team });
   // кто стоял на месте новой постройки — выходит к её выходу (или на юг)
   if (e.box) for (const a of [...G.pl, ...G.hp]) {
@@ -395,64 +463,76 @@ function unlock(G, ei) {
 }
 
 /* ---------- взаимодействие по близости: что сделал бы игрок, стоя здесь ----------
-   Возвращает операцию или null. Используется и для игрока (хозяин/гость), и для бота. */
+   Возвращает операции. Используется и для игрока (хозяин/гость), и для бота.
+   Чтобы на бегу ничего случайно не взять и не купить: класть/брать — только постояв в зоне DWELL с (или отпустив джойстик),
+   платить в площадку — постояв PAD_GRACE с. Пока бежишь, отсчёт сброшен. Ловля и сбор выручки — сразу. */
+export const DWELL = 0.35, PAD_GRACE = 0.4;
 export function proximityOps(G, pi, dt, loc) {
-  const L = layout(G.mode), p = G.pl[pi], team = p.team, a = "p" + pi;
+  const L = layoutOf(G), p = G.pl[pi], team = p.team, a = "p" + pi;
   loc = loc || p;              // таймеры: у гостя свои, у хозяина — в игроке
   const ops = [];
-  loc.xt = Math.max(0, (loc.xt || 0) - dt); loc.ct = Math.max(0, (loc.ct || 0) - dt); loc.pt = (loc.pt || 0) + dt;
-  let onPad = -1;
+  loc.xt = Math.max(0, (loc.xt || 0) - dt); loc.ct = Math.max(0, (loc.ct || 0) - dt);
+  const mine = (e) => e.team === team || G.mode !== "vs";
+  // в какой зоне стоим (ближайшая): площадка, вход, выход
+  let zk = -1, zz = null, zd = 1e9, zkind = "";
   for (const e of L.E) {
-    if (e.team !== team && G.mode === "vs") continue;
+    if (!mine(e)) continue;
     const s = G.e[e.i];
-    // площадка покупки: деньги утекают, пока стоишь
-    if (padVisible(G, e.i) && inZone(p, e.zpad)) {
-      onPad = e.i;
-      if (loc.padE !== e.i) { loc.padE = e.i; loc.pt = 0; loc.pay = 0; }
-      // проходя мимо, не платим: нужно остановиться (или постоять подольше)
-      if ((loc.pt > 0.3 && !(p.mv > 0.35)) || loc.pt > 1.1) loc.pay = 1;
-      if (loc.pay && G.money[team] > 0) {
-        const cost = padCost(G, e.i), rate = Math.max(cost / 1.7, 12), need = cost - s.p;
-        loc.pacc = Math.min((loc.pacc || 0) + rate * dt, need + 1);
-        let amt = Math.min(Math.floor(loc.pacc), G.money[team], need);
-        if (amt <= 0 && (need < 1 || G.money[team] < 1)) amt = Math.min(G.money[team], need);
-        if (amt > 0.0001) { loc.pacc = Math.max(0, loc.pacc - amt); ops.push(["m", e.i, amt]); }
-      }
-      continue;
-    }
+    if (padVisible(G, e.i) && inZone(p, e.zpad)) { const d = hyp(p.x - e.zpad.x, p.z - e.zpad.z) - 0.3; if (d < zd) { zd = d; zk = e.i * 4; zz = e.zpad; zkind = "pad"; } }
     if (!s.o) continue;
-    if (e.zcash && (s.cash || 0) > 0 && inZone(p, e.zcash, 0.15)) ops.push(["k", e.i]);
+    if (e.zin && e.k !== "spot" && e.k !== "hire" && inZone(p, e.zin)) { const d = hyp(p.x - e.zin.x, p.z - e.zin.z); if (d < zd) { zd = d; zk = e.i * 4 + 1; zz = e.zin; zkind = "in"; } }
+    if (e.zout && inZone(p, e.zout)) { const d = hyp(p.x - e.zout.x, p.z - e.zout.z); if (d < zd) { zd = d; zk = e.i * 4 + 2; zz = e.zout; zkind = "out"; } }
+    if (e.zcash && (s.cash || 0) > 0 && inZone(p, e.zcash, 0.15 + cashReach(G))) ops.push(["k", e.i]);
   }
-  if (onPad < 0) { loc.padE = -1; loc.pacc = 0; }
-  if (loc.xt <= 0) {
+  const mv = p.mv || 0;
+  if (zk !== loc.zk) { loc.zk = zk; loc.dw = 0; loc.pacc = 0; }
+  if (zk < 0 || mv >= 0.6) loc.dw = 0;
+  else loc.dw = Math.min(2, (loc.dw || 0) + dt * (mv < 0.15 ? 3 : 1));
+  const need = zkind === "pad" ? PAD_GRACE : DWELL;
+  loc.dwK = zk >= 0 ? Math.min(1, loc.dw / need) : 0; loc.dwZ = zz; loc.dwKind = zkind;
+  const armed = zk >= 0 && loc.dw >= need;
+  if (armed && zkind === "pad") {
+    const ei = zk >> 2, s = G.e[ei];
+    if (G.money[team] > 0) {
+      const cost = padCost(G, ei), rate = Math.max(cost / 1.7, 12), left = cost - s.p;
+      loc.pacc = Math.min((loc.pacc || 0) + rate * dt, left + 1);
+      let amt = Math.min(Math.floor(loc.pacc), G.money[team], left);
+      if (amt <= 0 && (left < 1 || G.money[team] < 1)) amt = Math.min(G.money[team], left);
+      if (amt > 0.0001) { loc.pacc = Math.max(0, loc.pacc - amt); ops.push(["m", ei, amt]); }
+    }
+  }
+  if (armed && loc.xt <= 0 && zkind === "in") {
     // положить (сверху стопки — первое, что примут)
-    let done = false;
-    for (const e of L.E) {
-      if (done || (e.team !== team && G.mode === "vs") || !e.zin || e.k === "spot" || !G.e[e.i].o || !inZone(p, e.zin)) continue;
-      for (let k = p.st.length - 1; k >= 0; k--) { if (accepts(G, e.i, p.st[k])) { ops.push(["d", e.i, p.st[k]]); done = true; break; } }
-    }
+    const ei = zk >> 2;
+    for (let k = p.st.length - 1; k >= 0; k--) if (accepts(G, ei, p.st[k])) { ops.push(["d", ei, p.st[k]]); loc.xt = PLAYER.xferT; break; }
+  }
+  if (armed && loc.xt <= 0 && zkind === "out" && p.st.length < capOf(G, team)) {
     // взять готовое
-    if (!done && p.st.length < capOf(G, team)) for (const e of L.E) {
-      if ((e.team !== team && G.mode === "vs") || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0 || !inZone(p, e.zout)) continue;
+    const ei = zk >> 2, e = L.E[ei];
+    if (G.e[ei].ob > 0) {
       const it = e.k === "gen" ? e.item : e.rec.out;
-      if (!hasDest(G, team, it)) { loc.noDest = it; continue; }
-      ops.push(["p", e.i]); done = true; break;
+      if (!hasDest(G, team, it)) loc.noDest = it; else { ops.push(["p", ei]); loc.xt = PLAYER.xferT; }
     }
-    if (done) loc.xt = PLAYER.xferT;
   }
   // ловля
   if (loc.ct <= 0 && p.st.length < capOf(G, team)) for (const e of L.E) {
-    if ((e.team !== team && G.mode === "vs") || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin)) continue;
+    if (!mine(e) || e.k !== "spot" || !G.e[e.i].o || G.e[e.i].f <= 0 || !inZone(p, e.zin)) continue;
     if (!hasDest(G, team, e.item)) { loc.noDest = e.item; continue; }
     ops.push(["c", e.i]); loc.ct = catchOf(G, team); break;
   }
   return ops;
 }
+// стоит ли игрок у дома артели (для окна найма)
+export function atHire(G, pi, loc) {
+  const L = layoutOf(G), p = loc || G.pl[pi], team = G.pl[pi].team;
+  for (const i of L.hire) { const e = L.E[i]; if ((e.team === team || G.mode !== "vs") && inZone(p, e.zin, 0.2)) return i; }
+  return -1;
+}
 
 /* ---------- шаг мира ---------- */
 export function step(G, dt, opt) {
   opt = opt || {};
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   if (G.paused) return;
   G.t += dt;
   if (G.winner >= 0 && G.mode === "vs") return;
@@ -465,11 +545,11 @@ export function step(G, dt, opt) {
     const s = G.e[e.i]; if (!s.o) continue;
     if (e.k === "spot") { if (s.f < SCHOOL.max) { s.rt += dt; const per = SCHOOL.regen / (1 + 0.9 * helpersAt(G, e.i) + (s.f < 8 ? 1 : 0)); while (s.rt > per && s.f < SCHOOL.max) { s.rt -= per; s.f++; } } else s.rt = 0; }
     else if (e.k === "proc") {
-      const ready = s.ib.every((n) => n > 0) && s.ob < 30 + SUPG.cap * (s.lv || 0);
-      if (ready) { s.tm += dt; if (s.tm >= e.rec.t / (1 + SUPG.speed * (s.lv || 0))) { s.tm = 0; for (let k = 0; k < s.ib.length; k++) s.ib[k]--; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.rec.out }); } }
+      const ready = s.ib.every((n) => n > 0) && s.ob < 30 + SUPG.cap * (s.lv || 0) + shelfPlus(G);
+      if (ready) { s.tm += dt; if (s.tm >= e.rec.t / (1 + SUPG.speed * (s.lv || 0)) / (1 + 0.12 * pk(G, "s_speed"))) { s.tm = 0; for (let k = 0; k < s.ib.length; k++) s.ib[k]--; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.rec.out }); } }
       else s.tm = Math.max(0, s.tm - dt);
     } else if (e.k === "gen") {
-      if (s.ob < e.def.cap + SUPG.cap * (s.lv || 0)) { s.tm += dt; if (s.tm >= e.def.t / (1 + SUPG.speed * (s.lv || 0))) { s.tm = 0; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.item }); } }
+      if (s.ob < e.def.cap + SUPG.cap * (s.lv || 0) + shelfPlus(G)) { s.tm += dt; if (s.tm >= e.def.t / (1 + SUPG.speed * (s.lv || 0)) / (1 + 0.12 * pk(G, "s_speed"))) { s.tm = 0; s.ob++; G.ev.push({ t: "made", e: e.i, it: e.item }); } }
     } else if (e.k === "dock") stepDock(G, e, s, dt);
   }
   stepHelpers(G, dt);
@@ -481,7 +561,7 @@ export function step(G, dt, opt) {
   if (G.mode === "vs" && G.tEnd && G.t >= G.tEnd && G.winner < 0) { G.winner = G.earned[0] >= G.earned[1] ? 0 : 1; G.ev.push({ t: "goal", team: G.winner, time: 1 }); }
   if (G.ev.length > 400) G.ev.splice(0, G.ev.length - 400);
 }
-function helpersAt(G, ei) { let n = 0; for (const h of G.hp) if (h.s === 1 && layout(G.mode).E[h.e].from === ei) n++; return n; }
+function helpersAt(G, ei) { let n = 0; for (const h of G.hp) if (h.s === 1 && layoutOf(G).E[h.e].from === ei) n++; return n; }
 
 /* ---------- причал и судно ---------- */
 function stepDock(G, e, s, dt) {
@@ -504,10 +584,10 @@ function stepDock(G, e, s, dt) {
 /* ---------- помощники ---------- */
 // s: 0 — идёт к источнику, 1 — набирает, 2 — несёт, 3 — отдаёт; кассир: 0 — ищет, 1 — идёт к прилавку
 function stepHelpers(G, dt) {
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   for (let hi = 0; hi < G.hp.length; hi++) {
     const h = G.hp[hi], he = L.E[h.e], a = "h" + hi, team = h.team;
-    const spd = UPG.crewspd.v(G.upg[team].crewspd), cap = UPG.crew.v(G.upg[team].crew);
+    const spd = helperSpeed(G, team), cap = helperCap(G, team);
     h.xt = Math.max(0, h.xt - dt); h.tm += dt;
     if (he.def.role === "cashier") {
       if (h.tg < 0 || !(G.e[h.tg].cash > 0)) {
@@ -558,9 +638,9 @@ function stepHelpers(G, dt) {
 
 /* ---------- покупатели ----------
    s: 0 — идёт к толпе, 1 — ждёт в толпе, 2 — идёт в очередь / стоит в ней, 4 — уходит */
-function openStalls(G) { const L = layout(G.mode); return L.E.filter((e) => e.k === "stall" && G.e[e.i].o); }
+function openStalls(G) { const L = layoutOf(G); return L.E.filter((e) => e.k === "stall" && G.e[e.i].o); }
 function stepCustomers(G, dt) {
-  const L = layout(G.mode), stalls = openStalls(G);
+  const L = layoutOf(G), stalls = openStalls(G);
   const pat0 = CUSTOMER.patience * (G.mode === "vs" ? 0.85 : DIFF[G.diff].pat);
   // кого сколько хотят (по товару)
   const wantN = new Array(NIT).fill(0);
@@ -573,9 +653,9 @@ function stepCustomers(G, dt) {
     G.spT = 1.15 / Math.sqrt(items.length) * (0.7 + rnd(G) * 0.6);
     if (free.length && G.cu.length < 64) {
       const it = free[Math.floor(rnd(G) * free.length)];
-      const nmax = it === IT.herring ? 4 : it === IT.caviar ? 2 : 3;
+      const pr = ITEMS[it].price || 1, nmax = pr < 10 ? 4 : pr < 35 ? 3 : 2;
       const cx = L.crowd;
-      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + (G.bay > 0 ? 1 : 0)), g: 0, st: -1, pat: pat0, pm: pat0,
+      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + ((G.v || 1) < 2 && G.bay > 0 ? 1 : 0)), g: 0, st: -1, pat: pat0, pm: pat0,
         tx: cx[0] + rnd(G) * (cx[1] - cx[0]), tz: cx[2] + rnd(G) * (cx[3] - cx[2]), lk: rnd(G) * 6, bt: 0, mood: 0, sk: Math.floor(rnd(G) * 6), mv: 0 });
     }
   }
@@ -615,7 +695,8 @@ function stepCustomers(G, dt) {
         c.bt += dt;
         if (c.g < c.n && s.sh > 0 && c.bt > CUSTOMER.buyT) { c.bt = 0; s.sh--; c.g++; G.ev.push({ t: "buy", c: c.id, e: c.st, it: c.w }); c.pat = Math.min(c.pm, c.pat + 4); }
         if (c.g >= c.n) {
-          const amt = Math.round(itemPrice(G, c.w) * c.n * (c.mood === 2 ? 0.9 : 1) * 10) / 10;
+          const tip = pk(G, "e_tip") && rnd(G) < 0.2 ? 0.5 * pk(G, "e_tip") : 0;
+          const amt = Math.round(itemPrice(G, c.w) * c.n * (c.mood === 2 ? 0.9 : 1) * (1 + tip) * 10) / 10;
           s.cash += amt; G.earned[e.team] += amt; G.served++;
           G.ev.push({ t: "pay", e: c.st, amt, c: c.id });
           s.q.splice(0, 1); c.s = 4; c.mood = 1; c.tx = c.x + (c.x < 0 ? -2 : 2); c.tz = ROAD_Z + 3;
@@ -637,7 +718,7 @@ function stepCustomers(G, dt) {
 
 /* ---------- заказы (вместе / один) ---------- */
 function stepContract(G, dt) {
-  const L = layout(G.mode), bi = L.byId[0].board;
+  const L = layoutOf(G), bi = L.byId[0].board;
   if (bi == null || !G.e[bi].o) return;
   if (!G.con) {
     G.conT -= dt;
@@ -653,8 +734,8 @@ function stepContract(G, dt) {
     // успеть можно: не больше, чем цепочка даст за срок (с запасом)
     const T0 = 60 + n * 7, rate = chainRate(G, 0, it);
     n = Math.max(4, Math.min(n, Math.floor(T0 * rate * 0.35)));
-    const T = Math.round((60 + n * 7) * DIFF[G.diff].ct);
-    G.con = { it, n, got: 0, T, t: T, rw: Math.round(itemPrice(G, it) * n * 2.6), end: 0 };
+    const T = Math.round((60 + n * 7) * DIFF[G.diff].ct * (1 + 0.2 * pk(G, "e_order")));
+    G.con = { it, n, got: 0, T, t: T, rw: Math.round(itemPrice(G, it) * n * 2.6 * (1 + 0.4 * pk(G, "e_order"))), end: 0 };
     G.ev.push({ t: "contract", s: "new" });
     return;
   }
@@ -664,7 +745,7 @@ function stepContract(G, dt) {
   if (c.t <= 0) finishContract(G, false);
 }
 function finishContract(G, ok) {
-  const L = layout(G.mode), c = G.con; if (!c || c.end) return;
+  const L = layoutOf(G), c = G.con; if (!c || c.end) return;
   c.end = 3; c.ok = ok ? 1 : 0;
   if (ok) { G.e[L.byId[0].board].cash += c.rw; G.earned[0] += c.rw; G.cdone++; G.stars += DIFF[G.diff].star; G.ev.push({ t: "contract", s: "done", amt: c.rw }); }
   else { G.cfail++; G.ev.push({ t: "contract", s: "fail" }); }
@@ -674,7 +755,7 @@ function finishContract(G, ok) {
 // товар можно сделать: открыто место, где он ловится/делается, и всё, что нужно на входе, тоже можно сделать
 export function chainOK(G, team, it, depth) {
   if ((depth || 0) > 6) return false;
-  const L = layout(G.mode);
+  const L = layoutOf(G);
   for (const e of L.E) {
     if ((G.mode === "vs" && e.team !== team) || !G.e[e.i].o) continue;
     if ((e.k === "spot" || e.k === "gen") && e.item === it) return true;
@@ -685,7 +766,7 @@ export function chainOK(G, team, it, depth) {
 // сколько штук в секунду цепочка может дать (грубо: самый медленный цех, улов игрока ~1,5/с)
 export function chainRate(G, team, it, depth) {
   if ((depth || 0) > 6) return 0;
-  const L = layout(G.mode); let best = 0;
+  const L = layoutOf(G); let best = 0;
   for (const e of L.E) {
     if ((G.mode === "vs" && e.team !== team) || !G.e[e.i].o) continue;
     const lv = 1 + SUPG.speed * (G.e[e.i].lv || 0);
@@ -699,19 +780,19 @@ export function chainRate(G, team, it, depth) {
 /* ---------- доход, пока игры не было ---------- */
 export function offline(G, sec) {
   const helpers = G.hp.length; if (!helpers || !(G.rate > 0) || G.mode === "vs") return 0;
-  const k = Math.min(0.35, 0.06 + helpers * 0.02);
+  const k = Math.min(0.35, 0.06 + helpers * 0.02) * (1 + 0.25 * mt(G, "m_off"));
   return Math.floor(G.rate * k * Math.min(sec, 2 * 3600));
 }
 
 /* ---------- прогресс ---------- */
 export function progress(G, team) {
-  const L = layout(G.mode); let n = 0, o = 0;
+  const L = layoutOf(G); let n = 0, o = 0;
   for (const e of L.E) { if (e.team !== (team || 0) || e.k === "upg" || e.k === "supg" || e.def.free || e.def.auto || e.k === "board") continue; n++; if (G.e[e.i].o) o++; }
   return { n, o };
 }
 // следующая цель для подсказки: доступная площадка подешевле
 export function nextPad(G, team) {
-  const L = layout(G.mode); let best = -1, bc = 1e18;
+  const L = layoutOf(G); let best = -1, bc = 1e18;
   for (const e of L.E) { if (e.team !== team || !padVisible(G, e.i)) continue; const c = padCost(G, e.i) - G.e[e.i].p; const w = c * (e.k === "upg" || e.k === "supg" ? 1.6 : 1); if (w < bc) { bc = w; best = e.i; } }
   return best;
 }
@@ -722,10 +803,16 @@ export function deserialize(s) {
   try {
     const G = typeof s === "string" ? JSON.parse(s) : s;
     if (!G || !G.e || !G.pl) return null;
-    G.ev = []; layout(G.mode);
+    G.ev = [];
+    if (!G.v) G.v = 1;
+    if (!G.perks) G.perks = {}; if (!G.meta) G.meta = {};
+    const L = layoutOf(G);
+    // карта дописалась (старые сохранения): новым местам — начальное состояние; карта другая — сохранение не подходит
+    if (G.e.length < L.E.length && L.key === "old") for (let i = G.e.length; i < L.E.length; i++) G.e.push(entState(L.E[i]));
+    if (G.e.length !== L.E.length) return null;
     return G;
   } catch (_) { return null; }
 }
 export { rnd, via, goTo, hyp };
 // открыть место без оплаты (заставка меню, отладка)
-export function forceOpen(G, ei) { const L = layout(G.mode), e = L.E[ei]; if (e.k === "upg") { G.upg[e.team][e.def.u]++; return; } if (!G.e[ei].o) unlock(G, ei); }
+export function forceOpen(G, ei) { const L = layoutOf(G), e = L.E[ei]; if (e.k === "upg") { G.upg[e.team][e.def.u]++; return; } if (!G.e[ei].o) unlock(G, ei); }

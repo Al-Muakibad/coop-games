@@ -11,11 +11,20 @@ function vnoise(x, y) { const ix = Math.floor(x), iy = Math.floor(y), fx = x - i
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // темы бухт: цвет неба, воды, тумана, свет
+// у каждой бухты свой вид: снег или тундра, цвет воды и неба, настил, лес, скалы, льдины, домики, флажки
 export const THEMES = [
-  { sky: "#9fd3f2", sky2: "#d6e6f5", fog: "#d3e2f1", deep: "#1a56b8", mid: "#2a76d2", shal: "#55aee8", sun: "#ffefd6", hemi: "#e4eeff", ground: "#8a98b8", sunI: 1.95 },
-  { sky: "#86b9e8", sky2: "#d8e8f7", fog: "#cfe0f2", deep: "#1b5684", mid: "#2a78a8", shal: "#5fb5d8", sun: "#eaf2ff", hemi: "#dce9ff", ground: "#8094b0", sunI: 2.1 },
-  { sky: "#f2c7a0", sky2: "#fde9d6", fog: "#f1e0d2", deep: "#25607e", mid: "#357f9c", shal: "#71bccc", sun: "#ffdcb0", hemi: "#fff0e2", ground: "#9a8f9e", sunI: 2.2 },
-  { sky: "#6f8fd0", sky2: "#c8d6f2", fog: "#bfcde8", deep: "#173f6c", mid: "#245d90", shal: "#4f9cc8", sun: "#e6eeff", hemi: "#cfdcff", ground: "#7686a8", sunI: 1.9 },
+  // Тихая бухта — снег, ели, тёплый настил
+  { sky: "#9fd3f2", sky2: "#d6e6f5", fog: "#d3e2f1", deep: "#1a56b8", mid: "#2a76d2", shal: "#55aee8", sun: "#ffefd6", hemi: "#e4eeff", ground: "#8a98b8", sunI: 1.95,
+    snow: ["#f1f5fb", "#d3e0f0"], deck: [0.85, 0.53, 0.4], trees: 0, fall: 1 },
+  // Ледяной фьорд — синий холод, скалы по краям, льдины в воде, серый настил
+  { sky: "#a9c6e6", sky2: "#dbe8f6", fog: "#cddcee", deep: "#103a66", mid: "#1d5a8e", shal: "#4e9cc8", sun: "#eef4ff", hemi: "#d8e6ff", ground: "#7d8fb0", sunI: 2.05,
+    snow: ["#f4f8fd", "#d9e6f4"], deck: [0.5, 0.52, 0.58], trees: 0, fall: 1, cliffs: 1, bergs: 1 },
+  // Крабовый мыс — летняя тундра: мох, валуны, кусты с ягодой, ловушки на берегу, без снега
+  { sky: "#f4dcb8", sky2: "#fbeedd", fog: "#efe2cf", deep: "#185f6e", mid: "#23808c", shal: "#5fbfbd", sun: "#fff0d4", hemi: "#fff6e8", ground: "#8f8a72", sunI: 2.15,
+    snow: ["#a3ad78", "#8d9a62"], sand: "#d8c49a", deck: [0.78, 0.62, 0.42], trees: 1, fall: 0, shrubs: 1, traps: 1 },
+  // Ярмарочная гавань — вечер, тёплый свет, домики за рынком, флажки, каменная мостовая
+  { sky: "#f2b98e", sky2: "#fde3cb", fog: "#f0d6c0", deep: "#1b4474", mid: "#2b6296", shal: "#62a6d0", sun: "#ffd2a0", hemi: "#ffe6d0", ground: "#8a7f8e", sunI: 2.0,
+    snow: ["#f6f1ec", "#e3dbd6"], deck: [0.74, 0.6, 0.5], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1 },
 ];
 
 export const figMat = () => {
@@ -26,7 +35,7 @@ export const figMat = () => {
 
 export class World {
   constructor(scene, renderer, opt) {
-    this.scene = scene; this.renderer = renderer; this.q = opt.quality; this.mode = opt.mode; this.L = layout(opt.mode); this.theme = THEMES[opt.theme || 0];
+    this.scene = scene; this.renderer = renderer; this.q = opt.quality; this.mode = opt.mode; this.L = opt.L || layout(opt.mode); this.theme = THEMES[opt.theme || 0];
     this.time = 0; this.ents = []; this.pops = [];
     this.root = new THREE.Group(); scene.add(this.root);
     this.buildSky(); this.buildLights(); this.buildGround(); this.buildWater(); this.buildDecor(); this.buildEnts();
@@ -64,7 +73,7 @@ export class World {
     const L = this.L, X0 = -34, X1 = 34, Z0 = -40, Z1 = 42;
     const g = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, 120, 146); g.rotateX(-Math.PI / 2); g.translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);
     const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
-    const SNOW = new THREE.Color("#f1f5fb"), SNOW2 = new THREE.Color("#d3e0f0"), SAND = new THREE.Color("#cbbba0"), PEB = new THREE.Color("#a99d8c"), BED = new THREE.Color("#5d7f8c"), TRAMP = new THREE.Color("#cdd6df"), ROAD = new THREE.Color("#b3bcc6"), DECK = new THREE.Color();
+    const T = this.theme, SNOW = new THREE.Color(T.snow[0]), SNOW2 = new THREE.Color(T.snow[1]), SAND = new THREE.Color(T.sand || "#cbbba0"), PEB = new THREE.Color("#a99d8c"), BED = new THREE.Color("#5d7f8c"), TRAMP = new THREE.Color("#cdd6df"), ROAD = new THREE.Color("#b3bcc6"), DECK = new THREE.Color();
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
@@ -78,7 +87,13 @@ export class World {
       // настил промысла: тёплые доски от берега до забора рынка, края скруглены
       const M = L.MAP, ex = Math.max(M.w[0] - x, 0, x - M.w[1]), ez = Math.max(sh + 1.0 - z, 0, z - (L.fz - 0.05));
       const dk = 1 - sstep(0.0, 0.35, Math.hypot(ex, ez));
-      if (dk > 0) { const pl = (Math.abs(((z * 2.2) % 1 + 1) % 1 - 0.5) < 0.04 ? 0.84 : 1) * (0.95 + vnoise(x * 0.7, z * 3) * 0.1); DECK.setRGB(0.85 * pl, 0.53 * pl, 0.4 * pl); c.lerp(DECK, dk); }
+      if (dk > 0) {
+        // настил: доски поперёк; в гавани — мостовая из камней
+        let pl;
+        if (T.cobble) { const cx = x * 1.6 + (Math.floor(z * 1.6) % 2) * 0.5, cz = z * 1.6, ex2 = Math.abs((cx % 1 + 1) % 1 - 0.5), ez2 = Math.abs((cz % 1 + 1) % 1 - 0.5); pl = (ex2 > 0.44 || ez2 > 0.44 ? 0.8 : 1) * (0.9 + hash(Math.floor(cx), Math.floor(cz)) * 0.18); }
+        else pl = (Math.abs(((z * 2.2) % 1 + 1) % 1 - 0.5) < 0.04 ? 0.84 : 1) * (0.95 + vnoise(x * 0.7, z * 3) * 0.1);
+        DECK.setRGB(T.deck[0] * pl, T.deck[1] * pl, T.deck[2] * pl); c.lerp(DECK, dk);
+      }
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
@@ -92,22 +107,25 @@ export class World {
     const g = new THREE.PlaneGeometry(90, 56, 90, 56); g.rotateX(-Math.PI / 2); g.translate(0, -0.06, -34);
     const shal = L.E.filter((e) => e.k === "spot" && !e.def.auto).map((e) => new THREE.Vector3(e.zin.x, e.zin.z, e.zin.r));
     while (shal.length < 2) shal.push(new THREE.Vector3(999, 999, 0));
-    const cape = L.key === "vs" ? new THREE.Vector4(-4.4, 4.4, -13.4, 2) : new THREE.Vector4(9.8, 99, -13.2, 1);
+    const sh = L.MAP.shore, caps = sh.capes.map((c) => new THREE.Vector4(c[0], c[1], c[2], c[3]));
+    while (caps.length < 2) caps.push(new THREE.Vector4(0, 1, sh.base, 0));
     this.wu = { uTime: { value: 0 }, uDeep: { value: new THREE.Color(T.deep) }, uMid: { value: new THREE.Color(T.mid) }, uShal: { value: new THREE.Color(T.shal) },
-      uShore: { value: -7.2 }, uCape: { value: cape }, uS: { value: shal }, fogColor: { value: new THREE.Color(T.fog) }, fogNear: { value: 38 }, fogFar: { value: 80 } };
+      uShore: { value: sh.base }, uCapes: { value: caps }, uS: { value: shal }, fogColor: { value: new THREE.Color(T.fog) }, fogNear: { value: 38 }, fogFar: { value: 80 } };
     const m = new THREE.ShaderMaterial({
       uniforms: this.wu, fog: true, transparent: false,
       vertexShader: `uniform float uTime; varying vec3 vW; varying float vFogDepth;
         void main(){ vec3 p = position; vec4 w = modelMatrix * vec4(p,1.0);
           w.y += sin(w.x*0.9 + uTime*1.3)*0.035 + cos(w.z*1.1 + uTime*1.1)*0.035; vW = w.xyz;
           vec4 mv = viewMatrix * w; vFogDepth = -mv.z; gl_Position = projectionMatrix * mv; }`,
-      fragmentShader: `uniform float uTime, uShore; uniform vec3 uDeep, uMid, uShal; uniform vec4 uCape; uniform vec3 uS[2];
+      fragmentShader: `uniform float uTime, uShore; uniform vec3 uDeep, uMid, uShal; uniform vec4 uCapes[2]; uniform vec3 uS[2];
         uniform vec3 fogColor; uniform float fogNear, fogFar; varying vec3 vW; varying float vFogDepth;
         float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         float nz(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hsh(i),hsh(i+vec2(1,0)),f.x), mix(hsh(i+vec2(0,1)),hsh(i+vec2(1,1)),f.x), f.y); }
         void main(){
           float sx = vW.x; float sh = uShore;
-          float k = uCape.w > 1.5 ? 1.0 - smoothstep(3.4, 5.0, abs(sx)) : smoothstep(9.2, 10.6, sx); sh = mix(uShore, uCape.z, k);
+          for (int i = 0; i < 2; i++) { vec4 c = uCapes[i]; if (abs(c.w) < 0.5) continue;
+            float k = c.w > 1.5 ? 1.0 - smoothstep(c.x, c.y, abs(sx)) : c.w < 0.0 ? 1.0 - smoothstep(c.x, c.y, sx) : smoothstep(c.x, c.y, sx);
+            sh += (c.z - uShore) * k; }
           float d = sh - vW.z;              // расстояние от берега в море
           if (d < -0.6) discard;            // под сушей воды нет
           vec3 c = mix(uMid, uDeep, smoothstep(1.5, 9.0, d));
@@ -146,17 +164,18 @@ export class World {
       if (Math.abs(z - 20.6) < 2.2 && x > -30 && x < 30) continue;   // дорога
       (R(i, 3) > 0.5 ? pines : pines2).push({ x, z, s: 0.8 + R(i, 4) * 0.7, r: R(i, 5) * 6 });
     }
-    // мыс (где он есть) — камни и редкие ели
-    for (let i = 0; i < 70; i++) {
+    // мысы (где они есть) — камни; на игровом поле — только в стороне от мест
+    const nearEnt = (x, z, m) => { for (const e of L.E) { if (e.box && x > e.box[0] - m && x < e.box[2] + m && z > e.box[1] - m && z < e.box[3] + m) return true; for (const k of ["zin", "zout", "zcash", "zpad"]) if (e[k] && Math.hypot(x - e[k].x, z - e[k].z) < e[k].r + m) return true; if (e.pier && Math.abs(x - e.pier.x) < 1.6) return true; } return false; };
+    for (let i = 0; i < 90; i++) {
       const x = -30 + R(i, 7) * 60, z = -14 + R(i, 8) * 8, sh = shoreZ(L, x);
-      if (z < sh + 0.2 || z > -7.4) continue;
-      if (Math.abs(x) > 15.5 || (L.key === "coop" && x < 10.6) || (L.key === "vs" && Math.abs(x) > 4.2)) { if (R(i, 9) > 0.6) rocks.push({ x, z, s: 0.6 + R(i, 10) * 0.8, r: R(i, 11) * 6 }); continue; }
-      if (R(i, 12) > 0.75) rocks.push({ x, z, s: 0.5 + R(i, 10) * 0.6, r: R(i, 11) * 6 });
+      if (z < sh + 0.2 || z > M.d[1]) continue;
+      if (Math.abs(x) > 15.5) { if (R(i, 9) > 0.6) rocks.push({ x, z, s: 0.6 + R(i, 10) * 0.8, r: R(i, 11) * 6 }); continue; }
+      if (z < shoreZ(L, x) + 3 && z < -7.4 && R(i, 12) > 0.7 && !nearEnt(x, z, 1.2)) rocks.push({ x, z, s: 0.5 + R(i, 10) * 0.6, r: R(i, 11) * 6 });
     }
     // камни вдоль берега
     for (let i = 0; i < 46; i++) {
       const x = -28 + R(i, 13) * 56; const sh = shoreZ(L, x), z = sh + 0.2 + R(i, 14) * 0.8;
-      let near = false; for (const e of L.E) { if (e.k === "spot" && Math.abs(x - e.zin.x) < e.zin.r + 1.2) near = true; if (e.k === "pier" && Math.abs(x - e.pier.x) < 1.6) near = true; if (e.k === "dock" && Math.abs(x - e.x) < 3.5) near = true; }
+      let near = nearEnt(x, z, 1.0); for (const e of L.E) { if (e.k === "spot" && Math.abs(x - e.zin.x) < e.zin.r + 1.2) near = true; if (e.k === "pier" && Math.abs(x - e.pier.x) < 1.6) near = true; if (e.k === "dock" && Math.abs(x - e.x) < 3.5) near = true; }
       if (near && Math.abs(x) < 15) continue;
       if (Math.abs(x) < 15 && R(i, 15) > 0.45) continue;
       rocks.push({ x, z, s: 0.4 + R(i, 16) * 0.6, r: R(i, 17) * 6 });
@@ -171,13 +190,21 @@ export class World {
     const busy = (x, z) => { for (const e of L.E) { if (Math.hypot(x - e.x, z - e.z) < Math.max(e.w, e.d, 1.6) * 0.75 + 0.8) return true; for (const k of ["zin", "zout", "zcash", "zpad"]) if (e[k] && Math.hypot(x - e[k].x, z - e[k].z) < e[k].r + 0.4) return true; } return false; };
     for (let i = 0; i < 600 && tufts.length + pebbles.length < 230; i++) {
       const x = M.w[0] + R(i, 30) * (M.w[1] - M.w[0]), z = -6.5 + R(i, 31) * 18;
-      if (z < shoreZ(L, x) + 0.6 || busy(x, z) || (z > 4.8 && z < 12.2)) continue;
+      if (z < shoreZ(L, x) + 0.6 || busy(x, z) || (z > shoreZ(L, x) + 1.1 && z < L.fz + 0.3 && x > M.w[0] - 0.4 && x < M.w[1] + 0.4)) continue;   // на настиле — чисто
       (R(i, 32) > 0.45 ? tufts : pebbles).push({ x, z, s: 0.6 + R(i, 33) * 0.7, r: R(i, 34) * 6 });
     }
     const tb = new Build(); for (let k = 0; k < 5; k++) tb.cone(0.035, 0.32 + (k % 2) * 0.1, 3, k % 2 ? "#b59a62" : "#9c8650", { p: [(k - 2) * 0.05, 0.14, (k % 3 - 1) * 0.04], r: [(k - 2) * 0.18, 0, (k % 3 - 1) * 0.2], jit: 0.1 }); tb.sph(0.12, 0, PAL.snow, { p: [0, 0.02, 0], s: [1.4, 0.4, 1.2], jit: 0.03 });
     const pb = new Build(); pb.sph(0.12, 0, PAL.stone, { p: [0, 0.04, 0], s: [1.3, 0.7, 1] }); pb.sph(0.08, 0, PAL.stone2, { p: [0.16, 0.03, 0.06], s: [1.2, 0.7, 1] }); pb.sph(0.1, 0, PAL.snow, { p: [0.02, 0.09, 0], s: [1.2, 0.35, 1], jit: 0.02 });
     add(tb.geo(), tufts, false); add(pb.geo(), pebbles, false);
-    add(pineGeo(0), pines, true); add(pineGeo(1), pines2, true); add(rockGeo(), rocks, true); add(driftGeo(), drifts, false); add(lampGeo(), lamps, true);
+    const T = this.theme;
+    add(pineGeo(0, T.trees === 1), pines, true); add(pineGeo(1, T.trees === 1), pines2, true); add(rockGeo(), rocks, true); if (!T.shrubs) add(driftGeo(), drifts, false); add(lampGeo(), lamps, true);
+    // особые приметы бухты
+    if (T.cliffs) { const cl = []; for (let i = 0; i < 26; i++) { const sx = i % 2 ? 1 : -1, x = sx * (16.2 + R(i, 40) * 9), z = -16 + R(i, 41) * 34; if (z > 21 && z < 23.5) continue; cl.push({ x, z, s: 1.1 + R(i, 42) * 1.3, r: R(i, 43) * 6, y: z < shoreZ(L, x) ? -0.6 : 0 }); } add(BUILD.cliff(), cl, true); }
+    if (T.bergs) { const bg = []; for (let i = 0; i < 40 && bg.length < 9; i++) { const x = -22 + R(i, 50) * 44, z = -30 + R(i, 51) * 16; if (z > shoreZ(L, x) - 3 || Math.abs(x) < 15 && z > -19) continue; bg.push({ x, z, s: 0.6 + R(i, 52) * 1.0, r: R(i, 53) * 6, y: -0.25 }); } add(BUILD.iceberg(), bg, true); }
+    if (T.shrubs) { const sb = []; for (let i = 0; i < 160 && sb.length < 70; i++) { const x = -32 + R(i, 60) * 64, z = -6 + R(i, 61) * 34; const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3; if (inside || z < shoreZ(L, x) + 1 || Math.abs(z - 20.6) < 2.2) continue; sb.push({ x, z, s: 0.7 + R(i, 62) * 0.8, r: R(i, 63) * 6 }); } add(BUILD.shrub(), sb, true); }
+    if (T.traps) { const tp = []; for (let i = 0; i < 30 && tp.length < 6; i++) { const x = M.w[0] + 0.8 + R(i, 70) * (M.w[1] - M.w[0] - 1.6), z = shoreZ(L, x) + 0.6 + R(i, 71) * 0.8; if (nearEnt(x, z, 1.0)) continue; tp.push({ x, z, r: R(i, 72) * 6 }); } add(BUILD.trap(), tp, true); }
+    if (T.houses) { const hs = []; const cols = ["#e9dcc4", "#d9e4ea", "#f0d8c0", "#e0e8d0"]; for (let i = 0; i < 9; i++) hs.push([-17 + i * 4.3 + R(i, 80) * 0.8, 25.2 + R(i, 81) * 1.4, R(i, 82) * 0.3 - 0.15, cols[i % 4]]); for (const [x, z, r, c] of hs) { const m = new THREE.Mesh(BUILD.house(c), mat); m.position.set(x, 0, z); m.rotation.y = Math.PI + r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
+      for (const z of [19.6]) { const fl = new THREE.Mesh(BUILD.flags(6.4), mat); for (let k = -2; k <= 1; k++) { const m = fl.clone(); m.position.set(k * 6.5 + 3.25, 0, z); this.root.add(m); } } }
     // частокол по краям настила (за край карты всё равно не пройти)
     const zs = Math.max(shoreZ(L, M.w[0]), shoreZ(L, M.w[1])) + 1.2, flen = L.fz - zs;
     for (const sx of [M.w[0] - 0.25, M.w[1] + 0.25]) { const m = new THREE.Mesh(fenceGeo(flen), mat); m.position.set(sx, 0, zs + flen / 2); m.rotation.y = Math.PI / 2; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
@@ -217,6 +244,7 @@ export class World {
       if (e.k === "proc" || e.k === "gen") geo = (BUILD[e.def.model] || BUILD.table)(e.w, e.d);
       if (e.k === "stall") { geo = BUILD.stall(STALL_COL[ITEMS[e.item].id] || "#4f8fc0"); }
       if (e.k === "board") geo = BUILD.board();
+      if (e.k === "hire") geo = BUILD.artel(e.w, e.d);
       if (e.k === "goal") geo = BUILD.lighthouse();
       if (e.k === "dock") { geo = BUILD.dock(); if (e.sg < 0) ry = Math.PI; }
       if (e.k === "pier") { const len = e.pier.z0 - e.pier.z1 + 0.8; geo = BUILD.pier(len); grp.position.set(e.pier.x, 0, (e.pier.z0 + e.pier.z1) / 2); }
@@ -226,6 +254,13 @@ export class World {
       if (e.k === "stall" && ICON[ITEMS[e.item].id]) {
         const t = new THREE.CanvasTexture(ICON[ITEMS[e.item].id]); t.colorSpace = THREE.SRGBColorSpace;
         const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false })); sg.position.set(0, 2.5, -0.96); sg.scale.setScalar(0.5); grp.add(sg);
+      }
+      if (e.k === "hire") {
+        // вывеска «АРТЕЛЬ» на доске над входом
+        const c = document.createElement("canvas"); c.width = 512; c.height = 170; const x = c.getContext("2d");
+        x.fillStyle = "#f2e3c0"; x.fillRect(0, 0, 512, 170); x.font = "900 92px Rubik, Nunito, Arial, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#5f3a1c"; x.fillText((window.I18N ? I18N.t("АРТЕЛЬ") : "АРТЕЛЬ"), 256, 92);
+        const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+        const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.46), new THREE.MeshBasicMaterial({ map: t })); sg.position.set(0, 1.76, e.d / 2 - 0.0); sg.rotation.x = -0.12; grp.add(sg);
       }
       if (e.k === "board") {
         // вывеска «ЗАКАЗЫ» над доской

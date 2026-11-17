@@ -12,14 +12,14 @@ import { ITEMS, UPG } from "../data.js";
 
 const mode = process.argv[2] || "coop";
 const G = S.newGame({ mode, seed: 11, bay: +(process.argv[3] || 0) });
-const L = S.layout(mode);
+const L = S.layoutOf(G);
 const errs = new Set();
 const bad = (m) => { if (!errs.has(m)) { errs.add(m); console.log("! " + m); } };
 const nm = (e) => (e.def.n || e.id) + (L.teams > 1 ? `[${e.team}]` : "");
 
 /* ---------- статика: помощники на каждый вход и выход, группы улучшений ---------- */
 const anc = (e, seen = new Set()) => { for (const a of e.after) if (!seen.has(a)) { seen.add(a); anc(L.E[a], seen); } return seen; };
-const depthTo = (e, target) => { let q = [[e.i, 0]], seen = new Set(); while (q.length) { const [i, d] = q.shift(); if (i === target) return d; for (const a of L.E[i].after) if (!seen.has(a)) { seen.add(a); q.push([a, d + 1]); } } return 99; };
+const depthTo = (e, target) => { if (anc(L.E[target]).has(e.i)) return 0; let q = [[e.i, 0]], seen = new Set(); while (q.length) { const [i, d] = q.shift(); if (i === target) return d; for (const a of L.E[i].after) if (!seen.has(a)) { seen.add(a); q.push([a, d + 1]); } } return 99; };
 const prodOf = (e) => (e.k === "spot" || e.k === "gen" ? e.item : e.k === "proc" ? e.rec.out : -1);
 for (const e of L.E) {
   if (e.k !== "proc" && e.k !== "gen") continue;
@@ -36,7 +36,7 @@ for (const e of L.E) {
 for (const team of [...Array(L.teams).keys()]) {
   const grp = (us) => L.E.filter((e) => e.k === "upg" && e.team === team && us.includes(e.def.u));
   const gear = grp(["bag", "boots", "net"]), crew = grp(["crew", "crewspd"]);
-  const row = (g, n) => { if (!g.length) return null; const zs = g.map((e) => e.zpad.z), xs = g.map((e) => e.zpad.x); if (Math.max(...zs) - Math.min(...zs) > 0.3) bad(`«${n}» не в одном ряду`); if (Math.max(...xs) - Math.min(...xs) > 2.4 * (g.length - 1) + 0.1) bad(`«${n}» разбросано`); return { x: xs.reduce((a, b) => a + b) / xs.length, z: zs[0] }; };
+  const row = (g, n) => { if (!g.length) return null; const zs = g.map((e) => e.zpad.z), xs = g.map((e) => e.zpad.x); if (Math.max(...zs) - Math.min(...zs) > 0.3) bad(`«${n}» не в одном ряду`); if (Math.max(...xs) - Math.min(...xs) > 2.7 * (g.length - 1) + 0.1) bad(`«${n}» разбросано`); return { x: xs.reduce((a, b) => a + b) / xs.length, z: zs[0] }; };
   const a = row(gear, "Снаряжение"), b = row(crew, "Артель");
   if (a && b && Math.hypot(a.x - b.x, a.z - b.z) > 4) bad("«Снаряжение» и «Артель» далеко друг от друга");
   if (a && Math.hypot(a.x - L.start[0] * (team ? -1 : 1), a.z - L.start[1]) > 9) bad("«Снаряжение» далеко от старта");

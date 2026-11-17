@@ -81,7 +81,9 @@ export function bubbleAtlas() {
   let n = 0;
   const cell = (name, draw) => { const cx = (n % 8) * 128, cy = Math.floor(n / 8) * 128; x.save(); x.translate(cx, cy); draw(x); x.restore(); BUB[name] = n++; };
   const bubble = (x, fill, stroke) => { x.fillStyle = fill; x.strokeStyle = stroke; x.lineWidth = 5; x.beginPath(); x.moveTo(30, 12); x.arcTo(116, 12, 116, 96, 22); x.arcTo(116, 96, 12, 96, 22); x.lineTo(76, 96); x.lineTo(64, 120); x.lineTo(52, 96); x.arcTo(12, 96, 12, 12, 22); x.arcTo(12, 12, 116, 12, 22); x.closePath(); x.fill(); x.stroke(); };
-  for (const k of ["herring", "fillet", "log", "smoked", "salmon", "steak", "caviar", "can", "ice", "crate", "cash"]) cell("i_" + k, (x) => { bubble(x, "#ffffff", "rgba(60,70,90,.35)"); if (ICON[k]) x.drawImage(ICON[k], 20, 10, 88, 88); });
+  for (const k of Object.keys(ITEM_GEO)) cell("i_" + k, (x) => { bubble(x, "#ffffff", "rgba(60,70,90,.35)"); if (ICON[k]) x.drawImage(ICON[k], 20, 10, 88, 88); });
+  // значок роли помощника над головой: круглая бирка с жёлтой каймой
+  for (const k of Object.keys(ITEM_GEO)) cell("r_" + k, (x) => { x.fillStyle = "#fff8e6"; x.strokeStyle = "#e0a630"; x.lineWidth = 9; x.beginPath(); x.arc(64, 64, 52, 0, 7); x.fill(); x.stroke(); if (ICON[k]) x.drawImage(ICON[k], 22, 22, 84, 84); });
   // сердитый
   cell("angry", (x) => { bubble(x, "#ff6b57", "rgba(120,30,20,.5)"); x.fillStyle = "#fff"; x.strokeStyle = "#fff"; x.lineWidth = 7; x.lineCap = "round";
     x.beginPath(); x.moveTo(38, 38); x.lineTo(56, 46); x.moveTo(90, 38); x.lineTo(72, 46); x.stroke(); x.beginPath(); x.arc(64, 82, 16, Math.PI * 1.15, Math.PI * 1.85); x.stroke(); x.beginPath(); x.arc(47, 56, 5, 0, 7); x.arc(81, 56, 5, 0, 7); x.fill(); });

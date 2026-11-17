@@ -16,20 +16,20 @@ export function encode(G) {
     pl: G.pl.map((p) => [R(p.x), R(p.z), R(p.dir), p.mv ? 1 : 0, st2s(p.st), p.team]),
     hp: G.hp.map((h) => [h.e, R(h.x), R(h.z), R(h.dir), h.mv ? 1 : 0, h.s, h.tg, st2s(h.st), R(h.tm)]),
     cu: G.cu.map((c) => [c.id, R(c.x), R(c.z), R(c.dir), c.s, c.w, c.n, c.g, c.st, c.mood, c.sk, c.mv ? 1 : 0, Math.round(c.pat), Math.round(c.pm)]),
-    con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd,
+    nb: G.nbuy || 0, con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd,
   };
 }
 // head — постоянные поля (режим, бухта, сложность…), их шлём в «go»
-export function head(G) { return { v: G.v, mode: G.mode, bay: G.bay, diff: G.diff, goal: G.goal, teams: G.teams, perks: G.perks, cid: G.cid }; }
+export function head(G) { return { v: G.v, mode: G.mode, bay: G.bay, lap: G.lap || 0, diff: G.diff, goal: G.goal, teams: G.teams, perks: G.perks, meta: G.meta || {}, cid: G.cid }; }
 export function decode(h, s, prev) {
   const G = prev && prev.cid === h.cid ? prev : { ev: [] };
   Object.assign(G, h);
   G.t = s.t; G.money = s.m; G.earned = s.er; G.spent = s.sp; G.upg = s.u; G.bv = s.bv; G.nid = s.nid; G.rs = s.rs;
   G.e = s.e;
   G.pl = s.pl.map((a, i) => { const o = (prev && prev.pl && prev.pl[i]) || {}; return Object.assign(o, { x: a[0], z: a[1], dir: a[2], mv: a[3], st: s2st(a[4]), team: a[5] }); });
-  G.hp = s.hp.map((a) => ({ e: a[0], x: a[1], z: a[2], dir: a[3], mv: a[4], s: a[5], tg: a[6], st: s2st(a[7]), tm: a[8], team: S.layout(h.mode).E[a[0]].team, xt: 0 }));
+  G.hp = s.hp.map((a) => ({ e: a[0], x: a[1], z: a[2], dir: a[3], mv: a[4], s: a[5], tg: a[6], st: s2st(a[7]), tm: a[8], team: S.layout(h.mode, h.bay, h.v).E[a[0]].team, xt: 0 }));
   G.cu = s.cu.map((a) => ({ id: a[0], x: a[1], z: a[2], dir: a[3], s: a[4], w: a[5], n: a[6], g: a[7], st: a[8], mood: a[9], sk: a[10], mv: a[11], pat: a[12], pm: a[13] }));
-  G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd;
+  G.nbuy = s.nb || 0; G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd;
   G.ev = G.ev || [];
   if (!G.rate) G.rate = 0; if (!G.rateAcc) G.rateAcc = 0;
   return G;
@@ -61,7 +61,7 @@ export class HostSync {
   pos(p, d) {
     // гость сам ведёт своего человека; хозяин только не даёт уйти сквозь стены далеко
     if (typeof d.x !== "number" || typeof d.z !== "number") return;
-    const L = S.layout(this.api.G().mode);
+    const L = S.layoutOf(this.api.G());
     p.x = Math.max(L.MAP.w[0], Math.min(L.MAP.w[1], d.x)); p.z = Math.max(L.MAP.d[0], Math.min(L.fz, d.z));
     if (typeof d.d === "number") p.dir = d.d; p.mv = d.m || 0;
   }
@@ -82,10 +82,10 @@ export class HostSync {
 }
 // гость стоит там, где делает действие? (с запасом на задержку)
 function zoneOk(G, pi, op) {
-  const L = S.layout(G.mode), e = L.E[op[1]], p = G.pl[pi]; if (!e) return false;
-  const z = op[0] === "c" ? e.zin : op[0] === "d" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
+  const L = S.layoutOf(G), e = L.E[op[1]], p = G.pl[pi]; if (!e) return false;
+  const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
   if (!z) return false;
-  return Math.hypot(p.x - z.x, p.z - z.z) < z.r + 1.6;
+  return Math.hypot(p.x - z.x, p.z - z.z) < z.r + 1.6 + (op[0] === "k" ? S.cashReach(G) : 0);
 }
 
 /* ---------- гость ---------- */

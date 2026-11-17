@@ -74,7 +74,7 @@ class Pool {
 
 export class View {
   constructor(scene, world, opt) {
-    this.scene = scene; this.world = world; this.mode = opt.mode; this.L = layout(opt.mode); this.q = opt.quality;
+    this.scene = scene; this.world = world; this.mode = opt.mode; this.L = opt.L || layout(opt.mode); this.q = opt.quality;
     this.root = new THREE.Group(); scene.add(this.root);
     this.t = 0;
     const cm = charMat(), fm = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -100,7 +100,8 @@ export class View {
     this.coats = { p: PCOL.map((c) => ({ coat: new THREE.Color(c.coat), hat: new THREE.Color(c.hat) })), h: { coat: new THREE.Color(HCOL.coat), hat: new THREE.Color(HCOL.hat) },
       c: CUST.map((c, i) => ({ coat: new THREE.Color(c), hat: new THREE.Color(CHAT[(i * 3 + 1) % CHAT.length]) })) };
     this.flyers = []; this.pend = new Map();
-    this.buildParticles(); this.buildRings(); this.buildBubbles(); this.buildSnow(); this.buildGuide();
+    this.buildParticles(); this.buildRings(); this.buildBubbles(); this.buildSnow(); this.buildGuide(); this.buildDwell();
+    this.flashes = null; if (world.theme && world.theme.fall === 0) this.snow.visible = false;
     this.pads = new Map();
     this.labels = new Map(); this.usedLabels = new Set();
     this.schools = new Map();
@@ -197,6 +198,20 @@ export class View {
     this.arrow.visible = true; const a = Math.atan2(dx, dz); const r = 1.35 + Math.sin(this.t * 6) * 0.12;
     this.arrow.position.set(from.x + Math.sin(a) * r, 0.08, from.z + Math.cos(a) * r); this.arrow.rotation.y = a;
   }
+  /* ---------- «постой немного»: кольцо заполняется, пока стоишь в зоне ---------- */
+  buildDwell() {
+    const g = new THREE.PlaneGeometry(2.3, 2.3); g.rotateX(-Math.PI / 2);
+    this.dwU = { uProg: { value: 0 }, uCol: { value: new THREE.Color("#ffffff") } };
+    this.dwM = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: this.dwU, transparent: true, depthWrite: false,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `uniform float uProg; uniform vec3 uCol; varying vec2 vUv; void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0;
+        float ring = smoothstep(0.80, 0.84, r) * (1.0 - smoothstep(0.96, 1.0, r)); if (ring < 0.01) discard;
+        float a = fract(atan(p.x, -p.y) / 6.2832 + 1.0); float on = step(a, uProg);
+        gl_FragColor = vec4(mix(vec3(0.1, 0.15, 0.25), uCol, on), ring * mix(0.35, 0.95, on)); }` }));
+    this.dwM.renderOrder = 4; this.dwM.visible = false; this.root.add(this.dwM);
+  }
+  // подсветить места (новый помощник идёт сюда работать)
+  flash(list, sec) { this.flashes = { list: list.filter((v) => v != null), t: sec || 4 }; }
   /* ---------- площадки ---------- */
   padMesh(ei) {
     let p = this.pads.get(ei); if (p) return p;
@@ -337,6 +352,9 @@ export class View {
       const h = G.hp[i]; const d = this.disp.h[i] || (this.disp.h[i] = { x: h.x, z: h.z, dir: h.dir, ph: 0, lean: 0, lv: 0, sp: 0, ox: h.x, oz: h.z });
       const k = Math.min(1, dt * 10); d.x = lerp(d.x, h.x, k); d.z = lerp(d.z, h.z, k); d.dir = angLerp(d.dir, h.dir, Math.min(1, dt * 10));
       this.person(d, this.coats.h, dt, h.st, "h" + i, true, G, 0.92);
+      // значок роли над головой: что он ловит или носит (кассир — деньги)
+      const he = L.E[h.e]; if (he.roleCell == null) { const src = he.from != null ? L.E[he.from] : null; he.roleCell = BUB["r_" + (src ? ITEM_NAMES[src.k === "spot" || src.k === "gen" ? src.item : src.rec.out] : "cash")]; }
+      if (this.near(d, ctx.cam, 11)) this.bubble(d.x, 1.62 + (d.top && h.st.length ? Math.max(0, d.top - 1.2) * 0.92 : 0), d.z, he.roleCell, 0.34);
       if (h.s === 2 && h.st.length && t % 2 < 1.2 && h.tm > 1) { /* ждёт места — пузырь */ const tg = h.tg >= 0 ? G.e[h.tg] : null; if (!tg || (L.E[h.tg].k === "stall" && tg.sh >= 24)) this.bubble(d.x, 2.2, d.z, BUB.zzz, 0.55); }
     }
     // покупатели
@@ -369,6 +387,8 @@ export class View {
     for (const id of this.disp.c.keys()) if (!seen.has(id)) this.disp.c.delete(id);
     // места: кучи, деньги, косяки, кольца, площадки
     this.drawEnts(G, dt, ctx);
+    if (ctx.dwell) { const z = ctx.dwell.z; this.dwM.visible = true; this.dwM.position.set(z.x, this.groundY(z.x, z.z) + 0.07, z.z); this.dwM.scale.setScalar(z.r / 0.95 * 1.02); this.dwU.uProg.value = ctx.dwell.k; this.dwU.uCol.value.set(ctx.dwell.pad ? "#7ed957" : "#ffd34d"); }
+    else this.dwM.visible = false;
     this.stepFlyers(dt);
     this.stepParticles(dt);
     // снег вокруг камеры
@@ -537,12 +557,16 @@ export class View {
         const sh = this.world.ents[e.i].grp.userData.ship;
         if (sh && sh.visible) { sh.updateMatrixWorld(); for (let i = 0; i < Math.min(s.load.length, 24); i++) { const it = s.load[i]; P.set(((i % 3) - 1) * 0.5, 0.66 + Math.floor(i / 9) * 0.3, -0.3 - (Math.floor(i / 3) % 3) * 0.45); P.applyMatrix4(sh.matrixWorld); EU.set(0, Math.PI / 2, 0); Q.setFromEuler(EU); M4.compose(P, Q, S1); this.items[it].push(M4); } }
         if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); this.label("i" + e.i, e.zin, e.acc.map((i) => ITEMS[i].id), "in", tr("СЮДА")); }
+      } else if (e.k === "hire") {
+        if (mine) { ring(e.zin, WHITE, true, 1); this.label("i" + e.i, e.zin, ["helper"], "hire", tr("АРТЕЛЬ")); }
       } else if (e.k === "board") {
         this.drawCash(e, s.cash, G);
         if (mine && G.con && !G.con.end) { ring(e.zin, WHITE, true, 1.15); this.bubble(e.x, 2.65 + Math.sin(t * 3) * 0.08, e.z, BUB["i_" + ITEMS[G.con.it].id], 1.1); this.label("i" + e.i, e.zin, [ITEMS[G.con.it].id], "in", tr("ЗАКАЗ")); }
         if (s.cash > 0) ring(e.zcash, GRN, true, 0.85);
       }
     }
+    // подсветка мест, куда идёт новый помощник
+    if (this.flashes) { this.flashes.t -= dt; if (this.flashes.t <= 0) this.flashes = null; else for (const i of this.flashes.list) { const e = L.E[i]; for (const z of [e.zout, e.zin]) if (z && G.e[i].o) ring(z, YEL, true, 1.25 + Math.sin(t * 8) * 0.08); } }
     for (const [ei, p] of this.pads) if (!usedPads.has(ei)) p.mesh.visible = false;
     for (const [k, l] of this.labels) if (!this.usedLabels.has(k)) l.m.visible = false;
     this.usedLabels.clear();

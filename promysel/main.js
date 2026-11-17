@@ -2,7 +2,7 @@
 // HUD, события → эффекты и звук, сохранения, кнопка «Назад».
 import * as THREE from "three";
 import * as S from "./sim.js";
-import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, recText, YAW } from "./data.js";
+import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, anchorsFor, recText, YAW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
@@ -73,13 +73,14 @@ function applyQuality() {
   if (world) { world.sun.castShadow = quality > 0; const s = quality > 1 ? 2048 : 1024; if (world.sun.shadow.map && world.sun.shadow.mapSize.x !== s) { world.sun.shadow.map.dispose(); world.sun.shadow.map = null; } world.sun.shadow.mapSize.set(s, s); }
   try { if (qLock) localStorage.setItem("pm_q", String(quality)); } catch (_) {}
 }
-// мир строится под раскладку (вместе/против) и тему бухты
-function ensureWorld(mode, theme) {
-  const key = (mode === "vs" ? "vs" : "coop") + ":" + theme;
+// мир строится под раскладку (своя у каждой бухты; «против» — одна) и тему бухты
+const themeOf = (g) => (g.mode === "vs" ? 0 : BAYS[(g.bay || 0) % BAYS.length].theme);
+function ensureWorld(g) {
+  const Lw = S.layoutOf(g), theme = themeOf(g), key = Lw.key + ":" + theme;
   if (worldKey === key && world) return;
   if (view) view.dispose(); if (world) world.dispose();
-  world = new World(scene, renderer, { quality, mode, theme });
-  view = new View(scene, world, { mode, quality });
+  world = new World(scene, renderer, { quality, mode: g.mode, theme, L: Lw });
+  view = new View(scene, world, { mode: g.mode, quality, L: Lw });
   worldKey = key;
 }
 
@@ -94,7 +95,7 @@ async function boot() {
   $("money-ic").src = ICONURL.cash;
   loadbar.style.width = "70%";
   makeDemo();
-  ensureWorld("coop", 0);
+  ensureWorld(demo);
   for (let i = 0; i < 60 * 25; i++) stepDemo(1 / 30);
   world.sync(demo, false);
   loadbar.style.width = "100%";
@@ -108,9 +109,9 @@ async function boot() {
 // заставка меню: бухта, где уже кипит работа (два бота-рыбака)
 function makeDemo() {
   demo = S.newGame({ mode: "coop", seed: 4242 });
-  const Ld = S.layout("coop");
-  for (const id of ["table1", "stall_fillet", "fisher1", "runner1", "wood", "smoke", "stall_smoked", "table2", "woodman", "fisher2", "runner2", "runner3", "cashier", "pier", "steak", "stall_steak", "fisher3", "runner4", "caviar", "stall_caviar", "fisher4", "runner5"]) S.forceOpen(demo, Ld.byId[0][id]);
-  for (let i = 0; i < 5; i++) { S.forceOpen(demo, Ld.byId[0].bag); S.forceOpen(demo, Ld.byId[0].crew); S.forceOpen(demo, Ld.byId[0].crewspd); }
+  const Ld = S.layoutOf(demo);
+  for (const id of ["stall_fillet", "table1", "fisher0", "runner1", "fisher1", "stall_salt", "salt", "feed_salt", "runner_salt", "stall_smoked", "smoke", "wood", "woodman", "feed_smoke", "runner3", "cashier", "table2", "fisher2", "runner2"]) S.forceOpen(demo, Ld.byId[0][id]);
+  for (let i = 0; i < 5; i++) S.forceOpen(demo, Ld.byId[0].bag); demo.upg[0].crew = 5; demo.upg[0].crewspd = 5;
   demo.ev = [];
   demoBots = [makeBot(0, { seed: 3 }), makeBot(1, { seed: 9 })];
 }
@@ -128,24 +129,26 @@ function showMenu() {
   closeConfirm(false); netNote("");
   hideAll(); $("top").classList.add("hidden"); $("hint").classList.add("hidden"); tipShow(null);
   $("menu").classList.remove("hidden"); $("title").classList.remove("hidden");
-  ensureWorld("coop", 0); world.sync(demo, false);
+  ensureWorld(demo); world.sync(demo, false);
   const sv = {}; for (const k of SV.SLOTS) sv[k] = SV.peek(k);
   const order = SV.SLOTS.filter((k) => sv[k]).sort((a, b) => (sv[b].t || 0) - (sv[a].t || 0));
   const resBtn = (k, primary) => { const q = sv[k]; const [a, b] = SLOT_UI[k](q); const sum = q.sum || {}; return `<button class="b ${primary ? "primary" : ""}" data-slot="${k}"><span>▶</span><span class="t">${a}<small>${b}${sum.o ? " · " + L("открыто") + " " + sum.o : ""}${sum.earned ? " · " + fmt(sum.earned) : ""}</small></span></button>`; };
-  const pk = prof.perks, perkN = (pk.p_cap || 0) + (pk.p_spd || 0) + (pk.p_price || 0);
+  const metaN = Object.values(prof.meta || {}).reduce((a, b) => a + b, 0);
   $("menup").innerHTML = `
     ${order.length ? resBtn(order[0], true) : ""}
     <button class="b ${order.length ? "" : "primary"}" id="m-coop"><span>👥</span><span class="t">${L("Вместе")}<small>${L("Одна бухта на двоих: общие деньги, заказы, маяк")}</small></span></button>
     <button class="b ice" id="m-vs"><span>⚔️</span><span class="t">${L("Друг против друга")}<small>${L("Две лавки, одна толпа: кто быстрее обслужит")}</small></span></button>
     <button class="b" id="m-solo"><span>🙋</span><span class="t">${L("Одному")}<small>${L("Своя бухта — долгая прокачка")}</small></span></button>
     ${order.slice(1).map((k) => resBtn(k)).join("")}
+    <button class="b fleet" id="m-fleet"><span>⚓</span><span class="t">${L("Флот")}<small>${L("Якоря за бухты — постоянные улучшения")}: ⚓ ${prof.anchors || 0}${metaN ? " · " + L("куплено") + " " + metaN : ""}</small></span></button>
     <div class="b2"><button class="b ghost" id="m-help">❓ ${L("Как играть")}</button><button class="b ghost" id="m-set">⚙️ ${L("Настройки")}</button><button class="b ghost" id="m-games">🎮 ${L("Игры")}</button></div>
-    ${perkN || prof.vsWin || prof.bays ? `<p style="margin:6px 0 0;font-size:12.5px">${prof.bays ? "⭐ " + L("Бухт пройдено") + ": " + prof.bays + " · " : ""}${perkN ? "🎖 " + L("Знаков промысла") + ": " + perkN + " · " : ""}${prof.vsWin ? "🏆 " + L("Побед") + ": " + prof.vsWin : ""}</p>` : ""}`;
+    ${prof.vsWin || prof.bays ? `<p style="margin:6px 0 0;font-size:12.5px">${prof.bays ? "⭐ " + L("Бухт пройдено") + ": " + prof.bays + " · " : ""}${prof.vsWin ? "🏆 " + L("Побед") + ": " + prof.vsWin : ""}</p>` : ""}`;
   $("menup").querySelectorAll("[data-slot]").forEach((b) => (b.onclick = () => resumeSlot(b.dataset.slot)));
   $("m-coop").onclick = () => coopMenu();
   $("m-vs").onclick = () => vsMenu();
   $("m-solo").onclick = () => guardSlot("solo", () => soloMenu());
   $("m-help").onclick = () => showHelp();
+  $("m-fleet").onclick = () => fleetMenu(() => showMenu());
   $("m-set").onclick = () => settings(() => showMenu());
   $("m-games").onclick = () => { location.href = "../"; };
   music("m_shanty");
@@ -162,7 +165,7 @@ function guardSlot(slot, go) {
   $("g-new").onclick = () => { hideDlg(); go(); };
   $("g-x").onclick = () => hideDlg();
 }
-function soloMenu() { const g = S.newGame({ mode: "solo", seed: (Math.random() * 1e9) | 0, bay: 0, perks: prof.perks, diff: 1 }); start("local", g, 0); }
+function soloMenu() { const g = S.newGame({ mode: "solo", seed: (Math.random() * 1e9) | 0, bay: 0, meta: prof.meta, diff: 1 }); start("local", g, 0); }
 function coopMenu() {
   let diff = 1;
   const draw = () => dialog(`<h2>👥 ${L("Вместе")}</h2><p>${L("Общая бухта, общие деньги. Один ловит — другой продаёт. На доске — заказы на время. Цель — зажечь маяк.")}</p>
@@ -173,8 +176,8 @@ function coopMenu() {
   draw();
   const wire = () => {
     $("dlgp").querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => { diff = +b.dataset.d; play("select"); draw(); wire(); }));
-    $("c-inv").onclick = () => guardSlot("coop", () => { hideDlg(); hostGame(S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, perks: prof.perks, diff })); });
-    $("c-bot").onclick = () => guardSlot("coop", () => { hideDlg(); start("local", S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, perks: prof.perks, diff }), 0, { bot: 1 }); });
+    $("c-inv").onclick = () => guardSlot("coop", () => { hideDlg(); hostGame(S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, meta: prof.meta, diff })); });
+    $("c-bot").onclick = () => guardSlot("coop", () => { hideDlg(); start("local", S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, meta: prof.meta, diff }), 0, { bot: 1 }); });
     $("c-x").onclick = () => hideDlg();
   };
   wire();
@@ -320,7 +323,7 @@ function start(r, g, pi, opt) {
   hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden");
   $("top").classList.remove("hidden"); $("hint").classList.remove("hidden");
   $("partner").classList.toggle("hidden", G.pl.length < 2);
-  ensureWorld(G.mode, BAYS[G.bay || 0].theme);
+  ensureWorld(G);
   world.sync(G, false);
   view.disp = { p: [], h: [], c: new Map() };
   const p = G.pl[me]; gloc.x = p.x; gloc.z = p.z; gloc.dir = p.dir;
@@ -329,7 +332,11 @@ function start(r, g, pi, opt) {
   St.gameStart({ mode: G.mode, role: r, bay: G.bay, resume: G.t > 5 ? 1 : 0 });
   // доход, пока игры не было
   if (opt.away > 60 && r !== "guest") { const got = S.offline(G, opt.away); if (got > 0) { G.money[0] += got; setTimeout(() => banner(L("Пока тебя не было") + ": +" + fmt(got), L("Помощники работали и торговали"), "gold"), 700); } }
-  if (G.t < 2) setTimeout(() => banner(G.mode === "vs" ? (me === 0 ? L("Твоя лавка — слева") : L("Твоя лавка — справа")) : BAYS[G.bay].n, G.mode === "vs" ? (G.goal === "time" ? L("10 минут: у кого больше выручка") : L("Первым зажги маяк")) : L("Заходи в воду — рыба сама прыгнет в короб")), 500);
+  // улучшения «Флота» хозяина действуют сразу, в том числе в начатом забеге
+  if (r !== "guest" && G.mode !== "vs" && (G.v || 1) >= 2) G.meta = Object.assign({}, prof.meta);
+  hireOpen = -1; $("hire").classList.add("hidden");
+  const bayN = L(BAYS[G.bay % BAYS.length].n);
+  if (G.t < 2) setTimeout(() => banner(G.mode === "vs" ? (me === 0 ? L("Твоя лавка — слева") : L("Твоя лавка — справа")) : bayN, G.mode === "vs" ? (G.goal === "time" ? L("10 минут: у кого больше выручка") : L("Первым зажги маяк")) : G.bay > 0 || G.lap ? L("Новое здесь") + ": " + BAYS[G.bay % BAYS.length].news.map((k) => L(ITEMS[IT[k]].n)).join(", ") : L("Заходи в воду — рыба сама прыгнет в короб")), 500);
   if (G.mode === "vs") vsRival = { o: S.progress(G, 1 - me).o };
   updHud(true);
   closeConfirm(true);
@@ -366,7 +373,7 @@ function setupInput() {
   const el = $("joy"), knob = el.firstChild, R = 56;
   const down = (e) => {
     if (!started || joy.on || !$("dlg").classList.contains("hidden")) return;
-    if (e.target.closest && e.target.closest(".btn, button, .panel")) return;
+    if (e.target.closest && e.target.closest(".btn, button, .panel, #hire")) return;
     joy.on = true; joy.id = e.pointerId; joy.ox = e.clientX; joy.oy = e.clientY; joy.x = joy.y = 0;
     el.style.transform = `translate(${joy.ox}px, ${joy.oy}px)`; el.classList.add("on"); knob.style.transform = "";
     idleT = 0;
@@ -388,6 +395,7 @@ function setupInput() {
   $("b-menu").onclick = () => openPause();
   $("partner").onclick = () => partnerMenu();
   $("con").onclick = () => { focusBoard(2.4); play("click"); };
+  $("hirel").addEventListener("click", hireClick);
 }
 function stick() {
   let x = joy.x, z = joy.y;
@@ -439,7 +447,7 @@ function tick(dt) {
 }
 
 /* ---------- события → эффекты ---------- */
-const L_ = () => S.layout(G.mode);
+const L_ = () => S.layoutOf(G);
 function camNear(x, z, r) { return Math.hypot(x - cam.x, z - cam.z) < (r || 13); }
 function vol(x, z, base) { const d = Math.hypot(x - cam.x, (z - cam.z) * 0.8); return Math.max(0, Math.min(1, 1.2 - d / 13)) * (base == null ? 1 : base); }
 let padFlyT = {};
@@ -506,7 +514,7 @@ function onEvents(list, remote) {
       }
       case "open": {
         world.sync(G, true);
-        const z = en.k === "pier" ? { x: en.pier.x, z: (en.pier.z0 + en.pier.z1) / 2 } : en.zpad;
+        const z = en.k === "pier" ? { x: en.pier.x, z: (en.pier.z0 + en.pier.z1) / 2 } : en.k === "helper" ? (Lr.hire.length ? Lr.E[Lr.hire.find((h) => Lr.E[h].team === en.team) ?? Lr.hire[0]].zin : en.zpad) : en.zpad;
         const mine = G.mode !== "vs" || en.team === G.pl[me].team;
         if (camNear(z.x, z.z, 18)) { view.burst(z.x, 0.6, z.z, "conf", 46); view.burst(z.x, 0.2, z.z, "snow", 14); cam.shake = 0.25; }
         if (mine) {
@@ -514,6 +522,8 @@ function onEvents(list, remote) {
           const nm = entName(en);
           if (en.k === "goal") break;
           banner(en.k === "helper" ? L("Нанят") + ": " + nm : L("Открыто") + ": " + nm, entDesc(en), "");
+          // нанятый идёт на своё место — подсвечиваем, где он будет работать
+          if (en.k === "helper" && en.def.role !== "cashier") view.flash([en.from, ...en.to], 5);
         } else toast("⚔️ " + L("Соперник открыл") + ": " + entName(en), "bad");
         break;
       }
@@ -546,15 +556,16 @@ function onEvents(list, remote) {
         break;
       case "switch": { const to = Lr.E[e.e]; if (G.mode === "vs") { if (to.team === G.pl[me].team) toast("😊 " + L("Покупатель перешёл к тебе"), "good"); else toast("💢 " + L("Покупатель ушёл к сопернику"), "bad"); } break; }
       case "goal": onGoal(e); break;
+      case "perk": { const pp = PERKS.find((x) => x.id === e.id); if (pp) banner("🎖 " + L(pp.n), L(pp.d), "gold"); break; }
       case "supg": { const z = en.zpad, mine = G.mode !== "vs" || e.team === G.pl[me].team; if (camNear(z.x, z.z, 14)) view.burst(z.x, 0.4, z.z, "gold", 22); if (mine) { play("upgrade", { vol: 0.8 }); toast(`⚙ ${entName(Lr.E[e.of])} — ${L("ур.")}${e.lv}: ${L("быстрее и вмещает больше")}`, "gold"); } break; }
     }
   }
 }
 function upgText(u, lv) { const v = UPG[u].v(lv); if (u === "bag" || u === "crew") return v + " " + L("мест"); if (u === "boots" || u === "crewspd") return L("скорость") + " +" + Math.round((v / UPG[u].v(0) - 1) * 100) + "%"; if (u === "net") return L("ловля") + " +" + Math.round((UPG[u].v(0) / v - 1) * 100) + "%"; return ""; }
-function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layout(G.mode).E[e.tg]); return L(e.def.n || e.id); }
+function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layoutOf(G).E[e.tg]); return L(e.def.n || e.id); }
 function entDesc(e) {
   if (e.k === "proc") return e.rec.in.map((i) => L(ITEMS[i].n)).join(" + ") + " → " + L(ITEMS[e.rec.out].n);
-  if (e.k === "helper") { if (e.def.role === "cashier") return L("Сам собирает выручку с прилавков"); const s = S.layout(G.mode).E[e.from], to = e.to.map((i) => entName(S.layout(G.mode).E[i])).join(" / "); return (s.k === "spot" ? L("Ловит") + ": " + L(ITEMS[s.item].n) : L("Носит") + ": " + L(ITEMS[s.k === "gen" ? s.item : s.rec.out].n)) + " → " + to; }
+  if (e.k === "helper") return jobText(e);
   if (e.k === "stall") return L("Покупатели платят за") + " «" + L(ITEMS[e.item].n) + "»: " + fmt(S.itemPrice(G, e.item)) + " " + L("за штуку");
   if (e.k === "gen") return L("Сам заготавливает") + ": " + L(ITEMS[e.item].n);
   if (e.k === "pier") return L("В конце мостков ловится лосось");
@@ -566,7 +577,7 @@ function entDesc(e) {
 }
 function onGoal(e) {
   const team = e.team, mine = G.mode !== "vs" || team === G.pl[me].team;
-  const en = S.layout(G.mode).E.find((x) => x.k === "goal" && x.team === team);
+  const en = S.layoutOf(G).E.find((x) => x.k === "goal" && x.team === team);
   if (en) { view.burst(en.x, 3, en.z, "conf", 120); view.burst(en.x, 5, en.z, "gold", 40); }
   play(mine ? "levelup" : "error"); haptic("notify", mine ? "success" : "error", true);
   if (G.mode === "vs") {
@@ -578,6 +589,7 @@ function onGoal(e) {
     St.gameEnd({ mode: "vs", win: win ? 1 : 0, t: Math.round(G.t) });
     setTimeout(() => endVs(win, e.time), 1800);
   } else {
+    if (!G.ancPaid && onGoal.paid !== G.cid) { onGoal.paid = G.cid; if (role !== "guest") G.ancPaid = 1; prof.anchors = (prof.anchors || 0) + anchorsFor(G.bay, G.stars); prof.bays = Math.max(prof.bays || 0, G.bay + 1 + (G.lap || 0) * BAYS.length); prof.stars = (prof.stars || 0) + (G.stars || 0); SV.saveProfile(prof); }
     setTimeout(() => bayDone(), 1600);
   }
 }
@@ -594,26 +606,78 @@ function endVs(win, byTime) {
   if ($("e-re2")) $("e-re2").onclick = () => { hideDlg(); start("local", S.newGame({ mode: "vs", seed: (Math.random() * 1e9) | 0, goal: G.goal }), 0, { bot: 1, skill: G.botSkill || "good" }); };
   $("e-menu").onclick = () => { hideDlg(); toMenu(); };
 }
+// маяк зажжён: якоря во «Флот», выбор знака (1 из 3), потом — следующая бухта
 function bayDone() {
   if (role === "guest") { banner(L("Маяк зажжён!"), L("Хозяин выбирает знак промысла и новую бухту"), "gold"); return; }
-  prof.bays = Math.max(prof.bays || 0, G.bay + 1); prof.stars = (prof.stars || 0) + (G.stars || 0); SV.saveProfile(prof);
-  const next = G.bay + 1 < BAYS.length ? BAYS[G.bay + 1] : null;
-  dialog(`<h2>🗼 ${L("Маяк зажжён!")}</h2><p>${L(BAYS[G.bay].n)} ${L("пройдена за")} ${Math.floor(G.t / 60)} ${L("мин")}. ${L("Выбери знак промысла — он останется навсегда:")}</p>
-    <div class="perks">${PERKS.map((p) => `<button class="b" data-p="${p.id}"><span>🎖</span><span class="t">${L(p.n)}<small>${L("сейчас")}: ${prof.perks[p.id] || 0}</small></span></button>`).join("")}</div>`, true);
+  if (G.perkDone) return nextBayDlg();
+  if (G.perkPick) return perkStep();
+  // три разные карточки из тех, что ещё не на максимуме
+  const pool = PERKS.filter((p) => (G.perks[p.id] || 0) < p.max), pick = [];
+  while (pick.length < 3 && pool.length) pick.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].id);
+  G.perkPick = pick; save(true);
+  perkStep();
+}
+function perkCard(p, lv, attr) {
+  return `<button class="pcard g-${PERKS.indexOf(p) < 5 ? "me" : PERKS.indexOf(p) < 9 ? "crew" : PERKS.indexOf(p) < 13 ? "trade" : "shop"}" ${attr}><i>${L(p.g)}</i><b>${L(p.n)}</b><span>${L(p.d)}</span><small>${lv ? L("сейчас") + ": " + lv + " → " + (lv + 1) : L("новый знак")}${p.max > 1 ? " · " + L("макс.") + " " + p.max : ""}</small></button>`;
+}
+function perkStep() {
+  const got = anchorsFor(G.bay, G.stars);
+  dialog(`<h2>🗼 ${L("Маяк зажжён!")}</h2><p>${L(BAYS[G.bay % BAYS.length].n)} — ${L("за")} ${Math.floor(G.t / 60)} ${L("мин")}. ${L("Во «Флот»")}: <b class="anc">+${got} ⚓</b></p>
+    <p class="pk-h">${L("Выбери знак промысла — он будет с тобой во всех следующих бухтах:")}</p>
+    <div class="pcards">${G.perkPick.map((id) => { const p = PERKS.find((x) => x.id === id); return perkCard(p, G.perks[id] || 0, `data-p="${id}"`); }).join("")}</div>`, true);
   $("dlgp").querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => {
-    prof.perks[b.dataset.p] = (prof.perks[b.dataset.p] || 0) + 1; SV.saveProfile(prof); play("perk");
-    dialog(`<h2>${L("Дальше")}</h2><p>${next ? L("Новая бухта: больше покупателей, дороже товар, всё строим заново — но со знаками промысла.") : L("Это была последняя бухта. Можно начать её заново с новыми знаками.")}</p>
-      <button class="b primary" id="n-go"><span>⛵</span><span class="t">${next ? L(next.n) : L(BAYS[G.bay].n)}</span></button><button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться в этой бухте")}</span></button>`, true);
-    $("n-go").onclick = () => { hideDlg(); const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: next ? G.bay + 1 : G.bay, perks: prof.perks, diff: G.diff }); const wasBot = !!bot; const r = role; start(r, g, 0, { bot: wasBot }); if (hs) hs.go(); };
-    $("n-stay").onclick = () => hideDlg();
+    const id = b.dataset.p; G.perks[id] = (G.perks[id] || 0) + 1; G.perkPick = null; G.perkDone = 1; play("perk"); haptic("notify", "success", true);
+    if (hs) hs.room.send("ev", { t: "perk", id });
+    save(true); nextBayDlg();
   }));
+}
+// что переносится в следующую бухту
+function carryUpg(u) { const c = {}; for (const k in u) c[k] = k === "crew" || k === "crewspd" ? u[k] : Math.floor(u[k] / 2); return c; }
+function nextBayDlg() {
+  const nb = ((G.v || 1) < 2 ? G.bay + 1 : G.bay + 1) % BAYS.length, lap = (G.lap || 0) + (G.bay + 1 >= BAYS.length ? 1 : 0), B = BAYS[nb], c = carryUpg(G.upg[0]);
+  const icons = B.news.map((k) => `<img src="${ICONURL[k] || ""}" title="${esc(L(ITEMS[IT[k]].n))}">`).join("");
+  const nPerk = Object.values(G.perks).reduce((a, b) => a + b, 0);
+  dialog(`<h2>⛵ ${L(B.n)}${lap ? " · " + L("круг") + " " + (lap + 1) : ""}</h2>
+    <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p>
+    <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("половина")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
+    <button class="b primary" id="n-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}</span></button>
+    <button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться пока здесь")}<small>${L("Уплыть можно из меню")}</small></span></button>`, true);
+  $("n-go").onclick = () => { hideDlg(); goNextBay(nb, lap, c); };
+  $("n-stay").onclick = () => hideDlg();
+}
+function goNextBay(nb, lap, c) {
+  const g = S.newGame({ mode: G.mode, seed: (Math.random() * 1e9) | 0, bay: nb, lap, perks: G.perks, meta: prof.meta, upg: c, diff: G.diff });
+  const wasBot = !!bot, r = role;
+  start(r, g, 0, { bot: wasBot, newBay: 1 });
+  if (hs) hs.go();
+}
+/* ---------- «Флот»: постоянные улучшения за якоря ---------- */
+function fleetMenu(back) {
+  const draw = () => {
+    const br = [...new Set(META.map((m) => m.br))];
+    dialog(`<h2>⚓ ${L("Флот")}</h2><p>${L("Якоря дают за каждую пройденную бухту. Улучшения действуют во всех забегах «Вместе» и «Одному».")}</p>
+      <div class="anchors">⚓ <b>${prof.anchors || 0}</b></div>
+      <div class="tree">${br.map((b) => `<div class="branch"><h3>${L(b)}</h3>${META.filter((m) => m.br === b).map((m) => {
+        const lv = prof.meta[m.id] || 0, max = lv >= m.max, lock = m.req && !(prof.meta[m.req] > 0), cost = max ? 0 : m.cost[lv], ok = !max && !lock && (prof.anchors || 0) >= cost;
+        return `<button class="node ${max ? "max" : lock ? "lock" : ok ? "ok" : ""}" data-m="${m.id}" ${max || lock ? "disabled" : ""}><b>${L(m.n)}</b><span>${L(m.d)}</span><small>${lock ? "🔒 " + L("сначала") + " «" + L(META.find((x) => x.id === m.req).n) + "»" : max ? "✓ " + L("максимум") : "⚓ " + cost}</small><em>${"●".repeat(lv)}${"○".repeat(m.max - lv)}</em></button>`; }).join("")}</div>`).join("")}</div>
+      <button class="b ghost" id="f-x">${L("Готово")}</button>`);
+    $("dlgp").querySelectorAll("[data-m]").forEach((b) => (b.onclick = () => {
+      const m = META.find((x) => x.id === b.dataset.m), lv = prof.meta[m.id] || 0;
+      if (lv >= m.max || (prof.anchors || 0) < m.cost[lv]) { play("error"); return; }
+      prof.anchors -= m.cost[lv]; prof.meta[m.id] = lv + 1; SV.saveProfile(prof); play("upgrade"); haptic("notify", "success", true);
+      if (G && started && role !== "guest" && G.mode !== "vs" && (G.v || 1) >= 2) G.meta = Object.assign({}, prof.meta);
+      draw();
+    }));
+    $("f-x").onclick = () => { hideDlg(); if (back) back(); };
+  };
+  draw();
 }
 
 // взять нельзя: некуда нести — объясняем, что открыть
 let noDestT = -99;
 function noDest(it) {
   if (clock - noDestT < 4) return; noDestT = clock;
-  const team = G.pl[me].team, ni = S.needFor(G, team, it), Lr = S.layout(G.mode);
+  const team = G.pl[me].team, ni = S.needFor(G, team, it), Lr = S.layoutOf(G);
   toast("✋ " + L("Некуда нести") + " «" + L(ITEMS[it].n) + "»" + (ni >= 0 ? " — " + L("сначала открой") + " «" + entName(Lr.E[ni]) + "»" : ""), "bad", 3.5);
   play("error", { vol: 0.4 }); haptic("notify", "warning");
 }
@@ -640,6 +704,43 @@ function drawFloats(dt) {
     const s = project(f.x, f.y + f.t * 1.2, f.z);
     f.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -50%) scale(${f.t < 0.15 ? 0.6 + f.t * 3 : 1})`; f.el.style.opacity = f.t > 0.7 ? String((1.1 - f.t) / 0.4) : "1";
   }
+}
+
+/* ---------- Артель: дом найма. Стоишь у дверей — снизу открывается доска с карточками ---------- */
+let hireOpen = -1, hireKey = "";
+const myLoc = () => (role === "guest" ? gloc : G.pl[me]);
+// чем занят помощник — одной строкой
+function jobText(e) {
+  const Lr = S.layoutOf(G);
+  if (e.def.role === "cashier") return L("Сам собирает выручку со всех прилавков");
+  const s = Lr.E[e.from], it = s.k === "spot" || s.k === "gen" ? s.item : s.rec.out, to = e.to.map((i) => entName(Lr.E[i])).join(" / ");
+  return s.k === "spot" ? L("Ловит") + " «" + L(ITEMS[it].n) + "» → " + to : L("Носит") + " «" + L(ITEMS[it].n) + "»: " + entName(s) + " → " + to;
+}
+function roleItem(e) { if (e.def.role === "cashier") return "cash"; const s = S.layoutOf(G).E[e.from]; return ITEMS[s.k === "spot" || s.k === "gen" ? s.item : s.rec.out].id; }
+function crewText(u, lv) { return u === "crew" ? L("Помощники несут") + " " + (UPG.crew.v(lv) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) + " → " + (UPG.crew.v(lv + 1) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) : L("Скорость помощников") + " +" + Math.round(lv * 12) + "% → +" + Math.round((lv + 1) * 12) + "%"; }
+function updHire() {
+  if (!G || !started) return;
+  const hi = G.winner >= 0 || !$("dlg").classList.contains("hidden") ? -1 : S.atHire(G, me, myLoc());
+  if (hi < 0) { if (hireOpen >= 0) { hireOpen = -1; $("hire").classList.add("hidden"); } return; }
+  if (hireOpen !== hi) { hireOpen = hi; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); }
+  const Lr = S.layoutOf(G), team = G.pl[me].team, money = G.money[team];
+  const mine = Lr.E.filter((e) => e.k === "helper" && (G.mode !== "vs" || e.team === team));
+  const card = (e) => { const c = S.hireCost(G, e.i), ok = money >= c; return `<button class="hc ${ok ? "ok" : ""}" data-h="${e.i}"><div class="por"><img src="${ICONURL[e.def.role === "cashier" ? "cashier" : "helper"]}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>${esc(jobText(e))}</span></div><div class="pr">${c ? "💵 " + fmt(c) : L("даром")}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; };
+  const avail = mine.filter((e) => S.canHire(G, e.i)), hired = mine.filter((e) => G.e[e.i].o), locked = mine.filter((e) => !G.e[e.i].o && !S.canHire(G, e.i));
+  const crew = hired.length ? ["crew", "crewspd"].filter((u) => G.upg[team][u] < UPG[u].max).map((u) => { const lv = G.upg[team][u], c = S.crewCost(G, team, u), ok = money >= c; return `<button class="hc up ${ok ? "ok" : ""}" data-u="${u}"><div class="por"><img src="${ICONURL[u === "crew" ? "crate2" : "skis"]}"></div><div class="tx"><b>${L(u === "crew" ? "Короба артели" : "Лыжи артели")} · ${L("ур.")}${lv + 1}</b><span>${esc(crewText(u, lv))}</span></div><div class="pr">💵 ${fmt(c)}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; }).join("") : "";
+  const lockHtml = locked.slice(0, 2).map((e) => { const need = e.after.find((a) => !G.e[a].o); return `<div class="hc lock"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>🔒 ${L("сначала открой")} «${esc(entName(Lr.E[need]))}»</span></div></div>`; }).join("");
+  const html = `${avail.map(card).join("")}${crew}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
+  if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
+}
+function doOp(op) {
+  if (role === "guest") { if (!gs || !gs.G) return false; const n0 = G.ev.length; if (S.applyOp(G, "p" + me, op)) { gs.op(op); onEvents(G.ev.splice(n0), false); return true; } return false; }
+  return S.applyOp(G, "p" + me, op);
+}
+function hireClick(ev) {
+  const b = ev.target.closest("[data-h],[data-u]"); if (!b || hireOpen < 0 || !G) return;
+  const op = b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
+  if (!doOp(op)) { play("error", { vol: 0.5 }); haptic("notify", "warning"); toast(L("Не хватает денег"), "bad", 1.8); return; }
+  hireKey = ""; updHire();
 }
 
 /* ---------- HUD ---------- */
@@ -688,9 +789,9 @@ function updHud(force) {
 // подсказка: что делать дальше (и куда показывает стрелка)
 let hintTarget = null, tipE = -1, guideForce = false;
 // камера ненадолго показывает доску заказов
-function focusBoard(sec) { if (!G || G.mode === "vs") return; const Lr = S.layout(G.mode), bi = Lr.byId[0].board; if (bi == null) return; const e = Lr.E[bi]; cam.focus = { x: e.x, z: e.z + 0.5, t: sec || 2.2 }; }
+function focusBoard(sec) { if (!G || G.mode === "vs") return; const Lr = S.layoutOf(G), bi = Lr.byId[0].board; if (bi == null) return; const e = Lr.E[bi]; cam.focus = { x: e.x, z: e.z + 0.5, t: sec || 2.2 }; }
 function computeHint() {
-  const Lr = S.layout(G.mode), p = G.pl[me], team = p.team, cap = S.capOf(G, team);
+  const Lr = S.layoutOf(G), p = G.pl[me], team = p.team, cap = S.capOf(G, team);
   const mine = (e) => G.mode !== "vs" || e.team === team;
   // площадка рядом — подсказка о ней
   let near = -1, nd = 1.5;
@@ -705,10 +806,17 @@ function computeHint() {
     const np0 = S.nextPad(G, team), afford = np0 >= 0 && G.money[team] >= S.padCost(G, np0) - G.e[np0].p;
     if (!G.cdone && !p.st.length && !afford) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
   }
-  const np = S.nextPad(G, team);
+  let np = S.nextPad(G, team);
+  // нанять в артели дешевле, чем ближайшая площадка? — подсказываем артель
+  const house = Lr.hire.find((h) => Lr.E[h].team === team || G.mode !== "vs");
+  let hireE = null, hc = np >= 0 ? S.padCost(G, np) - G.e[np].p : 1e18;
+  if (house != null) for (const e of Lr.E) if (e.k === "helper" && mine(e) && S.canHire(G, e.i) && S.hireCost(G, e.i) < hc) { hc = S.hireCost(G, e.i); hireE = e; }
+  if (hireE && hireOpen < 0) { if (G.money[team] >= hc) return { ic: "helper", tx: L("Найми в артели") + ": " + entName(hireE), t: Lr.E[house].zin }; np = -1; }
+  if (hireOpen >= 0) return { ic: "helper", tx: L("Выбери, кого нанять — нажми на карточку"), t: null };
   let cashSum = 0, cashE = null, cd = 1e9;
   for (const e of Lr.E) if (mine(e) && e.zcash && G.e[e.i].o && G.e[e.i].cash > 0) { cashSum += G.e[e.i].cash; const d = Math.hypot(p.x - e.zcash.x, p.z - e.zcash.z); if (d < cd) { cd = d; cashE = e; } }
-  if (np >= 0) { const need = S.padCost(G, np) - G.e[np].p; const e = Lr.E[np]; if (G.money[team] >= need) return { ic: "star", tx: L("Открой") + ": " + entName(e), t: e.zpad }; if (G.money[team] + cashSum >= need && cashE) return { ic: "cash", tx: L("Собери выручку — хватит на") + " «" + entName(e) + "»", t: cashE.zcash }; }
+  if (np >= 0) { const need = S.padCost(G, np) - G.e[np].p; const e = Lr.E[np]; if (G.money[team] >= need) return { ic: "star", tx: (e.k === "goal" ? "🗼 " : "") + L("Открой") + ": " + entName(e), t: e.zpad }; if (G.money[team] + cashSum >= need && cashE) return { ic: "cash", tx: L("Собери выручку — хватит на") + " «" + entName(e) + "»", t: cashE.zcash }; }
+  else if (hireE && G.money[team] + cashSum >= hc && cashE) return { ic: "cash", tx: L("Собери выручку — хватит нанять") + " «" + entName(hireE) + "»", t: cashE.zcash };
   if (p.st.length) {
     let best = null, bd = 1e9;
     for (const e of Lr.E) { if (!mine(e) || !e.zin || e.k === "spot" || !G.e[e.i].o) continue; let ok = false; for (const it of p.st) if (S.accepts(G, e.i, it)) ok = true; if (!ok) continue; const d = Math.hypot(p.x - e.zin.x, p.z - e.zin.z) - (e.k === "board" ? 6 : 0); if (d < bd) { bd = d; best = e; } }
@@ -720,8 +828,8 @@ function computeHint() {
   let out = null, od = 1e9;
   for (const e of Lr.E) { if (!mine(e) || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0 || !S.hasDest(G, team, e.k === "gen" ? e.item : e.rec.out)) continue; const d = Math.hypot(p.x - e.zout.x, p.z - e.zout.z); if (d < od) { od = d; out = e; } }
   if (out && p.st.length < cap) return { ic: ITEMS[out.k === "gen" ? out.item : out.rec.out].id, tx: L("Забери") + ": " + L(ITEMS[out.k === "gen" ? out.item : out.rec.out].n), t: out.zout };
-  const spot = Lr.E.find((e) => mine(e) && e.k === "spot" && G.e[e.i].o && e.item === IT.herring);
-  if (spot && p.st.length < cap) return { ic: "herring", tx: S.inZone(p, spot.zin) ? L("Стой в воде — рыба прыгает в короб") : L("Иди на отмель ловить рыбу"), t: spot.zin };
+  const spot = Lr.E.find((e) => mine(e) && e.k === "spot" && G.e[e.i].o && e.def.free);
+  if (spot && p.st.length < cap) return { ic: ITEMS[spot.item].id, tx: S.inZone(p, spot.zin) ? L("Стой в воде — улов сам прыгает в короб") : L("Иди на отмель ловить") + ": " + L(ITEMS[spot.item].n), t: spot.zin };
   return null;
 }
 let hintKey = "";
@@ -733,8 +841,8 @@ function updHint() {
   $("hint").classList.toggle("fade", !h);
   // площадка под ногами — подробности
   if (tipE >= 0) {
-    const e = S.layout(G.mode).E[tipE], cost = S.padCost(G, tipE), left = cost - G.e[tipE].p, money = G.money[G.pl[me].team];
-    tipShow(`<b>${esc(entName(e))}</b>${esc(entDesc(e))}<br><span class="c">💵 ${fmt(left)}</span>${money < left ? ` · <span class="no">${L("не хватает")} ${fmt(left - money)}</span>` : ` · ${L("стой на месте — оплата")}`}`);
+    const e = S.layoutOf(G).E[tipE], cost = S.padCost(G, tipE), left = cost - G.e[tipE].p, money = G.money[G.pl[me].team];
+    tipShow(`<b>${esc(entName(e))}</b>${esc(entDesc(e))}<br><span class="c">💵 ${fmt(left)}</span>${money < left ? ` · <span class="no">${L("не хватает")} ${fmt(left - money)}</span>` : ` · ${L("постой — и оплата пойдёт")}`}`);
   } else tipShow(null);
 }
 function tipShow(html) { const t = $("tip"); if (!html) { t.classList.remove("show"); return; } if (t.dataset.h !== html) { t.innerHTML = html; t.dataset.h = html; } t.classList.add("show"); }
@@ -758,7 +866,22 @@ function drawOverlay() {
     const s = project(d.x, 2.0, d.z); tagEl.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; tagEl.style.background = PCOL[G.mode === "vs" ? G.pl[1 - me].team : 1 - me].coat;
     setText(tagEl, partner.name || (G.mode === "vs" ? L("Соперник") : L("Напарник"))); tagEl.style.display = s.z < 1 ? "" : "none";
   } else if (tagEl) tagEl.style.display = "none";
+  // подпись над площадкой, на которой стоишь
+  const tip = $("tip");
+  if (G && tipE >= 0) { const z = S.layoutOf(G).E[tipE].zpad, s = project(z.x, 1.0, z.z); tip.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; }
+  // новые помощники: подпись над головой, пока идут на место
+  let hn = 0;
+  if (G) for (let i = 0; i < G.hp.length; i++) {
+    const h = G.hp[i]; if (h.born == null || G.t - h.born > 7 || G.t < h.born) continue;
+    const d = view.disp.h[i]; if (!d) continue;
+    const el = hTags[hn] || (hTags[hn] = Object.assign($("layer").appendChild(document.createElement("div")), { className: "tag htag" }));
+    const s = project(d.x, 2.3, d.z); el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`; el.style.display = s.z < 1 ? "" : "none";
+    setText(el, (G.t - h.born < 2.5 ? L("Нанят") + ": " : "→ ") + (G.t - h.born < 2.5 ? entName(S.layoutOf(G).E[h.e]) : workName(h))); hn++;
+  }
+  for (let i = hn; i < hTags.length; i++) hTags[i].style.display = "none";
 }
+const hTags = [];
+function workName(h) { const Lr = S.layoutOf(G), e = Lr.E[h.e]; return e.def.role === "cashier" ? L("к прилавкам") : entName(Lr.E[e.from]); }
 
 /* ---------- окна ---------- */
 function banner(a, b, cls) { const el = $("banner"); el.className = cls || ""; el.innerHTML = esc(a) + (b ? `<small>${esc(b)}</small>` : ""); void el.offsetWidth; el.classList.add("show"); clearTimeout(banner.t); banner.t = setTimeout(() => el.classList.remove("show"), 2600); }
@@ -885,14 +1008,15 @@ function loop(now) {
     tick(dt);
     if (G.winner >= 0 && G.mode === "vs" && !lastEnd) onGoal({ team: G.winner, time: G.goal === "time" });
     const p = role === "guest" ? gloc : G.pl[me];
-    ctx = { me, cam, local: role === "guest" ? gloc : { x: G.pl[me].x, z: G.pl[me].z, dir: G.pl[me].dir }, hot: tipE, remoteK: role === "guest" ? 10 : 16 };
+    const dl = role === "guest" ? gtm : G.pl[me];
+    ctx = { me, cam, local: role === "guest" ? gloc : { x: G.pl[me].x, z: G.pl[me].z, dir: G.pl[me].dir }, hot: tipE, remoteK: role === "guest" ? 10 : 16, dwell: dl.dwK > 0 && dl.dwK < 1 && dl.dwZ ? { z: dl.dwZ, k: dl.dwK, pad: dl.dwKind === "pad" } : null };
     // камера: за игроком, чуть вперёд по ходу
     const d = view.disp.p[me];
     let tx = (d ? d.x : p.x) - Math.sin(YAW) * 0.8, tz = (d ? d.z : p.z) - Math.cos(YAW) * 0.8;
     if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
     const ce = 1 - Math.exp(-dt * 3.6); cam.x += (tx - cam.x) * ce; cam.z += (tz - cam.z) * ce;
     cam.dist += (camDist() + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
-    hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); netWatch(); }
+    hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); updHire(); netWatch(); }
     const nd = role === "guest" ? gtm : G.pl[me];
     if (nd.noDest != null) { noDest(nd.noDest); nd.noDest = null; }
     saveT += dt; if (saveT > 5) { saveT = 0; save(false); }
@@ -915,7 +1039,7 @@ function loop(now) {
   // фон: ветер всегда, огонь у коптильни, чайки и волны у воды
   ambT += dt;
   if (ambT > 0.25) {
-    ambT = 0; const Lr = S.layout(g.mode); let fire = 0;
+    ambT = 0; const Lr = S.layoutOf(g); let fire = 0;
     for (const e of Lr.E) if (e.def.model === "smokehouse" && g.e[e.i].o) fire = Math.max(fire, 1 - Math.hypot(e.x - cam.x, e.z - cam.z) / 9);
     const sea = Math.max(0, 1 - Math.abs(cam.z - S.shoreZ(Lr, cam.x)) / 14);
     ambience({ amb_wind: 0.55 + 0.25 * sea, fire });
@@ -935,12 +1059,13 @@ function loop(now) {
 window.__pm = {
   get G() { return G; }, get role() { return role; }, get me() { return me; }, get started() { return started; }, get room() { return room; }, get hs() { return hs; }, get gs() { return gs; }, get partner() { return partner; }, get view() { return view; },
   S, cam, renderer, project, camera, scene, get world() { return world; },
-  solo: () => { soloMenu(); return true; }, coopBot: () => { start("local", S.newGame({ mode: "coop", seed: 77, perks: prof.perks, diff: 1 }), 0, { bot: 1 }); return true; },
+  solo: () => { soloMenu(); return true; }, coopBot: (bay, o) => { start("local", S.newGame(Object.assign({ mode: "coop", seed: 77, meta: prof.meta, diff: 1, bay: bay || 0 }, o || {})), 0, { bot: 1 }); return true; },
+  bayDone: () => bayDone(), fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
-  host: (mode) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, perks: prof.perks, diff: 1 })); return true; },
+  host: (mode) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1 })); return true; },
   join: (id) => { joinGame(id); return true; },
   money: (v) => { G.money[G.pl[me].team] = v; },
-  open: (id) => { const Lr = S.layout(G.mode); S.forceOpen(G, Lr.byId[G.pl[me].team][id]); world.sync(G, true); },
+  open: (id) => { const Lr = S.layoutOf(G); S.forceOpen(G, Lr.byId[G.pl[me].team][id]); world.sync(G, true); },
   tp: (x, z) => { if (role === "guest") { gloc.x = x; gloc.z = z; } G.pl[me].x = x; G.pl[me].z = z; },
   ff: (sec) => { if (role === "guest") return; for (let t = 0; t < sec; t += 1 / 30) { if (bot) { const b = bot.tick(G, 1 / 30); S.movePlayer(G, bot.pi, b.x, b.z, 1 / 30); } S.step(G, 1 / 30); } const evs = G.ev; G.ev = []; if (hs) hs.events(evs.filter((e) => e.t === "open" || e.t === "upg")); world.sync(G, false); },
   autoBot: (on) => { window.__autoBot = on ? makeBot(me, { seed: 11 }) : null; },
