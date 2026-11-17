@@ -136,3 +136,14 @@ window.I18N && I18N.add({ "Ярмарочный день!": "Fair day!", "Осо
 window.I18N && I18N.add({ "Новый заказ": "New order", "подойди к доске, чтобы начать": "walk to the board to start", "Заказ принят": "Order accepted", "Не успели — оплачено за сданное": "Out of time — paid for what you delivered",
   "Новый заказ — подойди к доске": "New order — walk to the board", "Новый заказ — подойди к доске, чтобы начать": "New order — walk to the board to start", "скоро": "soon" });
 window.I18N && I18N.add({ "ПРИНЯТЬ": "ACCEPT" });
+window.I18N && I18N.add({
+  "Реклама": "Advertising", "РЕКЛАМА": "ADS", "больше покупателей — больше выручки": "more buyers, more takings", "Листовки": "Flyers", "40 с покупателей вдвое больше": "Twice the buyers for 40 s",
+  "Вывеска и зазывала": "Sign and barker", "Навсегда +15% покупателей за уровень": "Permanently +15% buyers per level", "Глашатай на площади": "Town crier", "Сразу толпа и 30 с втрое больше людей": "A crowd right away, then triple buyers for 30 s",
+  "идёт": "running", "покупателей в минуту": "buyers per minute", "Репутация": "Reputation", "Очередь злится — покупатели уходят, репутация падает": "The queue is angry — buyers leave, reputation drops",
+  "На прилавке пусто, а очередь ждёт": "The stall is empty and the queue is waiting", "Мало рекламы — поставь вывеску": "Too little advertising — put up a sign", "Плохая репутация — обслуживай быстрее": "Poor reputation — serve faster",
+  "Управляющий": "Manager", "Цех сам подтягивает сырьё тележкой — подносить не нужно": "The workshop pulls its own supplies by cart — no carrying needed", "Сейф с автосбором": "Safe with auto-collect",
+  "Вся выручка сама идёт в кошелёк — бегать за деньгами не нужно": "All takings go straight to your wallet — no running for cash", "Соперник дал рекламу": "Rival is advertising", "Цех сам подтягивает сырьё тележкой": "The workshop pulls its supplies by cart",
+  "Выручка сама идёт в кошелёк": "Takings go straight to the wallet", "Цепочка работает сама!": "The chain runs by itself!", "Автоматизация": "Automation", "/мин": "/min",
+  "Поток в норме — реклама у рынка добавит людей": "Flow is fine — advertising by the market brings more people", "цепочек сами": "chains automated", "без тебя": "without you",
+});
+window.I18N && I18N.add({ "нанимай помощников и улучшай их": "hire helpers and upgrade them", "Мало покупателей — дай рекламу у рынка": "Few buyers — advertise by the market" });

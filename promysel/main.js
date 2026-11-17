@@ -397,6 +397,8 @@ function setupInput() {
   // нажал на строку задач — подробности (и камера покажет доску заказов)
   const tasks = () => { const t = $("top"); t.classList.toggle("exp"); play("click"); if (t.classList.contains("exp") && G && (G.con || S.bigStage(G))) focusBoard(2.2); updHud(true); };
   for (const id of ["con", "big", "evc"]) $(id).onclick = tasks;
+  // нажал на поток — объясняем, отчего людей мало и что даёт автоматизация
+  $("flow").onclick = () => { if (!G) return; play("click"); const why = S.flowWhy(G, G.pl[me].team); toast((why ? "⚠ " + L(WHY[why]) : "👥 " + L("Поток в норме — реклама у рынка добавит людей")) + (G.mode !== "vs" ? " · ⚙ " + L("цепочек сами") + ": " + autoInfoC.ok + "/" + autoInfoC.n + " · 💤 " + L("без тебя") + " +" + fmt(G.idle || 0) + L("/мин") : ""), why ? "bad" : "good", 4); };
   $("hirel").addEventListener("click", hireClick);
 }
 function stick() {
@@ -500,6 +502,7 @@ function onEvents(list, remote) {
         break;
       }
       case "cash": {
+        if (e.a === "safe") { const z = en.zcash; if (camNear(z.x, z.z, 12)) { floatText(z.x, 1.4, z.z, "+" + fmt(e.amt), "cash"); moneyFly(z.x, 0.6, z.z, 2); } break; }
         const z = en.zcash, n = Math.min(10, 2 + Math.floor(Math.log2(1 + e.amt)));
         for (let i = 0; i < n; i++) view.fly(CASH, { x: z.x + (Math.random() - 0.5) * 0.5, y: 0.2 + i * 0.05, z: z.z + (Math.random() - 0.5) * 0.5 }, () => view.topOf(e.a), { dur: 0.3, h: 0.9, delay: i * 0.035, s: 0.8 });
         if (isMe) {
@@ -578,6 +581,17 @@ function onEvents(list, remote) {
         else { play("levelup"); haptic("notify", "success", true); banner(e.s === "done" ? "✅ " + L("Заказ судна выполнен!") : "✅ " + L("Ступень сдана!"), "+" + fmt(e.amt) + " — " + L("у доски заказов") + (e.last ? " · " + L("маяк можно строить") : ""), "gold"); const bi = Lr.byId[0].board; if (bi != null) { const be = Lr.E[bi]; view.burst(be.x, 2.5, be.z, "conf", 40); } }
         break;
       }
+      case "ad": {
+        const mine = G.mode !== "vs" || e.team === G.pl[me].team, A = S.ADS[e.k];
+        if (mine) { banner((e.k === "fl" ? "📜 " : e.k === "sign" ? "🪧 " : "📣 ") + L(A.n) + (e.k === "sign" ? " · " + L("ур.") + e.lv : ""), L(A.d), "gold"); play(e.k === "cr" ? "bell" : "cloth", { vol: 0.7 }); }
+        else toast("⚔️ " + L("Соперник дал рекламу") + ": " + L(A.n), "bad");
+        if (en && camNear(en.x, en.z, 14)) view.burst(en.x, 2, en.z, "conf", 24);
+        break;
+      }
+      case "mgr": { const st = Lr.E[e.e]; banner("⚙ " + L("Управляющий") + ": " + entName(st), L("Цех сам подтягивает сырьё тележкой"), "gold"); play("upgrade"); view.flash([e.e], 4); break; }
+      case "safe": banner("🔐 " + L("Сейф с автосбором"), L("Выручка сама идёт в кошелёк"), "gold"); play("cash2"); haptic("notify", "success", true); break;
+      case "auto": { banner("⚙ " + L("Цепочка работает сама!"), L("Автоматизация") + ": " + e.n + "/" + e.of, "gold"); play("levelup", { vol: 0.7 }); setTimeout(() => play("bell", { vol: 0.5 }), 250); for (const i of autoSet) { const st = Lr.E[i]; if (camNear(st.x, st.z, 14)) view.burst(st.x, 2.6, st.z, "gold", 18); } break; }
+      case "cart": { const a = Lr.E[e.from], b2 = Lr.E[e.to]; if (camNear(b2.x, b2.z, 12)) view.fly(e.it, view.pileTarget(a, "out", G, e.it, 1), view.pileTarget(b2, "in", G, e.it), { dur: 0.6, h: 1.4 }); break; }
       case "deco": banner("🏮 " + L("База украшена"), L("Покупатели довольнее — цены выше на 3%"), "gold"); play("upgrade"); break;
       case "trap": { const tp = G.traps && G.traps[e.k]; if (tp) view.fly(e.it, { x: tp.x, y: 0.1, z: tp.z }, () => view.topOf(e.a), { key: e.a, dur: 0.3, h: 0.8 }); if (isMe) { play("plop", { vol: 0.45 }); haptic("impact", "light"); } break; }
       case "perk": { const pp = PERKS.find((x) => x.id === e.id); if (pp) banner("🎖 " + L(pp.n), L(pp.d), "gold"); break; }
@@ -742,27 +756,54 @@ function jobText(e) {
 }
 function roleItem(e) { if (e.def.role === "cashier") return "cash"; const s = S.layoutOf(G).E[e.from]; return ITEMS[s.k === "spot" || s.k === "gen" ? s.item : s.rec.out].id; }
 function crewText(u, lv) { return u === "crew" ? L("Помощники несут") + " " + (UPG.crew.v(lv) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) + " → " + (UPG.crew.v(lv + 1) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) : L("Скорость помощников") + " +" + Math.round(lv * 12) + "% → +" + Math.round((lv + 1) * 12) + "%"; }
+// одна доска снизу на два дома: «Артель» (наём) и «Реклама» (поток покупателей)
+let boardKind = "";
+// автоматизация (раз в секунду): какие цеха работают сами — для значков ⚙ и шапки
+let autoSet = new Set(), autoInfoC = { n: 0, ok: 0 }, autoT = 0;
+function updAuto(dt) {
+  autoT -= dt; if (autoT > 0 || !G) return; autoT = 1;
+  const Lr = S.layoutOf(G), team = G.pl[me].team; autoSet = new Set();
+  for (const e of Lr.E) if ((G.mode !== "vs" || e.team === team) && S.stationAuto(G, e)) autoSet.add(e.i);
+  autoInfoC = G.mode !== "vs" ? S.autoInfo(G, team) : { n: 0, ok: 0 }; view.autoSet = autoSet;
+}
 function updHire() {
   if (!G || !started) return;
-  const hi = G.winner >= 0 || !$("dlg").classList.contains("hidden") ? -1 : S.atHire(G, me, myLoc());
-  if (hi < 0) { if (hireOpen >= 0) { hireOpen = -1; $("hire").classList.add("hidden"); } return; }
-  if (hireOpen !== hi) { hireOpen = hi; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); }
+  const busy = G.winner >= 0 || !$("dlg").classList.contains("hidden");
+  const hi = busy ? -1 : S.atHire(G, me, myLoc()), ai = busy || hi >= 0 ? -1 : S.atAds(G, me, myLoc());
+  const at = hi >= 0 ? hi : ai, kind = hi >= 0 ? "hire" : ai >= 0 ? "ads" : "";
+  if (at < 0) { if (hireOpen >= 0) { hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); } return; }
+  if (hireOpen !== at) { hireOpen = at; boardKind = kind; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); $("hire").classList.toggle("ads", kind === "ads"); $("hire").querySelector(".hh").innerHTML = kind === "ads" ? `<b>${L("РЕКЛАМА")}</b><small>${L("больше покупателей — больше выручки")}</small>` : `<b>${L("АРТЕЛЬ")}</b><small>${L("нанимай помощников и улучшай их")}</small>`; }
+  if (kind === "ads") return updAds();
   const Lr = S.layoutOf(G), team = G.pl[me].team, money = G.money[team];
   const mine = Lr.E.filter((e) => e.k === "helper" && (G.mode !== "vs" || e.team === team));
   const card = (e) => { const c = S.hireCost(G, e.i), ok = money >= c; return `<button class="hc ${ok ? "ok" : ""}" data-h="${e.i}"><div class="por"><img src="${ICONURL[e.def.role === "cashier" ? "cashier" : "helper"]}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>${esc(jobText(e))}</span></div><div class="pr">${c ? "💵 " + fmt(c) : L("даром")}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; };
   const avail = mine.filter((e) => S.canHire(G, e.i)), hired = mine.filter((e) => G.e[e.i].o), locked = mine.filter((e) => !G.e[e.i].o && !S.canHire(G, e.i));
   const crew = hired.length ? ["crew", "crewspd"].filter((u) => G.upg[team][u] < UPG[u].max).map((u) => { const lv = G.upg[team][u], c = S.crewCost(G, team, u), ok = money >= c; return `<button class="hc up ${ok ? "ok" : ""}" data-u="${u}"><div class="por"><img src="${ICONURL[u === "crew" ? "crate2" : "skis"]}"></div><div class="tx"><b>${L(u === "crew" ? "Короба артели" : "Лыжи артели")} · ${L("ур.")}${lv + 1}</b><span>${esc(crewText(u, lv))}</span></div><div class="pr">💵 ${fmt(c)}${ok ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div></button>`; }).join("") : "";
   const lockHtml = locked.slice(0, 2).map((e) => { const need = e.after.find((a) => !G.e[a].o); return `<div class="hc lock"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>🔒 ${L("сначала открой")} «${esc(entName(Lr.E[need]))}»</span></div></div>`; }).join("");
-  const html = `${avail.map(card).join("")}${crew}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
+  // управляющие цехами (цех сам тянет сырьё тележкой) и сейф с автосбором выручки
+  const priceTag = (c) => `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`;
+  const mgr = G.mode === "vs" ? "" : Lr.E.filter((e) => S.canMgr(G, e.i) && hired.some((h) => h.from === e.i)).slice(0, 3).map((e) => { const c = S.mgrCost(G, e.i); return `<button class="hc up ${money >= c ? "ok" : ""}" data-g="${e.i}"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[ITEMS[e.rec.out].id] || ""}"></div><div class="tx"><b>${L("Управляющий")}: ${esc(entName(e))}</b><span>${L("Цех сам подтягивает сырьё тележкой — подносить не нужно")}</span></div>${priceTag(c)}</button>`; }).join("");
+  const safe = G.mode !== "vs" && !G.safe && hired.length >= 3 ? (() => { const c = S.safeCost(G); return `<button class="hc up ${money >= c ? "ok" : ""}" data-s="1"><div class="por"><img src="${ICONURL.cashier}"></div><div class="tx"><b>${L("Сейф с автосбором")}</b><span>${L("Вся выручка сама идёт в кошелёк — бегать за деньгами не нужно")}</span></div>${priceTag(c)}</button>`; })() : "";
+  const html = `${avail.map(card).join("")}${safe}${mgr}${crew}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
   if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
 }
 function doOp(op) {
   if (role === "guest") { if (!gs || !gs.G) return false; const n0 = G.ev.length; if (S.applyOp(G, "p" + me, op)) { gs.op(op); onEvents(G.ev.splice(n0), false); return true; } return false; }
   return S.applyOp(G, "p" + me, op);
 }
+function updAds() {
+  const team = G.pl[me].team, money = G.money[team], a = (G.ads && G.ads[team]) || {}, why = S.flowWhy(G, team);
+  const card = (k, lv) => { const A = S.ADS[k], c = S.adCost(G, team, k), can = S.canAd(G, team, k), act = (a[k] || 0) > 0, cd = (a[k + "c"] || 0) - (a[k] || 0);
+    const st = k === "sign" ? (lv >= A.max ? "✓ " + L("максимум") : L("ур.") + lv + "&nbsp;→&nbsp;" + (lv + 1)) : act ? "▶ " + L("идёт") + " " + Math.ceil(a[k]) + L("с") : cd > 0 ? "⏳ " + Math.ceil(cd) + L("с") : "";
+    return `<button class="hc ad ${can && money >= c ? "ok" : ""} ${act ? "on" : ""}" data-ad="${k}" ${can ? "" : "disabled"}><div class="por"><span class="em">${k === "fl" ? "📜" : k === "sign" ? "🪧" : "📣"}</span></div><div class="tx"><b>${L(A.n)}</b><span>${L(A.d)}</span><small>${st}</small></div>${can ? `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>` : ""}</button>`; };
+  const rep = S.repOf(G, team);
+  const html = `<div class="flowbox"><div>👥 <b>${Math.round(G.flow || 0)}</b> ${L("покупателей в минуту")}</div><div class="rep">${L("Репутация")} <i><u style="width:${Math.round(rep * 100)}%"></u></i></div>${why ? `<small>⚠ ${L(WHY[why])}</small>` : ""}</div>${card("fl")}${card("sign", a.sign || 0)}${card("cr")}`;
+  if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
+}
+const WHY = { angry: "Очередь злится — покупатели уходят, репутация падает", empty: "На прилавке пусто, а очередь ждёт", ads: "Мало рекламы — поставь вывеску", rep: "Плохая репутация — обслуживай быстрее" };
 function hireClick(ev) {
-  const b = ev.target.closest("[data-h],[data-u]"); if (!b || hireOpen < 0 || !G) return;
-  const op = b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
+  const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
+  const op = b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
   if (!doOp(op)) { play("error", { vol: 0.5 }); haptic("notify", "warning"); toast(L("Не хватает денег"), "bad", 1.8); return; }
   hireKey = ""; updHire();
 }
@@ -786,6 +827,12 @@ function updHud(force) {
     pe.classList.toggle("off", !on); pe.classList.toggle("relay", on && room && !partner.bot && room.link !== "p2p");
     setText($("ptx"), partner.name || (G.mode === "vs" ? L("Соперник") : L("Напарник")));
     setText($("pnet"), partner.bot ? "" : room ? (on ? (room.rtt ? room.rtt + L("мс") : "") : L("нет связи")) : "");
+  }
+  // поток покупателей, автоматизация, доход без тебя
+  {
+    const fe = $("flow"), why = S.flowWhy(G, team), ai = autoInfoC;
+    const html = `<span>👥 <b>${Math.round(G.flow || 0)}</b>${L("/мин")}${why ? ` <i class="w">⚠</i>` : ""}</span>${G.mode !== "vs" && ai.n ? `<span>⚙ <b>${ai.ok}/${ai.n}</b></span>` : ""}${G.mode !== "vs" && (G.idle || 0) > 0 ? `<span>💤 <b>+${fmt(G.idle)}</b>${L("/мин")}</span>` : ""}`;
+    if (fe.dataset.h !== html) { fe.innerHTML = html; fe.dataset.h = html; } fe.classList.remove("hidden");
   }
   // строка задач под полосой бухты: заказ, заказ судна, событие — коротко; нажал — подробно
   const exp = $("top").classList.contains("exp");
@@ -856,6 +903,9 @@ function computeHint() {
   let out = null, od = 1e9;
   for (const e of Lr.E) { if (!mine(e) || !e.zout || !G.e[e.i].o || G.e[e.i].ob <= 0 || !S.hasDest(G, team, e.k === "gen" ? e.item : e.rec.out)) continue; const d = Math.hypot(p.x - e.zout.x, p.z - e.zout.z); if (d < od) { od = d; out = e; } }
   if (out && p.st.length < cap) return { ic: ITEMS[out.k === "gen" ? out.item : out.rec.out].id, tx: L("Забери") + ": " + L(ITEMS[out.k === "gen" ? out.item : out.rec.out].n), t: out.zout };
+  // людей мало, а деньги есть — к рекламной тумбе
+  const adE = Lr.ads.find((i) => mine(Lr.E[i]));
+  if (adE != null && hireOpen < 0 && S.flowWhy(G, team) === "ads" && S.canAd(G, team, "sign") && G.money[team] >= S.adCost(G, team, "sign")) return { ic: "cash", tx: "🪧 " + L("Мало покупателей — дай рекламу у рынка"), t: Lr.E[adE].zin };
   const spot = Lr.E.find((e) => mine(e) && e.k === "spot" && G.e[e.i].o && e.def.free);
   if (spot && p.st.length < cap) return { ic: ITEMS[spot.item].id, tx: S.inZone(p, spot.zin) ? L("Стой в воде — улов сам прыгает в короб") : L("Иди на отмель ловить") + ": " + L(ITEMS[spot.item].n), t: spot.zin };
   return null;
@@ -1047,7 +1097,7 @@ function loop(now) {
     if (cam.focus) { cam.focus.t -= dt; if (cam.focus.t <= 0 || (joy.on && cam.focus.t < 1.6)) cam.focus = null; else { tx = cam.focus.x; tz = cam.focus.z; } }
     const ce = 1 - Math.exp(-dt * 3.6); cam.x += (tx - cam.x) * ce; cam.z += (tz - cam.z) * ce;
     cam.dist += (camDist() * (cam.zk || 1) + Math.min(4, (G.pl[me].st.length || 0) * 0.08) - cam.dist) * Math.min(1, dt * 2);
-    hudT += dt; if (hudT > 0.1) { hudT = 0; updHud(); updHint(); updHire(); netWatch(); }
+    hudT += dt; if (hudT > 0.1) { hudT = 0; updAuto(0.1); updHud(); updHint(); updHire(); netWatch(); }
     const nd = role === "guest" ? gtm : G.pl[me];
     if (nd.noDest != null) { noDest(nd.noDest); nd.noDest = null; }
     saveT += dt; if (saveT > 5) { saveT = 0; save(false); }

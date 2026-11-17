@@ -1,7 +1,7 @@
 // «Промысел» — бот-игрок (соперник в «друг против друга», напарник во «вместе», и он же гоняет баланс).
 // Бот не жульничает: только выбирает, куда идти, и «держит джойстик». Ловить, носить и платить его заставляет
 // та же самая близость к местам, что и человека (sim.proximityOps).
-import { bigStage, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
+import { bigStage, canAd, adCost, canMgr, mgrCost, safeCost, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, hyp, itemPrice, canHire, hireCost, crewCost, applyOp } from "./sim.js";
 import { UPG } from "./data.js";
 import { IT, ITEMS } from "./data.js";
 
@@ -28,7 +28,7 @@ export function makeBot(pi, opt) {
     let pad = -1, pc = 1e18;
     for (const e of mine) {
       if (!padVisible(G, e.i)) continue;
-      const c = padCost(G, e.i) - G.e[e.i].p, w = c * (e.k === "upg" ? (e.def.u === "bag" ? 1.2 : 1.6) : e.k === "supg" ? 1.3 : 1);
+      const c = padCost(G, e.i) - G.e[e.i].p, w = c * (e.k === "upg" ? (e.def.u === "bag" ? 1.2 : 1.6) : e.k === "supg" ? 1.3 : e.k === "goal" ? 0.25 : 1);
       if (w < pc) { pc = w; pad = e.i; }
     }
     // наём в артели и улучшения артели — как площадки, только покупаются в доме артели
@@ -37,6 +37,21 @@ export function makeBot(pi, opt) {
     if (house != null) {
       for (const e of mine) { if (e.k !== "helper" || !canHire(G, e.i)) continue; const c = hireCost(G, e.i); if (c < pc) { pc = c; pad = -1; hireT = { k: "hire", e: house, h: e.i, c }; } }
       for (const u of ["crew", "crewspd"]) { if (G.upg[team][u] >= UPG[u].max || !G.hp.some((h) => h.team === team)) continue; const c = crewCost(G, team, u), w = c * 1.6; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, u, c }; } }
+      // управляющий цехом и сейф — когда цех уже обставлен помощниками
+      if (G.mode !== "vs") {
+        for (const e of mine) { if (!canMgr(G, e.i) || !G.hp.some((h) => L.E[h.e].from === e.i)) continue; const c = mgrCost(G, e.i), w = c * 1.5; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, op: ["g", house, e.i], c }; } }
+        if (!G.safe && G.hp.length >= 6) { const c = safeCost(G), w = c * 1.2; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, op: ["s", house], c }; } }
+      }
+    }
+    // реклама: вывеска — как улучшение; листовки и глашатай — когда товара на прилавках много
+    const adsE = L.ads.find((h) => L.E[h].team === team || G.mode !== "vs");
+    if (adsE != null && G.t > 60) {
+      const stock = mine.reduce((a, e) => a + (e.k === "stall" && G.e[e.i].o ? G.e[e.i].sh : 0), 0);
+      for (const k of ["sign", "fl", "cr"]) {
+        if (!canAd(G, team, k)) continue; const c = adCost(G, team, k);
+        if (k !== "sign" && (stock < 16 || G.money[team] < c * 4)) continue;     // листовки и глашатай — только когда товара много и деньги лишние
+        const w = c * (k === "sign" ? 1.3 : 3); if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: adsE, op: ["ad", adsE, k], c }; }
+      }
     }
     if (hireT && G.money[team] >= hireT.c) return hireT;
     const padNeed = pad >= 0 ? padCost(G, pad) - G.e[pad].p : hireT ? hireT.c : 1e18;
@@ -109,7 +124,7 @@ export function makeBot(pi, opt) {
   function done(G, t) {
     const p = G.pl[pi], s = t.e >= 0 ? G.e[t.e] : null, cap = capOf(G, p.team);
     if (t.k === "pad") return !padVisible(G, t.e) || G.money[p.team] < 1;
-    if (t.k === "hire") return t.h != null ? !canHire(G, t.h) || G.money[p.team] < hireCost(G, t.h) : G.money[p.team] < crewCost(G, p.team, t.u);
+    if (t.k === "hire") return t.op ? G.money[p.team] < t.c || t.done : t.h != null ? !canHire(G, t.h) || G.money[p.team] < hireCost(G, t.h) : G.money[p.team] < crewCost(G, p.team, t.u);
     if (t.k === "cash") return !(s.cash > 0);
     if (t.k === "deliver") { if (t.e < 0) return true; for (const it of p.st) if (accepts(G, t.e, it)) return false; return true; }
     if (t.k === "pick") { const end = p.st.length >= cap || (s.ob <= 0 && !(t.big && B.tt < 25)) || (t.big && p.st.length >= 4); if (end && t.big && s.ob <= 0 && !p.st.length) B.bigCool = 30; return end; }
@@ -134,7 +149,7 @@ export function makeBot(pi, opt) {
     if (inside) {
       if (!B.arr) { B.arr = true; B.think = 0.2; }
       // в артели бот «нажимает» карточку
-      if (t.k === "hire" && (B.ht = (B.ht || 0) + dt) > 0.6) { B.ht = 0; applyOp(G, "p" + pi, t.h != null ? ["h", t.e, t.h] : ["u", t.e, t.u]); B.think = 0; }
+      if (t.k === "hire" && (B.ht = (B.ht || 0) + dt) > 0.6) { B.ht = 0; if (applyOp(G, "p" + pi, t.op || (t.h != null ? ["h", t.e, t.h] : ["u", t.e, t.u])) && t.op) t.done = 1; B.think = 0; }
       return { x: 0, z: 0 };
     }
     if (B.arr && inZone(p, z, -0.1)) return { x: 0, z: 0 };

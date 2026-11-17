@@ -49,6 +49,7 @@ export function layout(mode, bay, v) {
       if (e.k === "board") { e.zin = { x: e.x - 0.55, z: e.z + 1.35, r: 1.05 }; e.zcash = { x: e.x + 1.0, z: e.z + 1.3, r: 0.8 }; e.box = [e.x - 1.1, e.z - 0.3, e.x + 1.1, e.z + 0.3]; }
       if (e.k === "goal") e.box = [e.x - 1.1, e.z - 1.1, e.x + 1.1, e.z + 1.1];
       if (e.k === "hire") { e.box = [e.x - e.w / 2, e.z - e.d / 2, e.x + e.w / 2, e.z + e.d / 2]; e.zin = { x: e.x, z: fz, r: 1.0 }; }
+      if (e.k === "ads") { e.w = 1.0; e.d = 0.7; e.box = [e.x - 0.5, e.z - 0.35, e.x + 0.5, e.z + 0.35]; e.zin = { x: e.x, z: e.z + 0.35 + 0.85, r: 0.85 }; }
       if (e.k === "pier") e.pier = { x: def.x0 * sg, z0: def.z0, z1: def.z1 };
       if (e.k === "spot") e.school = { x: def.sx * sg, z: def.sz };
       byId[team][def.id] = e.i;
@@ -71,7 +72,7 @@ export function layout(mode, bay, v) {
   if (MAP.w[1] > x0 + 0.2) fences.push([x0, fz - 0.15, MAP.w[1], fz + 0.15]);
   const div = key === "vs" ? [[-0.15, -13.6, 0.15, fz]] : [];
   const deco = []; for (const d of MAP.deco || []) for (let t = 0; t < teams; t++) { const sg = t ? -1 : 1; deco.push({ m: d.m, x: d.x * sg, z: d.z, box: [d.x * sg - d.w / 2, d.z - d.d / 2, d.x * sg + d.w / 2, d.z + d.d / 2] }); }
-  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start, hire: E.filter((e) => e.k === "hire").map((e) => e.i) };
+  const L = { key, MAP, E, byId, teams, fences, div, fz, deco, crowd: key === "vs" ? [-12, 12, 13.2, 18] : [-12.5, 12.5, 13.2, 18], start: MAP.start, hire: E.filter((e) => e.k === "hire").map((e) => e.i), ads: E.filter((e) => e.k === "ads").map((e) => e.i) };
   LAYOUTS[key] = L;
   return L;
 }
@@ -169,11 +170,13 @@ export function canHire(G, ei) {
   for (const a of e.after) if (!G.e[a].o) return false;
   return true;
 }
-const cheapK = (G) => (G.nbuy || 0) < 6 && pk(G, "e_cheap") ? 1 - 0.35 * pk(G, "e_cheap") : 1;
+// чем дальше в бухте — тем дешевле стройка и наём (своя артель, свои плотники): жизнь становится проще, а не только дороже
+function scaleK(G) { if ((G.v || 1) < 2 || G.mode === "vs") return 1; const L = layoutOf(G); let n = 0, o = 0; for (const e of L.E) { if (e.k === "upg" || e.k === "supg" || e.def.free || e.def.auto || e.k === "board" || e.k === "goal") continue; n++; if (G.e[e.i].o) o++; } return (1 - 0.4 * (n ? o / n : 0)) * ((G.nbuy || 0) < 6 ? 0.6 : 1); }     // первые шаги бухты — быстрые
+const cheapK = (G) => ((G.nbuy || 0) < 6 && pk(G, "e_cheap") ? 1 - 0.35 * pk(G, "e_cheap") : 1) * scaleK(G);
 // площадка видна: зависимости открыты, сама ещё не куплена (улучшение — пока не максимум)
 export function padVisible(G, i) {
   const L = layoutOf(G), e = L.E[i], s = G.e[i];
-  if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire") return false;
+  if (e.k === "spot" || e.k === "board" || e.k === "helper" || e.k === "hire" || e.k === "ads") return false;
   if (e.k === "upg") { if (e.def.u === "crew" || e.def.u === "crewspd") return false; if (G.upg[e.team][e.def.u] >= UPG[e.def.u].max) return false; }
   else if (e.k === "supg") { if (!G.e[e.tg].o || (G.e[e.tg].lv || 0) >= SUPG.max) return false; }
   else if (e.k === "goal" && !bigDone(G)) return false;
@@ -447,6 +450,26 @@ export function applyOp(G, a, op) {
       G.ev.push({ t: "upg", e: ei, u, lv: G.upg[team][u], team }); return true;
     }
     case "a": return e.k === "board" && acceptContract(G);     // принять заказ у доски
+    case "ad": {     // реклама у рекламной тумбы: op = ["ad", тумба, "fl" | "sign" | "cr"]
+      if (e.k !== "ads") return false;
+      const k = op[2]; if (!ADS[k] || !canAd(G, team, k)) return false;
+      const cost = adCost(G, team, k); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; const a = adOf(G, team);
+      if (k === "sign") a.sign = (a.sign || 0) + 1; else { a[k] = ADS[k].dur; a[k + "c"] = ADS[k].dur + ADS[k].cd; }
+      if (k === "cr") G.spT = 0;
+      G.ev.push({ t: "ad", k, e: ei, team, lv: a.sign || 0 }); return true;
+    }
+    case "g": {      // управляющий цехом (в артели): op = ["g", дом артели, цех]
+      if (e.k !== "hire" || !canMgr(G, op[2])) return false;
+      const cost = mgrCost(G, op[2]); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; (G.mgr || (G.mgr = {}))[op[2]] = 1;
+      G.ev.push({ t: "mgr", e: op[2], team }); return true;
+    }
+    case "s": {      // сейф с автосбором (в артели)
+      if (e.k !== "hire" || G.safe || G.mode === "vs") return false;
+      const cost = safeCost(G); if (G.money[team] < cost) return false;
+      G.money[team] -= cost; G.spent[team] += cost; G.safe = 1; G.ev.push({ t: "safe" }); return true;
+    }
     case "k": {
       const amt = s.cash || 0; if (amt <= 0) return false;
       s.cash = 0; G.money[team] += amt;
@@ -494,7 +517,7 @@ export function proximityOps(G, pi, dt, loc) {
     const s = G.e[e.i];
     if (padVisible(G, e.i) && inZone(p, e.zpad)) { const d = hyp(p.x - e.zpad.x, p.z - e.zpad.z) - 0.3; if (d < zd) { zd = d; zk = e.i * 4; zz = e.zpad; zkind = "pad"; } }
     if (!s.o) continue;
-    if (e.zin && e.k !== "spot" && e.k !== "hire" && inZone(p, e.zin)) { const d = hyp(p.x - e.zin.x, p.z - e.zin.z); if (d < zd) { zd = d; zk = e.i * 4 + 1; zz = e.zin; zkind = "in"; } }
+    if (e.zin && e.k !== "spot" && e.k !== "hire" && e.k !== "ads" && inZone(p, e.zin)) { const d = hyp(p.x - e.zin.x, p.z - e.zin.z); if (d < zd) { zd = d; zk = e.i * 4 + 1; zz = e.zin; zkind = "in"; } }
     if (e.zout && inZone(p, e.zout)) { const d = hyp(p.x - e.zout.x, p.z - e.zout.z); if (d < zd) { zd = d; zk = e.i * 4 + 2; zz = e.zout; zkind = "out"; } }
     if (e.zcash && (s.cash || 0) > 0 && inZone(p, e.zcash, 0.15 + cashReach(G))) ops.push(["k", e.i]);
   }
@@ -544,6 +567,11 @@ export function proximityOps(G, pi, dt, loc) {
   return ops;
 }
 // стоит ли игрок у дома артели (для окна найма)
+export function atAds(G, pi, loc) {
+  const L = layoutOf(G), p = loc || G.pl[pi], team = G.pl[pi].team;
+  for (const i of L.ads) { const e = L.E[i]; if ((e.team === team || G.mode !== "vs") && inZone(p, e.zin, 0.2)) return i; }
+  return -1;
+}
 export function atHire(G, pi, loc) {
   const L = layoutOf(G), p = loc || G.pl[pi], team = G.pl[pi].team;
   for (const i of L.hire) { const e = L.E[i]; if ((e.team === team || G.mode !== "vs") && inZone(p, e.zin, 0.2)) return i; }
@@ -581,8 +609,8 @@ export function step(G, dt, opt) {
   // сколько чего реально делается (штук в секунду, сглажено) — по этому считаются заказы
   G.prT = (G.prT || 0) + dt;
   if (G.prT >= 10) { G.pr = G.pr || []; G.prc = G.prc || []; for (let i = 0; i < NIT; i++) G.pr[i] = (G.pr[i] || 0) * 0.7 + ((G.prc[i] || 0) / G.prT) * 0.3; G.prc = []; G.prT = 0; }
-  if (G.mode !== "vs") { stepContract(G, dt); stepBig(G); }
-  stepEvent(G, dt);
+  if (G.mode !== "vs") { stepContract(G, dt); stepBig(G); stepMgr(G, dt); stepSafe(G, dt); stepIdle(G, dt); }
+  stepEvent(G, dt); stepAds(G, dt);
   // средний доход (для дохода, пока игры нет)
   G.rateAcc += dt;
   if (G.rateAcc >= 10) { const got = G.earned[0] - (G.rateBase || 0); G.rateBase = G.earned[0]; G.rate = G.rate ? G.rate * 0.8 + got / G.rateAcc * 0.2 : got / G.rateAcc; G.rateAcc = 0; }
@@ -620,7 +648,7 @@ function stepHelpers(G, dt) {
     if (he.def.role === "cashier") {
       if (h.tg < 0 || !(G.e[h.tg].cash > 0)) {
         let best = -1, bc = 0;
-        for (const e of L.E) if (e.team === team && e.zcash && G.e[e.i].o && (G.e[e.i].cash || 0) > bc && e.k === "stall") { bc = G.e[e.i].cash; best = e.i; }
+        for (const e of L.E) if (e.team === team && e.zcash && G.e[e.i].o && (G.e[e.i].cash || 0) > bc) { bc = G.e[e.i].cash; best = e.i; }     // все кучки: прилавки, причал, доска
         h.tg = bc >= 6 * priceMul(G) || (best >= 0 && h.tm > 6) ? best : -1;
         if (h.tg < 0) { goTo(G, h, he.zpad.x, he.zpad.z, spd, dt, "h", 0.4); continue; }
         h.tm = 0;
@@ -678,18 +706,25 @@ function stepCustomers(G, dt) {
   for (const c of G.cu) if (c.s < 4) wantN[c.w]++;
   const canMake = (it) => [0, 1].slice(0, G.teams).some((t) => chainOK(G, t, it));
   const items = [...new Set(stalls.map((e) => e.item))].filter(canMake);
+  // поток покупателей (в минуту): чем больше товаров — тем больше людей; репутация и реклама его поднимают
+  const flow = flowOf(G, items.length);
+  G.flow = flow;
+  const capIt = Math.max(8, Math.round(6 + flow / Math.max(1, items.length) / 3));
+  // не даём простаивать: прилавок с товаром и без очереди дольше 10 с — к нему скоро кто-то подходит
+  let force = -1;
+  for (const e of stalls) { const s = G.e[e.i]; if (s.sh > 0 && !s.q.length && canMake(e.item)) { s.idle = (s.idle || 0) + dt; if (s.idle > 10 && force < 0 && wantN[e.item] < 2) { force = e.item; s.idle = 0; } } else s.idle = 0; }
   G.spT = (G.spT || 0) - dt;
-  if (items.length && G.spT <= 0) {
-    const free = items.filter((it) => wantN[it] < (G.mode === "vs" ? 16 : 13));
-    G.spT = 1.15 / Math.sqrt(items.length) * (0.7 + rnd(G) * 0.6) / (evOn(G, "fair") ? 1.6 : 1);
-    if (free.length && G.cu.length < 64) {
+  if (items.length && (G.spT <= 0 || force >= 0)) {
+    const free = force >= 0 ? [force] : items.filter((it) => wantN[it] < capIt);
+    if (force < 0) G.spT = 60 / flow * (0.6 + rnd(G) * 0.8);
+    if (free.length && G.cu.length < 84) {
       let it = free[Math.floor(rnd(G) * free.length)];
       // ярмарочный день: половина новых покупателей — важные гости: берут дорогое и больше, платят втрое
       const vip = evOn(G, "fair") && rnd(G) < 0.5;
       if (vip) { const best = free.reduce((a, b) => ((ITEMS[b].price || 0) > (ITEMS[a].price || 0) ? b : a)); if (rnd(G) < 0.6) it = best; }
       const pr = ITEMS[it].price || 1, nmax = pr < 10 ? 4 : pr < 35 ? 3 : 2;
       const cx = L.crowd;
-      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + ((G.v || 1) < 2 && G.bay > 0 ? 1 : 0)) + (vip ? 1 : 0), g: 0, st: -1, pat: pat0 * (vip ? 1.5 : 1), pm: pat0 * (vip ? 1.5 : 1), vip: vip ? 1 : 0,
+      G.cu.push({ id: G.nid++, x: (rnd(G) * 2 - 1) * 13, z: force >= 0 ? L.fz + 2 + rnd(G) : ROAD_Z + 1.5 + rnd(G), dir: Math.PI, s: force >= 0 ? 1 : 0, w: it, n: 1 + Math.floor(rnd(G) * nmax + ((G.v || 1) < 2 && G.bay > 0 ? 1 : 0)) + (vip ? 1 : 0), g: 0, st: -1, pat: pat0 * (vip ? 1.5 : 1), pm: pat0 * (vip ? 1.5 : 1), vip: vip ? 1 : 0,
         tx: cx[0] + rnd(G) * (cx[1] - cx[0]), tz: cx[2] + rnd(G) * (cx[3] - cx[2]), lk: rnd(G) * 6, bt: 0, mood: 0, sk: Math.floor(rnd(G) * 6), mv: 0 });
     }
   }
@@ -704,7 +739,7 @@ function stepCustomers(G, dt) {
       for (const e of stalls) {
         if (e.item !== c.w) continue;
         const s = G.e[e.i]; if (s.q.length >= 5) continue;
-        const sc = s.q.length * 1.5 + (s.sh > 0 ? 0 : 2) + hyp(c.x - e.x, c.z - e.z) * 0.05 + rnd(G) * 0.6;
+        const sc = s.q.length * 1.5 + (s.sh > 0 ? 0 : 2) + hyp(c.x - e.x, c.z - e.z) * 0.05 + rnd(G) * 0.6 - (G.mode === "vs" ? adPow(G, e.team) : 0);
         if (sc < bs) { bs = sc; best = e.i; }
       }
       if (best >= 0 && (c.s === 1 || c.z < 19.5)) { c.s = 2; c.st = best; G.e[best].q.push(c.id); }
@@ -731,7 +766,8 @@ function stepCustomers(G, dt) {
         if (c.g >= c.n) {
           const tip = pk(G, "e_tip") && rnd(G) < 0.2 ? 0.5 * pk(G, "e_tip") : 0;
           const amt = Math.round(itemPrice(G, c.w) * c.n * (c.mood === 2 ? 0.9 : 1) * (1 + tip) * (c.vip ? 3 : 1) * 10) / 10;
-          s.cash += amt; G.earned[e.team] += amt; G.served++;
+          s.cash += amt; G.earned[e.team] += amt; G.served++; repAdd(G, e.team, c.pat > c.pm * 0.55 ? 0.0016 : 0.0006);
+          G.srev = G.srev || {}; G.srev[c.st] = (G.srev[c.st] || 0) + amt;
           G.ev.push({ t: "pay", e: c.st, amt, c: c.id });
           s.q.splice(0, 1); c.s = 4; c.mood = 1; c.tx = c.x + (c.x < 0 ? -2 : 2); c.tz = ROAD_Z + 3;
           continue;
@@ -742,7 +778,7 @@ function stepCustomers(G, dt) {
         const alt = stalls.find((o) => o.item === c.w && o.i !== c.st && G.e[o.i].sh > 0 && G.e[o.i].q.length < 5);
         if (alt) { s.q.splice(k, 1); c.st = alt.i; c.sw = 1; c.pat = c.pm * 0.6; G.e[alt.i].q.push(c.id); G.ev.push({ t: "switch", c: c.id, e: alt.i }); continue; }
       }
-      if (c.pat <= 0) { s.q.splice(k, 1); c.s = 4; c.mood = 3; c.tx = c.x; c.tz = ROAD_Z + 3; G.lost++; G.ev.push({ t: "angry", c: c.id, e: c.st }); }
+      if (c.pat <= 0) { s.q.splice(k, 1); c.s = 4; c.mood = 3; c.tx = c.x; c.tz = ROAD_Z + 3; G.lost++; G.ang = (G.ang || 0) + 1; repAdd(G, e.team, -0.02); G.ev.push({ t: "angry", c: c.id, e: c.st }); }
     } else if (c.s === 4) {
       if (c.z < L.fz + 0.4 && Math.abs(c.x - L.E[c.st >= 0 ? c.st : 0].x) < 1.2 && c.st >= 0) { goTo(G, c, L.E[c.st].x, L.fz + 1, spd * 1.1, dt, "c", 0.3); }
       else if (goTo(G, c, c.tx, c.tz, spd * 1.1, dt, "c", 0.4) || c.z > ROAD_Z + 2) G.cu.splice(ci, 1);
@@ -751,6 +787,119 @@ function stepCustomers(G, dt) {
 }
 
 function made(G, it) { (G.prc || (G.prc = []))[it] = ((G.prc || [])[it] || 0) + 1; }
+/* ---------- поток покупателей: товары, репутация, реклама ----------
+   G.rep[team] 0..1 (0,5 — обычная): растёт от обслуженных (быстро — больше), падает от ушедших злыми.
+   G.ads[team] = { sign: уровень вывески, fl: сколько ещё идут листовки, cr: сколько ещё кричит глашатай, flc/crc: перезарядка } */
+export const ADS = {
+  fl: { n: "Листовки", d: "40 с покупателей вдвое больше", dur: 40, cd: 70, k: 12 },
+  sign: { n: "Вывеска и зазывала", d: "Навсегда +15% покупателей за уровень", max: 5, k: 45, mult: 1.9 },
+  cr: { n: "Глашатай на площади", d: "Сразу толпа и 30 с втрое больше людей", dur: 30, cd: 160, k: 70 },
+};
+const adOf = (G, t) => { G.ads = G.ads || [{}, {}]; return G.ads[t] || (G.ads[t] = {}); };
+export function repOf(G, t) { const r = G.rep && G.rep[t || 0]; return r == null ? 0.5 : r; }
+function repAdd(G, t, v) { G.rep = G.rep || [0.5, 0.5]; G.rep[t] = Math.max(0, Math.min(1, repOf(G, t) + v)); }
+// во сколько раз реклама поднимает поток у команды
+export function adMul(G, t) { const a = adOf(G, t); return Math.min(4, (1 + 0.15 * (a.sign || 0)) * ((a.fl || 0) > 0 ? 2 : 1) * ((a.cr || 0) > 0 ? 3 : 1)); }
+function adPow(G, t) { const a = adOf(G, t); return 0.3 * (a.sign || 0) + ((a.fl || 0) > 0 ? 1 : 0) + ((a.cr || 0) > 0 ? 2 : 0); }
+export function flowOf(G, nItems) {
+  if (!nItems) return 0;
+  const teams = G.mode === "vs" ? [0, 1] : [0];
+  let m = 0; for (const t of teams) m += adMul(G, t) * (0.7 + 0.6 * repOf(G, t)); m /= teams.length;
+  return (16 + 18 * nItems) * Math.min(4.5, m * (evOn(G, "fair") ? 1.6 : 1)) * (G.mode === "vs" ? 1.4 : 1);
+}
+// цена рекламы — от цены самого дорогого товара, который сейчас продаётся (чтобы в каждой бухте была по карману)
+export function adCost(G, team, k) {
+  const L = layoutOf(G); let unit = 2;
+  for (const e of L.E) if (e.k === "stall" && G.e[e.i].o && (G.mode !== "vs" || e.team === team)) unit = Math.max(unit, itemPrice(G, e.item));
+  const A = ADS[k]; return Math.round(unit * A.k * (k === "sign" ? Math.pow(A.mult, adOf(G, team).sign || 0) : 1) / 5) * 5;
+}
+export function canAd(G, team, k) { const a = adOf(G, team); if (k === "sign") return (a.sign || 0) < ADS.sign.max; return !((a[k] || 0) > 0) && !((a[k + "c"] || 0) > 0); }
+function stepAds(G, dt) {
+  for (let t = 0; t < G.teams; t++) { const a = adOf(G, t); for (const k of ["fl", "cr", "flc", "crc"]) if (a[k] > 0) a[k] = Math.max(0, a[k] - dt); }
+  G.ang = Math.max(0, (G.ang || 0) - dt / 30);     // «злые за последнее время»
+}
+// почему людей мало (для подсказки в шапке)
+export function flowWhy(G, team) {
+  if ((G.ang || 0) >= 2) return "angry";
+  const L = layoutOf(G);
+  for (const e of L.E) if (e.k === "stall" && G.e[e.i].o && (G.mode !== "vs" || e.team === team) && G.e[e.i].sh <= 0 && G.e[e.i].q.length >= 2) return "empty";
+  if (!(adOf(G, team).sign > 0) && G.t > 240) return "ads";
+  if (repOf(G, team) < 0.35) return "rep";
+  return "";
+}
+
+/* ---------- автоматизация: цех «работает сам», если всё, что ему нужно, подносят помощники, и готовое уносят ---------- */
+function feeders(G, e, it) { const L = layoutOf(G); return L.E.some((h) => h.k === "helper" && h.team === e.team && G.e[h.i].o && h.to && h.to.includes(e.i) && prodItem(L.E[h.from]) === it); }
+function prodItem(e) { return e.k === "spot" || e.k === "gen" ? e.item : e.k === "proc" ? e.rec.out : -1; }
+export function stationAuto(G, e) {
+  const L = layoutOf(G);
+  if (!G.e[e.i].o || !(e.k === "proc" || e.k === "gen")) return false;
+  const outOk = L.E.some((h) => h.k === "helper" && h.team === e.team && G.e[h.i].o && h.from === e.i) || mgrOn(G, e.i);
+  if (!outOk) return false;
+  if (e.k === "proc") for (const it of e.rec.in) if (!feeders(G, e, it) && !(mgrOn(G, e.i) && mgrSource(G, e, it) >= 0)) return false;
+  return true;
+}
+// цепочки: каждый прилавок и причал. Цепочка «сама», если товар на неё носит помощник и весь путь до моря — автоматический
+export function autoInfo(G, team) {
+  const L = layoutOf(G); team = team || 0; let n = 0, ok = 0; const st = [];
+  const auto = (it, depth) => {
+    if (depth > 6) return false;
+    for (const e of L.E) {
+      if (e.team !== team || !G.e[e.i].o) continue;
+      if (e.k === "spot" && e.item === it) return true;
+      if ((e.k === "gen" || e.k === "proc") && prodItem(e) === it && stationAuto(G, e) && (e.k === "gen" || e.rec.in.every((x) => auto(x, depth + 1)))) return true;
+    }
+    return false;
+  };
+  for (const e of L.E) {
+    if (e.team !== team || !G.e[e.i].o || !(e.k === "stall" || e.k === "dock")) continue;
+    const its = e.k === "stall" ? [e.item] : e.acc.filter((it) => chainOK(G, team, it));
+    for (const it of its) {
+      n++;
+      const fed = L.E.some((h) => h.k === "helper" && h.team === team && G.e[h.i].o && h.to && h.to.includes(e.i) && prodItem(L.E[h.from]) === it);
+      if (fed && auto(it, 0)) { ok++; st.push(e.i + ":" + it); }
+    }
+  }
+  return { n, ok, st };
+}
+// управляющий цехом: сам подтягивает сырьё с выхода соседнего цеха (тележкой) — помощник на подноске не нужен
+export const mgrOn = (G, ei) => !!(G.mgr && G.mgr[ei]);
+function mgrSource(G, e, it) { const L = layoutOf(G); for (const o of L.E) if (o.team === e.team && G.e[o.i].o && (o.k === "proc" || o.k === "gen") && prodItem(o) === it) return o.i; return -1; }
+export function mgrCost(G, ei) { const e = layoutOf(G).E[ei]; return Math.round((e.def.cost || 100) * 3 * costMul(G) / 5) * 5; }
+export function canMgr(G, ei) { const e = layoutOf(G).E[ei]; return e && e.k === "proc" && G.e[ei].o && !mgrOn(G, ei); }
+function stepMgr(G, dt) {
+  if (!G.mgr) return;
+  const L = layoutOf(G);
+  for (const k in G.mgr) {
+    const e = L.E[+k], s = G.e[e.i]; s.mt = (s.mt || 0) + dt;
+    if (s.mt < 0.5) continue; s.mt = 0;
+    for (let j = 0; j < e.rec.in.length; j++) {
+      const it = e.rec.in[j]; if (s.ib[j] >= 12) continue;
+      const src = mgrSource(G, e, it); if (src < 0 || G.e[src].ob <= 0) continue;
+      G.e[src].ob--; s.ib[j]++; G.ev.push({ t: "cart", from: src, to: e.i, it });
+    }
+  }
+}
+// доход без тебя: выручка цепочек, которые работают сами (сглажено, в минуту); сейф или кассир её собирают
+function stepIdle(G, dt) {
+  G.idT = (G.idT || 0) + dt; if (G.idT < 15) return;
+  const ai = autoInfo(G, 0), set = new Set(ai.st.map((s) => +s.split(":")[0])); let sum = 0;
+  for (const k in (G.srev || {})) if (set.has(+k)) sum += G.srev[k];
+  const L = layoutOf(G), collects = G.safe || G.hp.some((h) => L.E[h.e].def.role === "cashier");
+  const v = sum / G.idT * 60 * (collects ? 1 : 0.5);
+  G.idle = G.idle ? G.idle * 0.6 + v * 0.4 : v; G.srev = {}; G.idT = 0;
+  // событие: цепочка стала автоматической
+  const prev = G.autoN || 0; if (ai.ok > prev) G.ev.push({ t: "auto", n: ai.ok, of: ai.n }); G.autoN = ai.ok;
+}
+// сейф: вся выручка с прилавков, причала и доски сама уходит в кошелёк
+function stepSafe(G, dt) {
+  if (!G.safe) return;
+  G.sft = (G.sft || 0) + dt; if (G.sft < 3) return; G.sft = 0;
+  const L = layoutOf(G);
+  for (const e of L.E) { if (!e.zcash || !G.e[e.i].o || !(G.e[e.i].cash > 0) || (G.mode === "vs" && e.team !== 0)) continue; const amt = G.e[e.i].cash; G.e[e.i].cash = 0; G.money[e.team] += amt; G.ev.push({ t: "cash", a: "safe", e: e.i, amt }); }
+}
+export function safeCost(G) { const L = layoutOf(G), g = L.E.find((e) => e.k === "goal"); return Math.round(((g && g.def.cost) || 3000) * 0.18 * costMul(G) / 5) * 5; }
+
 /* ---------- заказы (вместе / один) ---------- */
 // заказ на доске: сначала предложение (принять — постоять у доски, иначе само примется через OFFER с),
 // потом срок. Объём и срок — от того, сколько цепочка реально даёт сейчас, с большим запасом.
@@ -880,7 +1029,8 @@ export function chainRate(G, team, it, depth) {
 /* ---------- доход, пока игры не было ---------- */
 export function offline(G, sec) {
   const helpers = G.hp.length; if (!helpers || !(G.rate > 0) || G.mode === "vs") return 0;
-  const k = Math.min(0.35, 0.06 + helpers * 0.02) * (1 + 0.25 * mt(G, "m_off"));
+  const ai = (G.v || 1) >= 2 ? autoInfo(G, 0) : { n: 0, ok: 0 };
+  const k = Math.min(0.6, 0.06 + helpers * 0.02 + (ai.n ? 0.35 * ai.ok / ai.n : 0) + (G.safe ? 0.08 : 0)) * (1 + 0.25 * mt(G, "m_off"));
   return Math.floor(G.rate * k * Math.min(sec, 2 * 3600));
 }
 

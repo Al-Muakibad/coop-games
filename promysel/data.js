@@ -41,7 +41,7 @@ export const NIT = ITEMS.length;
 export const PLAYER = { speed: 4.4, cap: 6, catchT: 0.5, xferT: 0.075 };
 export const HELPER = { speed: 3.4, cap: 6, catchT: 0.75, xferT: 0.11 };
 export const SCHOOL = { max: 40, regen: 0.28 };       // рыб в косяке, сек на одну новую
-export const CUSTOMER = { patience: 46, speed: 2.4, buyT: 0.28 };
+export const CUSTOMER = { patience: 46, speed: 2.9, buyT: 0.16 };
 export const PAD_R = 1.05;           // радиус площадки-покупки
 
 // улучшения снаряжения (у каждой команды свои уровни). v(lv) — значение на уровне lv (0 — без улучшения)
@@ -120,6 +120,7 @@ export const LEGACY = {
     { id: "runner8", k: "helper", n: "Грузчик", role: "runner", from: "icehouse", to: ["dock"], x: 11.2, z: 3.9, cost: 14000, after: ["runner7"] },
     { id: "light", k: "goal", n: "Маяк", x: 11.4, z: -12.4, pad: [13.0, -4.6], cost: 30000, after: ["runner8"] },
     { id: "artel", k: "hire", n: "Артель", x: -12.4, z: 2.5, w: 2.2, d: 1.4, free: 1 },
+    { id: "ads", k: "ads", n: "Реклама", x: -8.15, z: 9.3, free: 1 },
   ],
 };
 
@@ -157,6 +158,7 @@ export const VS = {
     { id: "cashier", k: "helper", n: "Кассир", role: "cashier", cost: 2600, after: ["runner5"] },
     { id: "light", k: "goal", n: "Маяк", x: -2.0, z: -12.0, pad: [-1.3, -8.0], cost: 5500, after: ["runner5"] },
     { id: "artel", k: "hire", n: "Артель", x: -2.2, z: 0.4, w: 1.9, d: 1.2, free: 1 },
+    { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 
@@ -170,11 +172,11 @@ const GEAR = (z, xs, after) => [
 ];
 // Бухта 1 — Тихая бухта: сельдь, филе, засолка, коптильня с дровами
 const BAY1 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -4.4], cm: 1, ck: 0.85,
+  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -4.4], cm: 1, ck: 1.2,
   shore: { base: -7.2, capes: [[9.2, 10.6, -13.2, 1]] }, event: "storm",
   // большой заказ (середина бухты) и финальная поставка перед маяком: три ступени, сдаются у доски заказов
   big: [{ n: "Большой заказ судна", after: "runner3", st: [["smoked", 10], ["salted", 14], ["fillet", 24]], rw: 900 },
-    { n: "Финальная поставка", after: "runner_soup", st: [["soup", 14], ["smoked", 18], ["salted", 24]], rw: 1600 }],
+    { n: "Финальная поставка", after: "runner_soup", st: [["soup", 8], ["smoked", 11], ["salted", 14]], rw: 1600 }],
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -6.0, z: 3.05, w: 3.4, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель: сельдь", item: "herring", x: -6.6, z: -9.7, r: 2.8, sx: -6.6, sz: -12, free: 1 },
@@ -213,15 +215,16 @@ const BAY1 = {
     { id: "fisher_soup", k: "helper", n: "Рыбак для ухи", role: "fisher", from: "spot1", to: ["kettle"], cost: 1650, after: ["kettle"] },
     { id: "woodman2", k: "helper", n: "Истопник", role: "runner", from: "wood", to: ["kettle"], cost: 1750, after: ["kettle"] },
     { id: "runner_soup", k: "helper", n: "Разносчик ухи", role: "runner", from: "kettle", to: ["stall_soup"], cost: 1900, after: ["fisher_soup"] },
-    { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 2600, after: ["runner_soup", "cashier"] },
+    { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 3200, after: ["runner_soup", "cashier"] },
+    { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 // Бухта 2 — Ледяной фьорд: лосось с отмели и с мостков, стейки, икра, консервы на судно
 const BAY2 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-4.4, -4.2], cm: 4.4, ck: 1.9,
+  w: [-14.5, 14.5], d: [-18, 21.5], start: [-4.4, -4.2], cm: 4.4, ck: 2.8,
   shore: { base: -6.6, capes: [[-10.6, -9.2, -13.2, -1], [9.2, 10.6, -13.2, 1]] }, event: "run",
   big: [{ n: "Большой заказ судна", after: "fisher3", st: [["steak", 16], ["caviar", 10], ["salmon", 30]], rw: 2600 },
-    { n: "Финальная поставка", after: "loader2", st: [["caviar", 18], ["steak", 24], ["salmon", 40]], rw: 4500 }],
+    { n: "Финальная поставка", after: "loader2", st: [["caviar", 11], ["steak", 14], ["salmon", 24]], rw: 4500 }],
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -6.9, z: 3.75, w: 3.4, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель: лосось", item: "salmon", x: -5.4, z: -9.2, r: 2.6, sx: -5.4, sz: -11.6, free: 1 },
@@ -255,16 +258,17 @@ const BAY2 = {
     { id: "packer", k: "helper", n: "Подносчик икры", role: "runner", from: "caviar", to: ["pack"], cost: 3200, after: ["pack"] },
     { id: "packer2", k: "helper", n: "Подносчик банок", role: "runner", from: "cannery", to: ["pack"], cost: 3400, after: ["pack"] },
     { id: "loader2", k: "helper", n: "Грузчик наборов", role: "runner", from: "pack", to: ["dock"], cost: 3700, after: ["packer"] },
-    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 12000, after: ["loader2"] },
+    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 26000, after: ["loader2"] },
+    { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 // Бухта 3 — Крабовый мыс: краб у камней, варочная, мидийная ферма, лёд и ящики на судно
 const BAY3 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-5.0, -4.6], cm: 11, ck: 1.7,
+  w: [-14.5, 14.5], d: [-18, 21.5], start: [-5.0, -4.6], cm: 11, ck: 2.8,
   shore: { base: -7.4, capes: [[-10.6, -9.2, -13.2, -1], [3.4, 5.0, -5.0, 1]] }, event: "tide",
   traps: [[-11.2, -7.3], [-4.0, -7.0], [1.8, -6.9]],     // на отливе здесь находят ловушки с крабами
   big: [{ n: "Большой заказ судна", after: "musselman", st: [["crabc", 16], ["mussel", 16], ["crab", 30]], rw: 7000 },
-    { n: "Финальная поставка", after: "runner_plat", st: [["platter", 12], ["crabc", 24], ["mussel", 24]], rw: 12000 }],
+    { n: "Финальная поставка", after: "runner_plat", st: [["platter", 8], ["crabc", 14], ["mussel", 14]], rw: 12000 }],
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -6.5, z: 3.75, w: 3.4, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Камни: краб", item: "crab", x: -5.8, z: -9.8, r: 2.6, sx: -5.8, sz: -12.2, free: 1 },
@@ -297,15 +301,16 @@ const BAY3 = {
     { id: "runner_bar", k: "helper", n: "Подносчик краба", role: "runner", from: "boil", to: ["bar"], cost: 6400, after: ["bar"] },
     { id: "mussel2", k: "helper", n: "Подносчик мидий", role: "runner", from: "farm", to: ["bar"], cost: 6800, after: ["bar"] },
     { id: "runner_plat", k: "helper", n: "Разносчик ассорти", role: "runner", from: "bar", to: ["stall_platter"], cost: 7300, after: ["runner_bar"] },
-    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 28000, after: ["runner_plat", "mussel2"] },
+    { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 52000, after: ["runner_plat", "mussel2"] },
+    { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
   ],
 };
 // Бухта 4 — Ярмарочная гавань: треска, сушильня, морская капуста, пекарня рыбников, жиротопня и судно в гавани
 const BAY4 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -5.6], cm: 22, ck: 1.65,
+  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -5.6], cm: 22, ck: 2.4,
   shore: { base: -8.4, capes: [[3.4, 5.0, -4.8, 2], [9.2, 10.6, -13.2, 1]] }, event: "fair",
   big: [{ n: "Большой заказ судна", after: "planter", st: [["stockfish", 16], ["seaweed", 16], ["cod", 30]], rw: 22000 },
-    { n: "Финальная поставка", after: "runner_liver", st: [["pie", 12], ["liver", 14], ["stockfish", 24]], rw: 40000 }],
+    { n: "Финальная поставка", after: "runner_liver", st: [["pie", 8], ["liver", 8], ["stockfish", 14]], rw: 40000 }],
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -7.5, z: 3.95, w: 3.4, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Банка: треска", item: "cod", x: -8.0, z: -11.0, r: 2.6, sx: -8.0, sz: -13.4, free: 1 },
@@ -340,7 +345,8 @@ const BAY4 = {
     { id: "su_liver", k: "supg", of: "liverhouse", x: 9.2, z: 2.0, after: ["liverhouse"] },
     { id: "fisher3", k: "helper", n: "Рыбак цеха печени", role: "fisher", from: "spot1", to: ["liverhouse"], cost: 18000, after: ["liverhouse"] },
     { id: "runner_liver", k: "helper", n: "Разносчик печени", role: "runner", from: "liverhouse", to: ["stall_liver"], cost: 19500, after: ["liverhouse"] },
-    { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 45000, after: ["runner_liver", "fisher3"] },
+    { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 62000, after: ["runner_liver", "fisher3"] },
+    { id: "ads", k: "ads", n: "Реклама", x: -8.0, z: 9.3, free: 1 },
   ],
 };
 export const BAYMAPS = [BAY1, BAY2, BAY3, BAY4];

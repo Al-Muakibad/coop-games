@@ -246,6 +246,7 @@ export class World {
       if (e.k === "stall") { geo = BUILD.stall(STALL_COL[ITEMS[e.item].id] || "#4f8fc0"); }
       if (e.k === "board") geo = BUILD.board();
       if (e.k === "hire") geo = BUILD.artel(e.w, e.d);
+      if (e.k === "ads") geo = BUILD.adstand();
       if (e.k === "goal") geo = BUILD.lighthouse();
       if (e.k === "dock") { geo = BUILD.dock(); if (e.sg < 0) ry = Math.PI; }
       if (e.k === "pier") { const len = e.pier.z0 - e.pier.z1 + 0.8; geo = BUILD.pier(len); grp.position.set(e.pier.x, 0, (e.pier.z0 + e.pier.z1) / 2); }
