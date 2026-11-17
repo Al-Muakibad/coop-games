@@ -64,12 +64,14 @@ export function createT2(app) {
       const l = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), lm); l.position.set(-1.2 + i * 1.2, 1.85, 0.4); g.add(l); lamps.push(lm);
     }
     const light = new THREE.PointLight("#ff3a5a", 0, 7, 1.5); light.position.set(0, 2.2, 1.6); g.add(light);
-    const sign = label(def.n, { fs: 40, size: 0.5, bg: "#2a0a14", col: "#ffd34d", depth: false, stroke: "#ff6a8a" }); sign.position.set(0, 3.9, -0.2); g.add(sign);
+    const who = def.id === "port" ? "для ⚓ моряков" : def.id === "bulvar" ? "для 🎩 богачей и 👑" : def.id === "sad" ? "для 🎓 студентов" : "для всех остальных";
+    const sign = label(def.n + "\n" + who, { fs: 36, size: 0.34, bg: "#2a0a14", col: "#ffd34d", depth: false, stroke: "#ff6a8a" }); sign.position.set(0, 3.0, 1.6); g.add(sign);
     const sel = ring(2.5, "#ffd34d", { op: 0.7 }); sel.position.set(0, 0.04, 1.6); sel.scale.set(1, 1, 0.6); sel.visible = false; g.add(sel);
-    const lock = label("🔒 " + def.n, { fs: 40, size: 0.5, bg: "rgba(0,0,0,.7)" }); lock.position.set(0, 1.8, 1.2); g.add(lock);
+    const lock = label("🔒 " + def.n + "\n" + who + "\nоткрой в «Найме»", { fs: 34, size: 0.32, bg: "rgba(0,0,0,.78)" }); lock.position.set(0, 2.2, 1.6); g.add(lock);
     const closedL = label("🌑 фонари погашены", { fs: 34, size: 0.4, bg: "rgba(10,10,30,.85)" }); closedL.position.set(0, 2.7, 1.4); closedL.visible = false; g.add(closedL);
     const qL = label("", { fs: 34, size: 0.36 }); qL.visible = false; g.add(qL);
-    alleys[def.id] = { def, g, P, doors, lamps, light, sign, sel, lock, closedL, open: S.alleys.includes(def.id), closed: 0, queue: [], slots: [null, null, null], host: null, hostT: 0, earned: 0, police: null };
+    const warnL = label("", { fs: 34, size: 0.4 }); warnL.position.set(0, 2.4, 3.4); warnL.visible = false; g.add(warnL);
+    alleys[def.id] = { warnL, warnKey: "", def, g, P, doors, lamps, light, sign, sel, lock, closedL, open: S.alleys.includes(def.id), closed: 0, queue: [], slots: [null, null, null], host: null, hostT: 0, earned: 0, police: null };
   }
   // мировые координаты точки в системе переулка
   function aw(a, lx, lz) { const c = Math.cos(a.P.ry), s = Math.sin(a.P.ry); return { x: a.P.x + lx * c + lz * s, z: a.P.z - lx * s + lz * c }; }
@@ -123,7 +125,7 @@ export function createT2(app) {
   refreshAlleys();
 
   /* ---------- ночь ---------- */
-  const night = { t: 0, on: false, earned: 0, served: 0, lost: 0, perfect: 0, fines: 0, police: false, def: T2_NIGHTS[Math.min(S.night, T2_NIGHTS.length - 1)], spawnAcc: 0, vipDone: false };
+  const night = { by: {}, why: {}, where: {}, t: 0, on: false, earned: 0, served: 0, lost: 0, perfect: 0, fines: 0, police: false, def: T2_NIGHTS[Math.min(S.night, T2_NIGHTS.length - 1)], spawnAcc: 0, vipDone: false };
   const clients = [];
   function rate(type, f) {
     let r = 0.12;
@@ -141,7 +143,11 @@ export function createT2(app) {
     chooseAlley(c);
     clients.push(c);
   }
+  function homeOf(type) { return type === "sailor" ? "port" : type === "student" ? "sad" : "bulvar"; }
+  function canTake(a, exclude) { return a && a.open && a.closed <= 0 && a !== exclude && a.queue.length < (a.host ? 6 : 3); }
   function chooseAlley(c, exclude) {
+    const pref = [alleys[homeOf(c.type)], alleys.fonar].find((a) => canTake(a, exclude));
+    if (pref) { c.alley = pref; pref.queue.push(c); c.st = "walk"; c.pat = pref.host ? 20 : 15; return; }
     let best = null, bs = 0;
     for (const a of Object.values(alleys)) {
       if (!a.open || a.closed > 0 || a === exclude) continue;
@@ -154,9 +160,10 @@ export function createT2(app) {
       const s = (1 / (3 + d)) * charm * (has ? 1.8 : 1) * (a.def.near === c.type ? 1.4 : 1) / (1 + a.queue.length * 0.25);
       if (s > bs) { bs = s; best = a; }
     }
-    if (!best) { c.st = "leave"; night.lost++; mood(c, "😤"); return; }
+    if (!best) { c.st = "leave"; lostOne(c, "full"); mood(c, "😤"); return; }
     c.alley = best; best.queue.push(c); c.st = "walk"; c.pat = best.host ? 20 : 15;
   }
+  function lostOne(c, why, a) { night.lost++; const b = (night.by[c.type] ||= { s: 0, l: 0 }); b.l++; night.why[why] = (night.why[why] || 0) + 1; if (a) (night.where[a.def.id] ||= {})[c.type] = ((night.where[a.def.id] || {})[c.type] || 0) + 1; }
   function mood(c, e) { c.p.root.remove(c.bub); const h = label(e, { fs: 44, size: 0.36, bg: false }); h.position.y = 2.2; c.p.root.add(h); c.bub = h; }
 
   /* ---------- патруль ---------- */
@@ -229,8 +236,17 @@ export function createT2(app) {
     selGirl = null; app.t2sel(null);
   }
 
+  let drag = null, dragPos = null, tutor = null;
+  const dragRing = ring(0.6, "#ffd34d"); dragRing.visible = false; scene.add(dragRing);
+  const tA = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.7, 4), new THREE.MeshBasicMaterial({ color: "#ffd34d" })); tA.rotation.x = Math.PI; scene.add(tA);
+  const tB = tA.clone(); scene.add(tB);
+  function screenOf(p) { const v = new THREE.Vector3(p.x, 0, p.z).project(cam); return [(v.x + 1) / 2 * window.innerWidth, (1 - v.y) / 2 * window.innerHeight]; }
   /* ---------- шаг ---------- */
   function update(dt) {
+    dragRing.visible = !!dragPos; if (dragPos) dragRing.position.set(dragPos.x, 0.06, dragPos.z);
+    const bob = Math.sin(performance.now() / 200) * 0.25;
+    tA.visible = tB.visible = !!(tutor && tutor.g);
+    if (tutor && tutor.g) { tA.position.set(tutor.g.x, 3 + bob, tutor.g.z); const c = aw(tutor.a, 0, 1.6); tB.position.set(c.x, 3.6 + bob, c.z); }
     if (night.on) {
       night.t += dt;
       const f = night.t / NIGHT_LEN;
@@ -257,6 +273,10 @@ export function createT2(app) {
   function stepAlley(a, dt) {
     if (a.closed > 0) a.closed -= dt;
     a.closedL.visible = a.closed > 0;
+    let need = "";
+    if (a.open && a.closed <= 0) { const types = new Set(a.queue.map((c) => CLIENTS[c.type].likes)); for (const t of types) if (!a.slots.some((g) => g && g.def.t === t)) need += TYPES[t].ic; }
+    const wk = need ? "❗ нужна " + need : a.queue.length >= (a.host ? 5 : 3) ? "❗ очередь полна" : "";
+    if (wk !== a.warnKey) { a.warnKey = wk; a.g.remove(a.warnL); if (wk) { a.warnL = label(wk, { fs: 32, size: 0.3, bg: "#8a1020" }); a.warnL.position.set(0, 0.9, 3.7); a.g.add(a.warnL); } }
     const busy = a.slots.filter((g) => g && g.st === "busy").length;
     a.light.intensity = a.open && a.closed <= 0 ? 1 + busy * 1.6 : 0;
     a.lamps.forEach((m, i) => m.color.set(a.slots[i] && a.slots[i].st === "busy" ? "#ff2a3a" : a.slots[i] ? "#6a1a1a" : "#2a1010"));
@@ -298,7 +318,7 @@ export function createT2(app) {
         const c = g.cl; c.p.root.visible = true;
         const cut = a.host ? a.host.def.cut : 0;
         const val = Math.round(PAY[c.type] * (g.match ? 1.6 : 1) * (1 - cut));
-        night.earned += val; night.served++; if (g.match) { night.perfect++; S.perfect = (S.perfect || 0) + 1; if (S.perfect === 20) app.unlockScene("SC18-T2-MATCH", "20 идеальных пар — сцена в альбоме"); }
+        night.earned += val; night.served++; (night.by[c.type] ||= { s: 0, l: 0 }).s++; if (g.match) { night.perfect++; S.perfect = (S.perfect || 0) + 1; if (S.perfect === 20) app.unlockScene("SC18-T2-MATCH", "20 идеальных пар — сцена в альбоме"); }
         app.addMoney(val); floatText((g.match ? "❤️+" : "+") + val, g.x, g.z, g.match ? "#ff8fc7" : "#7ed957");
         if (c.type === "vip" && !night.vipDone) { night.vipDone = true; app.unlockScene("SC18-T2-VIP", "Особый гость доволен — сцена в альбоме"); }
         c.st = "leave"; mood(c, g.match ? "😍" : "🙂"); g.cl = null;
@@ -314,7 +334,7 @@ export function createT2(app) {
     if (c.st === "queue" && c.alley) {
       c.pat -= dt;
       if (c.pat < 5) c.bub.material.opacity = 0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 140));
-      if (c.pat <= 0) { c.alley.queue.splice(c.alley.queue.indexOf(c), 1); c.st = "leave"; night.lost++; mood(c, "😤"); }
+      if (c.pat <= 0) { const a = c.alley; a.queue.splice(a.queue.indexOf(c), 1); c.st = "leave"; lostOne(c, a.slots.some((g) => g && g.def.t === CLIENTS[c.type].likes) ? "slow" : "type", a); mood(c, "😤"); }
     }
     const dx = tx - c.x, dz = tz - c.z, d = Math.hypot(dx, dz);
     if (d > 0.06) { const st = Math.min(d, c.sp * dt); c.x += (dx / d) * st; c.z += (dz / d) * st; avoid(c); c.p.root.rotation.y = angLerp(c.p.root.rotation.y, Math.atan2(dx, dz), dt * 10); animPerson(c.p, dt, 0.7, "idle"); }
@@ -327,6 +347,7 @@ export function createT2(app) {
   function avoid(o) { const dx = o.x - FOUNT.x, dz = o.z - FOUNT.z, d = Math.hypot(dx, dz); if (d < FOUNT.r + 0.3 && d > 0.001) { o.x = FOUNT.x + (dx / d) * (FOUNT.r + 0.3); o.z = FOUNT.z + (dz / d) * (FOUNT.r + 0.3); } }
 
   function startNight() {
+    night.by = {}; night.why = {}; night.where = {};
     night.on = true; night.t = 0; night.earned = 0; night.served = 0; night.lost = 0; night.perfect = 0; night.fines = 0; night.police = false; night.vipDone = false;
     for (const k of Object.keys(night)) if (k.startsWith("acc_")) night[k] = 0;
     night.def = T2_NIGHTS[Math.min(S.night, T2_NIGHTS.length - 1)];
@@ -358,6 +379,12 @@ export function createT2(app) {
     scene, cam, update, tap,
     render() { renderer.render(scene, cam); },
     resize() { resize(cam); },
+    dragStart(px, py) { const w = groundAt(px, py); let gb = null, gd = 1.0; for (const g of girls) { if (g.st === "busy" || g.st === "taken") continue; const d = Math.hypot(g.x - w.x, g.z - w.z); if (d < gd) { gd = d; gb = g; } } if (!gb) return false; drag = gb; selGirl = gb; app.t2sel(gb); app.haptic("light"); return true; },
+    dragMove(px, py) { if (!drag) return; const w = groundAt(px, py); dragPos = w; },
+    dragEnd(px, py) { const g = drag; drag = null; dragPos = null; if (!g) return; const w = groundAt(px, py); let ab = null, ad = 3.2; for (const a of Object.values(alleys)) { const c = aw(a, 0, 1.0); const d = Math.hypot(c.x - w.x, c.z - w.z); if (d < ad) { ad = d; ab = a; } } if (!ab || ab.def.id === g.alley) return; selGirl = g; tap(...screenOf(aw(ab, 0, 1.0))); },
+    plan() { return Object.values(alleys).map((a) => ({ id: a.def.id, n: a.def.n, open: a.open, host: a.host && a.host.def.n, girls: a.slots.filter(Boolean).map((g) => g.def), free: a.slots.filter((x) => !x).length })); },
+    lastNight: () => night,
+    pointAt(girlId, alleyId) { tutor = girlId ? { g: girls.find((g) => g.def.id === girlId), a: alleys[alleyId] } : null; },
     startNight, get nightOn() { return night.on; }, nightDef: () => T2_NIGHTS[Math.min(S.night, T2_NIGHTS.length - 1)],
     hire(id, alleyId) { if (!S.girls.includes(id)) { S.girls.push(id); const al = alleyId || S.alleys.find((x) => alleys[x].slots.includes(null)); if (al) addGirl(id, al); else app.toast("Все места заняты — открой новый переулок"); } },
     openAlley(id) { if (!S.alleys.includes(id)) S.alleys.push(id); refreshAlleys(); },

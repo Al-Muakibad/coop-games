@@ -59,14 +59,23 @@
   #t2bar .ln b { color: var(--cream); }
   #t2tl { position: relative; height: 26px; margin-top: 6px; background: linear-gradient(90deg, #2a1a4a, #3a1a3a 60%, #4a2a3a); border-radius: 8px; overflow: hidden; }
   #t2tl .now { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--gold); box-shadow: 0 0 8px var(--gold); }
-  #t2tl .w { position: absolute; top: 3px; font-size: 15px; transform: translateX(-50%); }
+  #t2tl .w { position: absolute; top: 1px; font-size: 18px; transform: translateX(-50%); }
   #t2tl .hrs { position: absolute; bottom: 1px; font-size: 9px; color: rgba(255,255,255,.4); transform: translateX(-50%); }
+  .tlcap { font-size: 10.5px; color: var(--muted); font-weight: 700; margin-top: 3px; }
   #t2goal { height: 6px; border-radius: 4px; background: rgba(255,255,255,.12); margin-top: 6px; overflow: hidden; } #t2goal i { display: block; height: 100%; background: var(--cash); width: 0; }
   #t2sel { left: 50%; transform: translateX(-50%); bottom: calc(26px + var(--sab)); display: none; background: rgba(255, 211, 77, .96); color: #2a1406; padding: 10px 16px; border-radius: 16px; font-weight: 900; font-size: 14px; text-align: center; max-width: 92%; }
-  #t2pre { left: 10px; right: 10px; bottom: calc(14px + var(--sab)); display: none; background: rgba(20,8,24,.94); border: 1px solid var(--line); border-radius: 20px; padding: 14px; pointer-events: auto; }
+  #t2pre { left: 10px; right: 10px; bottom: calc(14px + var(--sab)); display: none; max-height: 58vh; overflow: auto; touch-action: pan-y; background: rgba(20,8,24,.94); border: 1px solid var(--line); border-radius: 20px; padding: 14px; pointer-events: auto; }
   #t2pre h3 { margin: 0 0 6px; font-family: "Playfair Display", serif; font-size: 20px; color: var(--gold); }
   #t2pre .fc { font-size: 13.5px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
   #t2pre .fc b { color: var(--cream); }
+  .plan { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .plan .pr { display: grid; grid-template-columns: 42px 1.1fr 1fr 1fr; gap: 6px; align-items: center; background: rgba(255,255,255,.06); border-radius: 10px; padding: 6px 8px; font-size: 12.5px; font-weight: 800; border-left: 4px solid #7ed957; }
+  .plan .pr.bad { border-left-color: #ff5a4a; background: rgba(255,90,74,.12); } .plan .pr small { display: block; font-size: 10.5px; color: var(--muted); font-weight: 700; }
+  .plan .t { color: var(--gold); } .plan .s { text-align: right; } .plan .pr.bad .s { color: #ff8a7a; }
+  .adv { background: rgba(255,211,77,.14); border: 1px solid rgba(255,211,77,.5); border-radius: 12px; padding: 8px 10px; font-size: 13.5px; font-weight: 800; margin-bottom: 10px; } .adv.ok { background: rgba(126,217,87,.12); border-color: rgba(126,217,87,.5); }
+  .cash { position: sticky; top: -18px; background: #2a0f24; padding: 6px 0; font-weight: 900; font-size: 16px; z-index: 2; } .cash b { color: var(--gold); font-family: Rubik; }
+  h3.sh { font-family: "Playfair Display", serif; color: var(--gold); margin: 12px 0 2px; font-size: 18px; } h3.sh small { font-family: Nunito; font-size: 12px; color: var(--muted); }
+  .mcard small.warn { color: #ff8a7a; font-size: 10.5px; }
   .row2 { display: flex; gap: 8px; } .row2 > * { flex: 1; }
   .gold, .btn { background: linear-gradient(180deg, #ffd34d, #e8a21a); color: #2a1406; padding: 13px 14px; border-radius: 15px; font-size: 15.5px; box-shadow: 0 4px 0 #9a6a10; }
   .gold:disabled, button:disabled { opacity: .45; }
@@ -166,6 +175,7 @@
 <div class="hud" id="t2hud">
   <div id="t2bar">
     <div class="ln"><span id="t2name">Ночь</span><span>заработано <b id="t2earn">0</b> / <b id="t2goalTxt">0</b></span></div>
+    <div class="tlcap">время ночи 22:00 → 04:00 · значки — когда придёт толпа клиентов</div>
     <div id="t2tl"></div>
     <div id="t2goal"><i></i></div>
   </div>

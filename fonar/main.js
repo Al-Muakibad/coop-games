@@ -16,7 +16,7 @@ function fresh() {
     t1: { v: 2 },
     t2: null, t3: null };
 }
-function t2fresh() { return { night: 0, alleys: ["port", "fonar"], girls: ["lola", "mimi", "vivien", "carmen"], place: { lola: "fonar", mimi: "fonar", vivien: "port", carmen: "port" }, hosts: { fonar: "gosha" }, perfect: 0 }; }
+function t2fresh() { return { night: 0, alleys: ["port", "fonar"], girls: ["lola", "mimi", "vivien", "carmen"], place: { lola: "fonar", mimi: "fonar", carmen: "fonar", vivien: "port" }, hosts: { fonar: "gosha" }, perfect: 0 }; }
 function t3fresh() {
   const d = {}; for (const id of ["old", "port", "uni", "prosp", "market", "hills"]) d[id] = { own: false, heat: 0, pol: "even", mgr: null, mods: [] };
   d.old = { own: true, heat: 10, pol: "even", mgr: "gosha", mods: [] }; d.port = { own: true, heat: 20, pol: "even", mgr: "fabian", mods: [] };
@@ -103,7 +103,7 @@ $("#menuBtn").onclick = menu;
 
 const HOW = {
   1: `<div class="mech"><b>Этап 1 · Переулок.</b> Ты зазывала.<br>• Веди пальцем по экрану — идёшь. Постой у очереди — клиенты пойдут за тобой цепочкой. Подведи к свободной девушке.<br>• После клиента номер грязный 🧺: принеси бельё из прачечной.<br>• Выручка копится у места девушки — пройди по монетам.<br>• Бар даёт шампанское 🍾: отнеси девушке, и к ней можно вести VIP 👑 (платят втрое).<br>• Пузырь над клиентом — кого любит: ⚓ → 🔥, 🎓 → 🌸, 🎩 → 💎. Совпадение = ❤️ ×1,5.<br>• <b>Все улучшения — в Конторе 📒</b> справа: постой в жёлтом круге. Там же помощники, которые делают каждое звено сами.<br>• Новые девушки и бар открываются на розовых кругах прямо на своих местах.</div>`,
-  2: `<div class="mech"><b>Этап 2 · Квартал.</b> Ты больше не ходишь — ты менеджер зазывал.<br>• Сверху видны 4 переулка. Клиенты идут из Порта (⚓), с Проспекта (🎩) и из Университета (🎓) волнами — расписание на полосе сверху.<br>• <b>Тап по девушке, потом по переулку</b> — она переходит туда (пока идёт — не работает).<br>• Клиент выбирает переулок, где есть «его» тип девушки. Совпадение = быстрее и ×1,6.<br>• Без зазывалы переулок обслуживает медленно и держит очередь до 3. Зазывалы нанимаются утром.<br>• 👮 Патруль: если в переулке очередь 2+ — штраф. <b>Тап по переулку</b> гасит фонари на 10 с, очередь уходит в другие.<br>• Ночь выполнена, если заработал цель. 4 ночи — повышение.</div>`,
+  2: `<div class="mech"><b>Этап 2 · Квартал.</b> Ты больше не ходишь — ты менеджер зазывал.<br>• Сверху видны 4 переулка. Клиенты идут из Порта (⚓), с Проспекта (🎩) и из Университета (🎓) волнами — расписание на полосе сверху.<br>• У каждого входа свой переулок: моряки ⚓ → Портовый, богачи 🎩 → Бульварный, студенты 🎓 → Садовый. Пока переулок закрыт, его гости идут в центральный Фонарный.<br>• <b>Перетащи девушку пальцем в другой переулок</b> (или тап по ней, потом по переулку). Ставь туда тех, кого любят его гости: ⚓ → 🔥, 🎓 → 🌸, 🎩 → 💎. Совпадение = ×1,6 и быстрее.<br>• Перед ночью план покажет, где не хватает нужной девушки, а стрелка — кого куда перетащить.<br>• Без зазывалы переулок обслуживает медленно и держит очередь до 3. Зазывалы нанимаются утром.<br>• 👮 Патруль: если в переулке очередь 2+ — штраф. <b>Тап по переулку</b> гасит фонари на 10 с, очередь уходит в другие.<br>• Ночь выполнена, если заработал цель. 4 ночи — повышение.</div>`,
   3: `<div class="mech"><b>Этап 3 · Город.</b> Ты менеджер менеджеров. Ход = неделя.<br>• Тап по району: назначь управляющего и курс — 🌙 Тихо / ⚖️ Ровно / 🔥 Напор (деньги против внимания властей).<br>• Управляющие присылают отчёты — но могут приворовывать. <b>🔍 Аудит</b> (2 в неделю) показывает правду.<br>• Внимание района 100 — облава, район потерян.<br>• Амбициозный управляющий с низкой лояльностью может уйти вместе с районом.<br>• Каждую неделю — событие с выбором.<br>• Цель: 5 районов и доход 4 200 за неделю.</div>`,
 };
 function howTo(st, then) { modal(HOW[st] + `<button class="gold" style="width:100%" data-close>Понятно</button>`, null, then); }
@@ -112,14 +112,17 @@ function howTo(st, then) { modal(HOW[st] + `<button class="gold" style="width:10
 const input = { x: 0, z: 0 };
 let joyId = null, jx = 0, jy = 0, downT = 0, downX = 0, downY = 0;
 const canvas = $("#view");
+let dragging = false;
 canvas.addEventListener("pointerdown", (e) => {
   downT = performance.now(); downX = e.clientX; downY = e.clientY;
+  if (state.stage === 2 && cur2 && cur2.dragStart(e.clientX, e.clientY)) { dragging = true; canvas.setPointerCapture(e.pointerId); return; }
   if (state.stage !== 1 || joyId !== null) return;
   joyId = e.pointerId; jx = e.clientX; jy = e.clientY;
   const j = $("#joy"); j.style.left = jx + "px"; j.style.top = jy + "px"; j.style.display = "block"; j.firstElementChild.style.transform = "";
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (dragging && cur2) { cur2.dragMove(e.clientX, e.clientY); return; }
   if (e.pointerId !== joyId) return;
   let dx = e.clientX - jx, dy = e.clientY - jy; const d = Math.hypot(dx, dy), R = 50;
   if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
@@ -128,6 +131,7 @@ canvas.addEventListener("pointermove", (e) => {
   input.x = (e.clientX - jx) * n * k; input.z = (e.clientY - jy) * n * k;
 });
 function endJoy(e) {
+  if (dragging) { dragging = false; if (cur2 && Math.hypot(e.clientX - downX, e.clientY - downY) > 14) cur2.dragEnd(e.clientX, e.clientY); return; }
   if (state.stage === 2 && performance.now() - downT < 400 && Math.hypot(e.clientX - downX, e.clientY - downY) < 14 && cur2) cur2.tap(e.clientX, e.clientY);
   if (e.pointerId !== joyId) return;
   joyId = null; input.x = input.z = 0; $("#joy").style.display = "none";
@@ -161,9 +165,8 @@ function drawOffice() {
   if (!cur1) return;
   const S = state.t1, money = state.money, lv = (id) => S.lv[id] || 0;
   const spent = Object.values(S.spent || {}).reduce((a, b) => a + b, 0);
-  const ready = S.earned >= T1_GOAL;
-  let h = `<div class="of-h"><b>Контора 📒</b><span>вложено в улучшения: 💰 ${spent.toLocaleString("ru-RU")}</span></div>`;
-  h += `<button class="oc promo ${ready && money >= 1000 ? "ok" : ""}" data-promo ${ready ? "" : "disabled"}><div class="ic">🎩</div><div class="tx"><b>Повышение: менеджер квартала</b><span>${ready ? "Цель выполнена" : `Заработай всего ${T1_GOAL.toLocaleString("ru-RU")}: сейчас ${Math.floor(S.earned).toLocaleString("ru-RU")}`}</span><i class="bar"><u style="width:${Math.min(100, (S.earned / T1_GOAL) * 100)}%"></u></i></div><div class="pr">💰 1 000</div></button>`;
+  const ready = money >= T1_GOAL;
+  h += `<button class="oc promo ${ready ? "ok" : ""}" data-promo ${ready ? "" : "disabled"}><div class="ic">🎩</div><div class="tx"><b>Повышение: менеджер квартала</b><span>${ready ? "Хватает — жми!" : `Накопи ${T1_GOAL.toLocaleString("ru-RU")}: сейчас ${Math.floor(money).toLocaleString("ru-RU")}`}</span><i class="bar"><u style="width:${Math.min(100, (money / T1_GOAL) * 100)}%"></u></i></div><div class="pr">💰 ${T1_GOAL.toLocaleString("ru-RU")}</div></button>`;
   let grp = "";
   for (const u of T1_UPG) {
     if (u.girl && u.girl !== "lola" && !S.un[u.girl]) continue;
@@ -176,7 +179,7 @@ function drawOffice() {
   if (h === officeKey) return; officeKey = h;
   $("#office").innerHTML = h;
   $("#office").querySelectorAll("[data-u]").forEach((b) => (b.onclick = () => { if (cur1.buyUpg(b.dataset.u)) { officeKey = ""; drawOffice(); } else { sfx("bad"); toast("Не хватает денег"); } }));
-  const pb = $("#office [data-promo]"); if (pb) pb.onclick = () => { if (state.money < 1000) return toast("Нужно 💰 1 000"); addMoney(-1000, true); app.office(false); promote(1); };
+  const pb = $("#office [data-promo]"); if (pb) pb.onclick = () => { if (state.money < T1_GOAL) return toast("Нужно 💰 " + T1_GOAL.toLocaleString("ru-RU")); addMoney(-T1_GOAL, true); app.office(false); promote(1); };
 }
 
 /* ---------- этап 2: интерфейс ---------- */
@@ -193,48 +196,103 @@ function t2hud(o) {
   }
   tl.firstElementChild.style.left = o.f * 100 + "%";
   setProgress(state.t2.night / T2_NIGHTS.length, `Этап 2 · ночь ${Math.min(state.t2.night + 1, 4)}/4`);
-  $("#t2pre").style.display = !o.on && !$("#modal").classList.contains("on") ? "block" : "none";
+  const pre = !o.on && !$("#modal").classList.contains("on");
+  $("#t2pre").style.display = pre ? "block" : "none";
+  if ((advT += 1) % 30 === 0) { const adv = t2advice(); if (o.on) tip(adv && $("#t2sel").style.display === "none" ? adv : ""); else { tip(""); if (pre && adv !== lastAdv) t2pre(); } lastAdv = adv; }
 }
-function t2pre() {
+// куда пойдёт клиент: в свой переулок, если открыт, иначе в центральный Фонарный
+const HOME = { sailor: "port", student: "sad", rich: "bulvar", vip: "bulvar" };
+const ALN = Object.fromEntries(T2_ALLEYS.map((a) => [a.id, a.n]));
+function t2analyze() {
+  const plan = cur2.plan(), by = Object.fromEntries(plan.map((a) => [a.id, a]));
   const n = cur2.nightDef();
-  $("#t2pre").innerHTML = `<h3>${n.n}</h3><div class="fc">Прогноз: ${n.waves.map((w) => `<br>• <b>${["22", "23", "00", "01", "02", "03"][Math.floor((w.at + 0.08) * 6)]}:00</b> ${CLIENTS[w.who].ic} ${CLIENTS[w.who].n.toLowerCase()}${w.why ? " — " + w.why : ""}`).join("")}<br>Цель ночи: <b>💰 ${n.goal}</b>. Расставь девушек заранее: ⚓ любят 🔥, 🎓 — 🌸, 🎩 и 👑 — 💎.</div>
-  <div class="row2"><button class="ghost" id="t2shop">🛍 Найм и улучшения</button><button class="gold" id="t2go">🌙 Начать ночь</button></div>`;
-  $("#t2go").onclick = () => { cur2.startNight(); };
+  const rows = [], problems = [];
+  const seen = new Set();
+  for (const w of n.waves) {
+    if (seen.has(w.who)) continue; seen.add(w.who);
+    const dest = by[HOME[w.who]] && by[HOME[w.who]].open ? HOME[w.who] : "fonar";
+    const like = CLIENTS[w.who].likes, a = by[dest];
+    const have = a.girls.filter((g) => g.t === like);
+    const hour = ["22", "23", "00", "01", "02", "03"][Math.floor((w.at + 0.08) * 6)] + ":00";
+    rows.push({ w, dest, like, have, hour });
+    if (!have.length) {
+      // кого можно перевести: девушку нужного типа из переулка, где она не нужна
+      const needIn = new Set(n.waves.map((x) => { const d = by[HOME[x.who]] && by[HOME[x.who]].open ? HOME[x.who] : "fonar"; return d + ":" + CLIENTS[x.who].likes; }));
+      let cand = null;
+      for (const al of plan) for (const g of al.girls) if (g.t === like && al.id !== dest && (!needIn.has(al.id + ":" + like) || al.girls.filter((x) => x.t === like).length > 1)) cand = cand || { g, from: al.id };
+      problems.push({ who: w.who, dest, like, cand, full: a.girls.length >= 3 });
+    }
+  }
+  return { rows, problems, n };
+}
+function t2advice() {
+  const { problems } = t2analyze();
+  const p = problems[0];
+  if (!p) { cur2.pointAt(null); return ""; }
+  if (p.cand) { cur2.pointAt(p.cand.g.id, p.dest); return `Перетащи девушку ${TYPES[p.like].ic} ${p.cand.g.n} в ${ALN[p.dest]}: туда придут ${CLIENTS[p.who].ic}, они любят ${TYPES[p.like].ic}`; }
+  cur2.pointAt(null);
+  return `В ${ALN[p.dest]} нет ${TYPES[p.like].ic} для ${CLIENTS[p.who].ic} — найми девушку ${TYPES[p.like].ic} в «Найме»`;
+}
+let advT = 0, lastAdv = null;
+function t2pre() {
+  const { rows, n } = t2analyze();
+  const adv = t2advice();
+  $("#t2pre").innerHTML = `<h3>${n.n}</h3>
+  <div class="fc"><b>Суть:</b> клиенты идут в свой переулок и ждут девушку, которую любят. Есть такая — платят ×1,6 и быстро. Нет — обслужат дольше и дешевле, очередь растёт, люди уходят. Цель ночи: заработать <b>💰 ${n.goal}</b>.</div>
+  <div class="plan">${rows.map((r) => `<div class="pr ${r.have.length ? "ok" : "bad"}"><span class="t">${r.hour}</span><span class="w">${CLIENTS[r.w.who].ic} ${CLIENTS[r.w.who].n}${r.w.why ? `<small>${r.w.why}</small>` : ""}</span><span class="d">→ ${ALN[r.dest]}<small>любят ${TYPES[r.like].ic}</small></span><span class="s">${r.have.length ? "✓ " + r.have.map((g) => g.n).join(", ") : "✗ нет " + TYPES[r.like].ic}</span></div>`).join("")}</div>
+  ${adv ? `<div class="adv">👉 ${adv}</div>` : `<div class="adv ok">✓ Расстановка хорошая. Можно начинать.</div>`}
+  <div class="row2"><button class="ghost" id="t2shop">🛍 Найм · 💰 ${Math.floor(state.money)}</button><button class="gold" id="t2go">🌙 Начать ночь</button></div>`;
+  $("#t2go").onclick = () => { cur2.pointAt(null); cur2.startNight(); };
   $("#t2shop").onclick = t2shop;
 }
 function t2report(r) {
   const last = state.t2.night >= T2_NIGHTS.length;
+  const by = r.by || {};
+  const typeRows = Object.entries(by).map(([t, v]) => `<tr><td>${CLIENTS[t].ic} ${CLIENTS[t].n}</td><td class="muted">обслужено ${v.s}</td><td><b>${v.l ? "ушли " + v.l : "все довольны"}</b></td></tr>`).join("");
+  // совет: где больше всего ушло и почему
+  const tips = [];
+  let worst = null;
+  for (const [al, m] of Object.entries(r.where || {})) for (const [t, k] of Object.entries(m)) if (!worst || k > worst.k) worst = { al, t, k };
+  if (worst && worst.k >= 2) tips.push(`В ${ALN[worst.al]} не дождались ${worst.k} × ${CLIENTS[worst.t].ic}. Поставь туда ещё девушку ${TYPES[CLIENTS[worst.t].likes].ic} или найми зазывалу.`);
+  if ((r.why || {}).full >= 3) tips.push(`${r.why.full} клиентов развернулись: все очереди были полны. Зазывала держит очередь до 6, новый переулок — ещё 3 места.`);
+  if (r.fines) tips.push("Штраф: патруль застал очередь. Когда видишь ⚠️, тапни по переулку — фонари погаснут.");
   modal(`<h2>${r.ok ? "Ночь выполнена ✅" : "Цель не выполнена"}</h2>
-    <table class="rep"><tr><td>Заработано</td><td></td><td><b>${Math.round(r.earned)} / ${r.def.goal}</b></td></tr>
-    <tr><td>Обслужено</td><td></td><td><b>${r.served}</b></td></tr><tr><td>Идеальных пар ❤️</td><td></td><td><b>${r.perfect}</b></td></tr>
-    <tr><td>Ушли недовольными 😤</td><td></td><td><b>${r.lost}</b></td></tr><tr><td>Штрафы 👮</td><td></td><td><b>${r.fines}</b></td></tr></table>
-    <p class="muted">${r.ok ? (last ? "Квартал работает как часы. Тебя зовут наверх." : "Утро. Можно нанять людей и открыть переулки.") : "Ночь придётся повторить. Подумай, где не хватило девушек нужного типа и где стояли очереди."}</p>
+    <p class="muted">Заработано <b style="color:#ffd34d">${Math.round(r.earned)}</b> из ${r.def.goal}. В кассе сейчас 💰 ${Math.floor(state.money)}.</p>
+    <table class="rep">${typeRows}<tr><td>Штрафы 👮</td><td></td><td><b>${r.fines || 0}</b></td></tr></table>
+    ${tips.length ? `<div class="mech">${tips.map((t) => "👉 " + t).join("<br>")}</div>` : ""}
+    <p class="muted">${r.ok ? (last ? "Квартал работает как часы. Тебя зовут наверх." : "Утро: можно нанять людей и открыть переулки, потом следующая ночь.") : "Ночь придётся повторить. Деньги за неё остались у тебя — потрать их в «Найме»."}</p>
     ${last && r.ok ? `<button class="gold" style="width:100%" id="goUp">ПОВЫШЕНИЕ → этап 3</button>` : `<button class="gold" style="width:100%" data-close>Утро</button>`}`, (box) => { const g = box.querySelector("#goUp"); if (g) g.onclick = () => { closeModal(); promote(2); }; }, () => t2pre());
 }
 function t2shop() {
-  const S = state.t2;
-  const hireable = GIRLS.filter((g) => !S.girls.includes(g.id)).slice(0, 4);
-  const alleysOpen = S.alleys;
-  const noHost = T2_ALLEYS.filter((a) => alleysOpen.includes(a.id));
+  const S = state.t2, money = Math.floor(state.money);
+  const { problems } = t2analyze();
+  const needT = new Set(problems.map((p) => p.like));
+  const hireable = GIRLS.filter((g) => !S.girls.includes(g.id)).sort((a, b) => needT.has(b.t) - needT.has(a.t)).slice(0, 4);
+  const open = T2_ALLEYS.filter((a) => S.alleys.includes(a.id));
   const freeHosts = T2_HOSTS.filter((h) => !Object.values(S.hosts).includes(h.id));
+  const noHostAlleys = open.filter((a) => !S.hosts[a.id]).map((a) => a.n);
+  const price = (c) => `<span class="price">💰 ${c}</span>${money < c ? `<small class="warn">не хватает ${c - money}</small>` : ""}`;
+  const ALLEY_WHY = { bulvar: "сюда пойдут богачи 🎩 и VIP 👑 — сейчас они теснятся в Фонарном", sad: "сюда пойдут студенты 🎓 — сейчас они теснятся в Фонарном" };
   modal(`<h2>Найм и улучшения</h2>
-    <p class="muted">Свободных мест для девушек: ${cur2.freeSlots()} (по 3 в переулке)</p>
-    <div class="cards">${hireable.map((g) => `<button class="mcard" data-g="${g.id}"><div class="ph sm"><span>${g.art}</span></div><b>${g.n} ${TYPES[g.t].ic}</b><small>${TYPES[g.t].n}</small><span class="price">💰 260</span></button>`).join("")}</div>
-    <h2 style="font-size:18px">Зазывалы</h2>
-    <p class="muted">Зазывала: очередь до 6, водит быстрее, привлекает клиентов. Берёт свою долю.</p>
-    <div class="cards">${freeHosts.map((h) => `<button class="mcard" data-h="${h.id}"><div class="ph sm"><span>${h.art}</span></div><b>${h.n}</b><small>${h.note}<br>скорость ${h.speed} · обаяние ${h.charm} · доля ${Math.round(h.cut * 100)}%</small><span class="price">💰 ${Math.round(150 + h.speed * h.charm * 150)}</span></button>`).join("")}</div>
-    <h2 style="font-size:18px">Квартал</h2>
-    <div class="cards">${T2_SHOP.filter((it) => !(S.bought || []).includes(it.id)).map((it) => `<button class="mcard" data-i="${it.id}"><b>${it.n}</b><span class="price">💰 ${it.cost}</span></button>`).join("")}</div>
+    <div class="cash">В кассе: <b>💰 ${money}</b></div>
+    <h3 class="sh">Девушки <small>· свободных мест: ${cur2.freeSlots()} (по 3 в переулке)</small></h3>
+    <p class="muted">Каждая девушка — ещё один клиент одновременно. Бери тех, кого любят твои гости.</p>
+    <div class="cards">${hireable.map((g) => `<button class="mcard ${needT.has(g.t) ? "on" : ""}" data-g="${g.id}"><div class="ph sm"><span>${g.art}</span></div><b>${g.n} ${TYPES[g.t].ic}</b><small>её любят ${Object.values(CLIENTS).filter((c) => c.likes === g.t).map((c) => c.ic).join("")}</small>${needT.has(g.t) ? "<em>советую: такой сейчас не хватает</em>" : ""}${price(260)}</button>`).join("")}</div>
+    <h3 class="sh">Зазывалы</h3>
+    <p class="muted">Без зазывалы очередь — до 3 человек, остальные уходят. С зазывалой — до 6, клиенты ждут дольше и обслуживаются быстрее. Он берёт свою долю.${noHostAlleys.length ? ` Сейчас без зазывалы: <b>${noHostAlleys.join(", ")}</b>.` : ""}</p>
+    <div class="cards">${freeHosts.map((h) => { const c = Math.round(150 + h.speed * h.charm * 150); return `<button class="mcard" data-h="${h.id}"><div class="ph sm"><span>${h.art}</span></div><b>${h.n}</b><small>${h.note}<br>скорость ${h.speed} · обаяние ${h.charm} · доля ${Math.round(h.cut * 100)}%</small>${price(c)}</button>`; }).join("")}</div>
+    <h3 class="sh">Квартал</h3>
+    <div class="cards">${T2_SHOP.filter((it) => !(S.bought || []).includes(it.id)).map((it) => `<button class="mcard" data-i="${it.id}"><b>${it.n}</b><small>${it.k === "alley" ? ALLEY_WHY[it.v] + "; +3 места для девушек" : it.k === "ads" ? "больше клиентов каждую ночь" : "девушки освобождаются быстрее"}</small>${price(it.cost)}</button>`).join("")}</div>
     <button class="gold" style="width:100%" data-close>Готово</button>`, (box) => {
     box.querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => {
       if (state.money < 260) return toast("Не хватает денег");
       if (cur2.freeSlots() <= 0) return toast("Нет мест: открой ещё переулок");
-      addMoney(-260); cur2.hire(b.dataset.g); sfx("buy"); save(); t2shop();
+      addMoney(-260); cur2.hire(b.dataset.g); sfx("buy"); save(); toast(`${GIRL[b.dataset.g].n} в квартале. Перетащи её, куда нужно`); t2shop();
     }));
     box.querySelectorAll("[data-h]").forEach((b) => (b.onclick = () => {
       const h = T2_HOSTS.find((x) => x.id === b.dataset.h), cost = Math.round(150 + h.speed * h.charm * 150);
       if (state.money < cost) return toast("Не хватает денег");
-      modal(`<h2>Куда поставить ${h.n}?</h2><div class="cards">${noHost.map((a) => `<button class="mcard" data-a="${a.id}"><b>${a.n}</b><small>${S.hosts[a.id] ? "сейчас: " + T2_HOSTS.find((x) => x.id === S.hosts[a.id]).n : "без зазывалы"}</small></button>`).join("")}</div><button class="ghost" style="width:100%" id="bk">Назад</button>`, (bx) => {
+      modal(`<h2>Куда поставить ${h.n}?</h2><div class="cards">${open.map((a) => `<button class="mcard" data-a="${a.id}"><b>${a.n}</b><small>${S.hosts[a.id] ? "сейчас: " + T2_HOSTS.find((x) => x.id === S.hosts[a.id]).n + " (заменит)" : "без зазывалы — очередь до 3"}</small></button>`).join("")}</div><button class="ghost" style="width:100%" id="bk">Назад</button>`, (bx) => {
         bx.querySelector("#bk").onclick = t2shop;
         bx.querySelectorAll("[data-a]").forEach((x) => (x.onclick = () => { addMoney(-cost); cur2.setHost(x.dataset.a, h.id); sfx("buy"); save(); t2shop(); }));
       });
@@ -278,6 +336,7 @@ function jumpTo(st, fromPromo) {
 function setStage(showHow) {
   tip(""); app.peek(null); $("#t2sel").style.display = "none"; app.office(false);
   $("#t1hud").style.display = state.stage === 1 ? "flex" : "none";
+  $("#tip").style.cssText = state.stage === 2 ? "top:auto !important;bottom:calc(20px + var(--sab))" : "";
   cur1 = cur2 = null;
   const st = state.stage;
   $("#t2hud").style.display = st === 2 ? "flex" : "none";

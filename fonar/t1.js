@@ -11,7 +11,7 @@ const WALL_Z = -5, SPOT_Z = -3.9;
 const QUEUE = { x: 2.6, z: 6.2 }, BAR = { x: -3.5, z: 5.7 }, LAUNDRY = { x: -3.5, z: 1.6 }, OFFICE = { x: 3.7, z: 1.9 };
 const BOUNDS = { x0: -4.5, x1: 4.75, z0: -3.2, z1: 8.2 };
 const BASE_PAY = { sailor: 16, student: 13, rich: 23, vip: 60 };
-export const T1_GOAL = 4000; // заработать всего — и можно на повышение
+export const T1_GOAL = 10000; // цена повышения
 
 // открытия в мире: место всегда одно и то же и рядом с тем, что открывается
 export const T1_UNLOCKS = [
@@ -423,7 +423,7 @@ export function createT1(app) {
     if (saveT > 3) { saveT = 0; S.px = P.x; S.pz = P.z; S.linen = linen; S.barStock = barStock; S.dirty = Object.fromEntries(girls.filter((g) => g.st === "dirty").map((g) => [g.def.id, 1])); S.bottles = Object.fromEntries(girls.filter((g) => g.bottle).map((g) => [g.def.id, 1])); app.save(); }
     const now = performance.now(); rateAcc = rateAcc.filter((r) => now - r[0] < 60000);
     const autoN = ["h_gosha", "h_zina", "h_sema"].concat(S.un.bar ? ["h_pierre"] : []), autoOk = autoN.filter((id) => lv(id)).length;
-    app.setProgress(Math.min(1, S.earned / T1_GOAL), `Этап 1 · заработано ${Math.floor(S.earned).toLocaleString("ru-RU")} / ${T1_GOAL.toLocaleString("ru-RU")}`);
+    app.setProgress(Math.min(1, app.state.money / T1_GOAL), `Этап 1 · на повышение ${Math.floor(app.state.money).toLocaleString("ru-RU")} / ${T1_GOAL.toLocaleString("ru-RU")}`);
     app.t1hud({ rate: rateAcc.reduce((s, r) => s + r[1], 0), auto: autoOk, autoN: autoN.length, linen, linMax, bar: S.un.bar ? barStock : -1 });
   }
 
