@@ -777,11 +777,12 @@ function stepContract(G, dt) {
     const tier = ITEMS[it].price || ITEMS[it].ship, rate = Math.max(0.08, G.pr[it]);
     let n = Math.max(4, Math.round((6 + G.cdone * 1.2) * Math.pow(6 / tier, 0.25)));
     // на заказ уходит примерно треть выработки (остальное — прилавкам); срок с запасом, не дольше 4 минут
-    n = Math.max(3, Math.min(n, Math.floor((240 - 45) * rate * 0.2 / 1.5)));
+    const share = G.mode === "solo" ? 0.13 : 0.2;     // одному — заказы меньше: рук вдвое меньше
+    n = Math.max(3, Math.min(n, Math.floor((240 - 45) * rate * share / 1.5)));
     // далёкий источник — срок больше (дорога к доске и обратно)
     const be = L.E[bi], src = L.E.find((e) => G.e[e.i].o && ((e.k === "spot" || e.k === "gen") ? e.item === it : e.k === "proc" && e.rec.out === it));
     const far = src ? hyp(src.x - be.x, src.z - be.z) : 10;
-    const T = Math.round(Math.min(260, Math.max(80, n / (rate * 0.2) * 1.5 + 45 + far * 3)) * DIFF[G.diff].ct * (1 + 0.2 * pk(G, "e_order")));
+    const T = Math.round(Math.min(260, Math.max(80, n / (rate * share) * 1.5 + 45 + far * 3)) * DIFF[G.diff].ct * (1 + 0.2 * pk(G, "e_order")));
     G.con = { it, n, got: 0, T, t: OFFER, ac: 0, rw: Math.round(itemPrice(G, it) * n * 2.6 * (1 + 0.4 * pk(G, "e_order"))), end: 0 };
     G.ev.push({ t: "contract", s: "new" });
     return;
