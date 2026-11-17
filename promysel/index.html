@@ -142,6 +142,24 @@
   .carry { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 8px 0; } .carry div { background: rgba(190,230,255,.07); border-radius: 12px; padding: 7px; font-weight: 800; font-size: 12.5px; } .carry b { display: block; color: var(--gold); font-family: "Rubik"; font-size: 15px; }
   /* «Флот» */
   .b.fleet { background: linear-gradient(180deg, rgba(60,110,160,.5), rgba(30,60,100,.5)); }
+
+  /* 3D-карта архипелага */
+  #amap { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+  #am-touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+  .am-top { position: absolute; left: 0; right: 0; top: calc(8px + var(--sat, 0px)); display: flex; align-items: center; gap: 8px; padding: 0 12px; pointer-events: none; }
+  .am-top b { flex: 1; font-family: "Rubik", sans-serif; font-size: 22px; color: #fff; text-shadow: 0 2px 0 rgba(20,40,60,.5), 0 0 12px rgba(20,40,60,.4); }
+  .am-top button { pointer-events: auto; border: 0; border-radius: 14px; padding: 9px 13px; font: inherit; font-weight: 900; font-size: 14px; background: rgba(20,40,60,.72); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.25); }
+  .am-tip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(26px + var(--sab, 0px)); background: rgba(20,40,60,.72); color: #fff; padding: 8px 16px; border-radius: 16px; font-weight: 800; font-size: 14px; animation: amPulse 2s ease-in-out infinite; }
+  @keyframes amPulse { 50% { transform: translateX(-50%) scale(1.05); } }
+  #am-sheet { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--sab, 0px)); width: min(94vw, 420px); pointer-events: auto; display: flex; flex-direction: column; gap: 8px; }
+  #am-sheet:empty { display: none; }
+  .amc { background: rgba(16,33,51,.92); color: #f1f6fb; border-radius: 18px; padding: 12px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.35); max-height: 52vh; overflow: auto; }
+  .amc-h b { display: block; font-family: "Rubik", sans-serif; font-size: 19px; } .amc-h small { display: flex; align-items: center; gap: 4px; font-weight: 800; opacity: .85; font-size: 12.5px; margin-top: 2px; } .amc-h .fi { width: 22px; height: 22px; }
+  .amc-r { display: grid; grid-template-columns: 1fr auto; align-items: center; background: rgba(190,230,255,.08); border-radius: 12px; padding: 8px 10px; margin: 8px 0 6px; }
+  .amc-r span { font-weight: 800; } .amc-r b { color: var(--gold); font-family: "Rubik"; font-size: 17px; } .amc-r small { grid-column: 1 / -1; font-size: 11.5px; font-weight: 700; opacity: .75; }
+  .amc-g { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; } .amc-g img { width: 34px; height: 34px; background: rgba(255,255,255,.1); border-radius: 9px; }
+  .amc .b { margin-top: 2px; } .amc-n { margin: 6px 0 0; font-weight: 800; text-align: center; opacity: .85; } .amc .rts { margin-top: 8px; }
+  .am-hs { align-self: center; background: rgba(126,217,87,.9); color: #10340a; font-weight: 900; padding: 6px 14px; border-radius: 14px; font-size: 13px; }
   .anchors { font-family: "Rubik", sans-serif; font-size: 26px; color: var(--gold); margin: 2px 0 8px; }
   /* раунд 7: задания дня, книга улова, архипелаг, «пока тебя не было» */
   .daily { display: flex; flex-direction: column; gap: 7px; margin: 8px 0; text-align: left; }
@@ -237,6 +255,10 @@
 </div>
 <div class="hud hidden" id="hint"></div>
 <div class="hud" id="tip"></div>
+<div class="hidden" id="amap"><div id="am-touch"></div>
+  <div class="am-top"><b>🗺 <span data-l>Архипелаг</span></b><button id="am-rt">🧭 <span data-l>Пути</span></button><button id="am-x">✕</button></div>
+  <div class="am-tip" id="am-tip"><span data-l>Нажми на остров</span></div>
+  <div id="am-sheet"></div></div>
 <div class="hud hidden" id="hire"><div class="hh"><b>АРТЕЛЬ</b><small>нанимай помощников и улучшай их</small></div><div id="hirel"></div></div>
 <div id="banner"></div>
 <div id="toasts"></div>
