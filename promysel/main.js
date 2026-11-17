@@ -4,6 +4,7 @@ import * as THREE from "three";
 import * as S from "./sim.js";
 import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW, OUTFITS, PET, RIDES, RARE, ROUTES, ISLES, ARCH, DAILY, DAILY_RW } from "./data.js";
 import { World, THEMES } from "./world.js";
+import { ArchMap, ISLE_POS } from "./map3d.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
 import { makeBot } from "./bot.js";
@@ -49,6 +50,7 @@ function resize() {
   DPR = Math.min(devicePixelRatio || 1, [1, 1.5, 2][quality]);
   renderer.setPixelRatio(DPR); renderer.setSize(W, H, false);
   camera.aspect = W / H; camera.updateProjectionMatrix();
+  if (amap) { amap.resize(W, H); if (mapOn && amap.portrait !== (H > W)) { const bk = mapBack; closeMap(false); openMap(bk); } }
 }
 addEventListener("resize", resize);
 // расстояние камеры: в портрете по ширине видно ~12 м, в альбоме по высоте ~14 м
@@ -100,7 +102,7 @@ async function boot() {
   world.sync(demo, false);
   loadbar.style.width = "100%";
   setTimeout(() => { $("load").style.opacity = "0"; $("load").style.transition = "opacity .4s"; $("load").style.pointerEvents = "none"; setTimeout(() => $("load").remove(), 450); }, 200);
-  setupBack(); setupInput();
+  setupBack(); setupInput(); setupMapInput();
   SV.syncProfile(() => { prof = SV.profile(); if (role === "menu") showMenu(); });
   requestAnimationFrame(loop);
   const inv = window.Net && Net.readInvite ? Net.readInvite() : null;
@@ -318,6 +320,7 @@ function guestApi() {
 /* ---------- старт ---------- */
 function start(r, g, pi, opt) {
   opt = opt || {};
+  if (mapOn) closeMap(false);
   role = r; G = g; me = pi || 0; started = true; simAcc = 0; idleT = 0; lastEnd = 0;
   bot = null;
   if (opt.bot && G.pl.length > 1) { bot = makeBot(1 - me, { skill: opt.skill || "good", seed: (Math.random() * 1e6) | 0 }); partner = { name: "🤖 " + L("Бот"), online: true, bot: true }; G.botSkill = opt.skill || "good"; }
@@ -372,7 +375,7 @@ function partnerConn(on, p) {
     $("h-menu").onclick = () => toMenu();
   }
 }
-function toMenu() { save(true); try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; bot = null; started = false; St.gameEnd({ mode: G ? G.mode : "", t: G ? Math.round(G.t) : 0 }); showMenu(); }
+function toMenu() { if (mapOn) closeMap(false); save(true); try { room && room.close(); } catch (_) {} room = null; hs = null; gs = null; bot = null; started = false; St.gameEnd({ mode: G ? G.mode : "", t: G ? Math.round(G.t) : 0 }); showMenu(); }
 
 /* ---------- ввод: плавающий джойстик ---------- */
 const joy = { on: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }, keys = {};
@@ -601,6 +604,7 @@ function onEvents(list, remote) {
       case "dogpick": { const z = en && en.zcash; if (z && camNear(z.x, z.z, 12)) { view.burst(z.x, 0.4, z.z, "gold", 6); play("coin", { vol: vol(z.x, z.z, 0.4), rate: 1.4 }); } break; }
       case "rare": onRare(e); break;
       case "route": { const R = ROUTES[e.k]; banner("⛵ " + L("Шхуна из") + " «" + L(BAYS[R.a].n) + "»", L(R.n) + ": +" + fmt(e.v), "gold"); play("cash2"); haptic("notify", "success"); break; }
+      case "sail": if (role === "guest") banner("⛵ " + L("Плывём") + ": " + L(BAYS[e.b].n), L("Хозяин ведёт шхуну"), "gold"); break;
       case "routeon": { const R = ROUTES[e.k]; banner("🧭 " + L("Торговый путь проложен"), L(BAYS[R.a].n) + " → " + L(BAYS[R.b].n), "gold"); play("levelup"); break; }
       case "safe": banner("🔐 " + L("Сейф с автосбором"), L("Выручка сама идёт в кошелёк"), "gold"); play("cash2"); haptic("notify", "success", true); break;
       case "auto": { banner("⚙ " + L("Цепочка работает сама!"), L("Автоматизация") + ": " + e.n + "/" + e.of, "gold"); play("levelup", { vol: 0.7 }); setTimeout(() => play("bell", { vol: 0.5 }), 250); for (const i of autoSet) { const st = Lr.E[i]; if (camNear(st.x, st.z, 14)) view.burst(st.x, 2.6, st.z, "gold", 18); } break; }
@@ -782,36 +786,87 @@ function bookMenu(back) {
 }
 
 /* ---------- архипелаг ---------- */
-function archOk() { return G && G.mode !== "vs" && (G.v || 1) >= 2 && role !== "guest"; }
-function archMenu(back) {
+function archOk() { return G && G.mode !== "vs" && (G.v || 1) >= 2 && (role !== "guest" || !!G.ar); }
+/* ---------- архипелаг: 3D-карта ---------- */
+let amap = null, mapOn = false, mapBack = null, mapSt = null, mapT = 0, mapSel = -1, mapPanel = "";
+const ISLE_W = [["❄️", "Снегопад"], ["🌫", "Туман и льдины"], ["☀️", "Солнце"], ["🎏", "Лёгкий бриз"]];
+const ISLE_FISH = ["herring", "salmon", "crab", "cod"];
+function mapState() {
+  if (role === "guest") return G.ar || null;
+  return S.archSummary(G);
+}
+function archMenu(back) { openMap(back); }
+function openMap(back) {
   if (!archOk()) return;
-  const A = S.archOf(G), top = Math.max(A.top || 0, G.bay), money = G.money[0];
-  const known = (b) => S.isleKnown(G, b), lit = (b) => S.isleLit(G, b);
-  const nextNew = top + 1 < BAYS.length && lit(top) ? top + 1 : -1;
-  const isles = BAYS.map((B, b) => ({ b, B, k: known(b), nw: b === nextNew }));
-  const svg = `<svg class="amap" viewBox="0 0 100 100" preserveAspectRatio="none">
-    ${ROUTES.map((R, k) => { const on = A.rt.some((t) => t.k === k); if (!on && !(known(R.a) && known(R.b))) return ""; const a = ISLES[R.a], c = ISLES[R.b]; return `<line x1="${a.x}" y1="${a.y}" x2="${c.x}" y2="${c.y}" class="${on ? "on" : ""}"/>${on ? `<text class="ship" font-size="7">⛵<animateMotion dur="${6 + k}s" repeatCount="indefinite" path="M${a.x - 3},${a.y + 2} L${c.x - 3},${c.y + 2}"/></text>` : ""}`; }).join("")}
-    ${isles.map((i) => { const p = ISLES[i.b]; return `<g class="isl ${i.b === G.bay ? "cur" : i.k ? "kn" : i.nw ? "nw" : "fog"}"><circle cx="${p.x}" cy="${p.y}" r="${i.b === G.bay ? 9 : 8}"/><text x="${p.x}" y="${p.y + 2.2}" font-size="7" text-anchor="middle">${i.k ? (lit(i.b) ? "🗼" : "🏝") : i.nw ? "⛵" : "?"}</text></g>`; }).join("")}
-  </svg>`;
-  const rows = isles.filter((i) => i.k || i.nw).map((i) => {
-    if (i.b === G.bay) return `<div class="ai cur"><b>📍 ${L(i.B.n)}</b><small>${L("Ты здесь")}${lit(i.b) ? " · 🗼" : ""} · ${L("сам без тебя")}: +${fmt(S.isleRate(G) * 60)}${L("/мин")}</small></div>`;
-    if (i.nw) return `<button class="b primary" data-isl="${i.b}"><span>⛵</span><span class="t">${L("Новый остров")}: ${L(i.B.n)}<small>${L("Новые товары")}: ${i.B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}</small></span></button>`;
-    const ch = S.chestOf(G, i.b), cap = S.chestCap(G, i.b);
-    return `<button class="b" data-isl="${i.b}"><span>${lit(i.b) ? "🗼" : "🏝"}</span><span class="t">${L("Плыть")}: ${L(i.B.n)}<small>💰 ${L("в сундуке")} ${fmt(ch)}${cap > 0 ? " / " + fmt(cap) : ""} · +${fmt((A.isl[i.b].r || 0) * 60)}${L("/мин")}</small></span></button>`;
-  }).join("");
-  const routes = ROUTES.map((R, k) => {
-    const on = A.rt.find((t) => t.k === k); if (!on && !(known(R.a) && known(R.b))) return "";
-    const name = `${L(BAYS[R.a].n)} → ${L(BAYS[R.b].n)}`, ic = ICONURL[R.it] ? `<img src="${ICONURL[R.it]}">` : "";
-    if (on) return `<div class="rt on">${ic}<div><b>${name}</b><small>⛵ ${L(R.n)} · +${fmt(S.routeIncome(G, k) * 60)}${L("/мин")}</small></div></div>`;
-    const can = S.canRoute(G, k), c = S.routeCost(G, k);
-    return `<button class="rt ${can && money >= c ? "ok" : ""}" data-rt="${k}" ${can ? "" : "disabled"}>${ic}<div><b>${name}</b><small>${can ? L(R.n) : "🔒 " + L("сначала зажги маяк") + ": " + L(BAYS[R.a].n)}</small></div>${can ? `<span class="pr">💵 ${fmt(c)}</span>` : ""}</button>`;
-  }).join("");
-  dialog(`<h2>🗺 ${L("Архипелаг")}</h2><p>${L("Старые острова торгуют сами и копят выручку в сундуке — заберёшь, когда приплывёшь. Торговые пути возят товар с острова на остров.")}</p>
-    ${svg}<div class="alist">${rows}</div>${routes ? `<h3 class="ah">🧭 ${L("Торговые пути")}</h3><div class="rts">${routes}</div>` : ""}
-    <button class="b ghost" id="ar-x">${L("Назад")}</button>`);
-  $("dlgp").querySelectorAll("[data-isl]").forEach((b) => (b.onclick = () => { hideDlg(); sailIsle(+b.dataset.isl); }));
-  $("dlgp").querySelectorAll("[data-rt]").forEach((b) => (b.onclick = () => { if (S.buyRoute(G, +b.dataset.rt)) { onEvents(G.ev.splice(-1), false); if (hs) hs.events([{ t: "routeon", k: +b.dataset.rt }]); save(true); archMenu(back); } else { play("error"); toast(L("Не хватает денег"), "bad", 1.8); } }));
-  $("ar-x").onclick = () => { hideDlg(); if (back) back(); };
+  mapState(); mapSt = mapState(); if (!mapSt) return;
+  hideDlg();
+  if (!amap || amap.q !== quality || amap.portrait !== (H > W)) { if (amap) amap.dispose(); amap = new ArchMap(renderer, { quality, portrait: H > W }); }
+  amap.resize(W, H); amap.sel = -1; mapSel = -1; mapPanel = "";
+  amap.setState(mapSt, BAYS.map((B) => L(B.n)));
+  mapBack = back || null; mapOn = true;
+  $("amap").classList.remove("hidden"); $("layer").style.visibility = "hidden"; $("top").classList.add("hidden"); $("hint").classList.add("hidden"); $("hire").classList.add("hidden"); hireOpen = -1; tipShow(null);
+  if (joy.on) { joy.on = false; joy.x = joy.y = 0; $("joy").classList.remove("on"); }
+  $("amap").querySelectorAll("[data-l]").forEach((el) => { el.dataset.l0 = el.dataset.l0 || el.textContent; el.textContent = L(el.dataset.l0); });
+  drawMapUi(); play("cloth", { vol: 0.5 });
+}
+function closeMap(goBack) {
+  if (!mapOn) return; mapOn = false; G && (G.mapSel = null);
+  $("amap").classList.add("hidden"); $("layer").style.visibility = ""; if (started) { $("top").classList.remove("hidden"); $("hint").classList.remove("hidden"); }
+  if (goBack && mapBack) mapBack(); mapBack = null;
+}
+function mapPick(b) {
+  mapSel = b; amap.select(b); mapPanel = b >= 0 ? "card" : "";
+  if (role !== "guest" && G) G.mapSel = b;      // гость видит, какой остров смотрит хозяин
+  play("select"); haptic("select"); drawMapUi();
+}
+function drawMapUi() {
+  const st = mapSt; if (!st) return;
+  const host = role !== "guest", money = G.money[0];
+  let html = "";
+  if (mapPanel === "card" && mapSel >= 0) {
+    const b = mapSel, B = BAYS[b], I = st.isl[b], open = I.known || b === st.cur;
+    const icons = B.news.map((k) => `<img src="${ICONURL[k] || ""}" title="${esc(L(ITEMS[IT[k]].n))}">`).join("");
+    const head = `<div class="amc-h"><b>${open ? (I.lit ? "🗼 " : "🏝 ") : I.nw ? "⛵ " : "❔ "}${L(B.n)}</b><small>${ISLE_W[b][0]} ${L(ISLE_W[b][1])} · <img class="fi" src="${ICONURL[ISLE_FISH[b]] || ""}"> ${L(ITEMS[IT[ISLE_FISH[b]]].n)}</small></div>`;
+    let body = "";
+    if (b === st.cur) body = `<div class="amc-r"><span>📍 ${L("Ты здесь")}</span><b>+${fmt(I.r)}${L("/мин")}</b><small>${L("столько остров заработает сам, когда уплывёшь")}</small></div>`;
+    else if (I.known) body = `<div class="amc-r"><span>💰 ${L("в сундуке")}</span><b>${fmt(I.ch)}${I.cap ? " / " + fmt(I.cap) : ""}</b><small>+${fmt(I.r)}${L("/мин")} · ${L("заберёшь, когда приплывёшь")}</small></div>`;
+    else if (I.nw) body = `<div class="amc-r"><span>✨ ${L("Новый остров")}</span><b></b><small>${L(B.ev)}</small></div>`;
+    else body = `<div class="amc-r"><span>🌫 ${L("Остров скрыт туманом")}</span><b></b><small>${L("Откроется, когда зажжёшь маяк на последнем острове")}</small></div>`;
+    const goods = open || I.nw ? `<div class="amc-g">${icons}</div>` : "";
+    const can = b !== st.cur && (I.known || I.nw);
+    const btn = can ? (host ? `<button class="b primary" id="am-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}${I.known && I.ch ? `<small>${L("заберёшь")} 💰 ${fmt(I.ch)}</small>` : ""}</span></button>` : `<p class="amc-n">⛵ ${L("Куда плыть — решает хозяин")}</p>`) : "";
+    html = `<div class="amc">${head}${body}${goods}${btn}</div>`;
+  } else if (mapPanel === "routes") {
+    const rows = ROUTES.map((R, k) => {
+      const on = st.rt.includes(k), known = (st.isl[R.a].known || R.a === st.cur) && (st.isl[R.b].known || R.b === st.cur); if (!on && !known) return "";
+      const name = `${L(BAYS[R.a].n)} → ${L(BAYS[R.b].n)}`, ic = ICONURL[R.it] ? `<img src="${ICONURL[R.it]}">` : "";
+      if (on) return `<div class="rt on">${ic}<div><b>${name}</b><small>⛵ ${L(R.n)} · +${fmt(st.ri[k])}${L("/мин")}</small></div></div>`;
+      const can = st.can.includes(k), c = st.rc[k];
+      return `<button class="rt ${can && money >= c ? "ok" : ""}" data-rt="${k}" ${can && host ? "" : "disabled"}>${ic}<div><b>${name}</b><small>${can ? L(R.n) : "🔒 " + L("сначала зажги маяк") + ": " + L(BAYS[R.a].n)}</small></div>${can ? `<span class="pr">💵 ${fmt(c)}</span>` : ""}</button>`;
+    }).join("");
+    html = `<div class="amc"><div class="amc-h"><b>🧭 ${L("Торговые пути")}</b><small>${L("Шхуны возят товар с острова на остров")}</small></div><div class="rts">${rows || `<p>${L("Пути появятся, когда откроешь второй остров")}</p>`}</div></div>`;
+  }
+  const hostSel = role === "guest" && st.hostSel >= 0 ? `<div class="am-hs">👀 ${L("Хозяин смотрит")}: ${L(BAYS[st.hostSel].n)}</div>` : "";
+  const ui = `${hostSel}${html}`;
+  if ($("am-sheet").dataset.h !== ui) { $("am-sheet").dataset.h = ui; $("am-sheet").innerHTML = ui; }
+  $("am-tip").classList.toggle("hidden", mapPanel !== "" || !!hostSel);
+}
+function mapClick(ev) {
+  const go = ev.target.closest("#am-go"); if (go) { if (mapSel >= 0) { const b = mapSel; closeMap(false); hideDlg(); if (hs) hs.events([{ t: "sail", b }]); sailIsle(b); } return; }
+  const rt = ev.target.closest("[data-rt]"); if (rt && !rt.disabled) { if (S.buyRoute(G, +rt.dataset.rt)) { onEvents(G.ev.splice(-1), false); if (hs) hs.events([{ t: "routeon", k: +rt.dataset.rt }]); save(true); mapSt = mapState(); amap.setState(mapSt, BAYS.map((B) => L(B.n))); $("am-sheet").dataset.h = ""; drawMapUi(); } else { play("error"); toast(L("Не хватает денег"), "bad", 1.8); } }
+}
+function setupMapInput() {
+  const el = $("am-touch"), pts = new Map(); let down = null, pinch = 0;
+  el.addEventListener("pointerdown", (e) => { el.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pts.size === 1) down = { x: e.clientX, y: e.clientY, t: performance.now(), mv: 0 }; else { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); } });
+  el.addEventListener("pointermove", (e) => { const p = pts.get(e.pointerId); if (!p || !amap) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (pts.size >= 2) { const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch > 0) amap.zoom(pinch / d); pinch = d; if (down) down.mv = 99; return; }
+    if (down) { down.mv += Math.abs(dx) + Math.abs(dy); if (down.mv > 8) amap.drag(dx, dy); } });
+  const up = (e) => { pts.delete(e.pointerId); if (pts.size) return; if (down && down.mv <= 8 && amap) { const r = el.getBoundingClientRect(); const b = amap.pick((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); mapPick(b === mapSel ? -1 : b); } down = null; pinch = 0; };
+  el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+  el.addEventListener("wheel", (e) => { if (amap) amap.zoom(e.deltaY > 0 ? 1.08 : 0.93); e.preventDefault(); }, { passive: false });
+  $("am-x").onclick = () => { play("click"); closeMap(true); };
+  $("am-rt").onclick = () => { mapPanel = mapPanel === "routes" ? "" : "routes"; if (mapPanel === "routes") { mapSel = -1; amap.select(-1); if (G && role !== "guest") G.mapSel = -1; } play("select"); drawMapUi(); };
+  $("am-sheet").addEventListener("click", mapClick);
 }
 function sailIsle(b, lap) {
   const N = S.sailTo(G, b, lap != null ? { lap } : {});
@@ -1235,6 +1290,7 @@ function onBack() {
   play("click");
   if (started && G) {
     save(true);
+    if (mapOn) { if (mapPanel) { mapPanel = ""; mapSel = -1; amap.select(-1); drawMapUi(); } else closeMap(true); return; }
     if (!$("dlg").classList.contains("hidden") && !$("dlg").dataset.keep) { hideDlg(); return; }
     if (!$("dlg").classList.contains("hidden") && (G.winner >= 0)) { toMenu(); return; }
     dialog(`<h2>${L("Выйти в меню?")}</h2><p>${L("Прогресс сохранён.")}${role === "host" || role === "guest" ? " " + L("Вернуться к другу можно из меню.") : ""}</p>
@@ -1304,6 +1360,10 @@ function loop(now) {
   const g = started && G ? G : demo;
   if (started && G) world.sync(G, true);     // постройки — ровно те, что открыты (у гостя тоже)
   if (window.__noRender) return;     // автотесты: мир считается, картинка — нет
+  if (mapOn && amap && started && G) {      // открыта карта архипелага: рисуем её вместо бухты (игра идёт дальше)
+    mapT += dt; if (mapT > 0.5) { mapT = 0; const st = mapState(); if (st) { mapSt = st; amap.setState(st, BAYS.map((B) => L(B.n))); drawMapUi(); } }
+    amap.update(dt); if (quality === 0 && !loop.forced && now - (loop.lastR || 0) < 31) return; loop.lastR = now; amap.render(); return;
+  }
   world.update(dt, g);
   view.update(g, dt, ctx);
   placeCamera(dt);
@@ -1335,6 +1395,7 @@ window.__pm = {
   get G() { return G; }, get role() { return role; }, get me() { return me; }, get started() { return started; }, get room() { return room; }, get hs() { return hs; }, get gs() { return gs; }, get partner() { return partner; }, get view() { return view; },
   S, cam, renderer, project, camera, scene, get world() { return world; },
   solo: () => { soloMenu(); return true; }, coopBot: (bay, o) => { start("local", S.newGame(Object.assign({ mode: "coop", seed: 77, meta: prof.meta, diff: 1, bay: bay || 0 }, o || {})), 0, { bot: 1 }); return true; },
+  sail: (b) => sailIsle(b), map: () => openMap(), mapPick: (b) => mapPick(b), get amap() { return amap; }, THREE, get ISLE_POS() { return amap ? amap.P : ISLE_POS; }, closeMap: () => closeMap(false),
   bayDone: () => bayDone(), zoom: (k) => { cam.zk = k; }, fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
   host: (mode, bay) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1, bay: bay || 0 })); return true; },

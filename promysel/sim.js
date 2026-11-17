@@ -228,6 +228,15 @@ function stepArch(G, dt) {
     if (t.t >= ARCH.routeT) { t.t = 0; const v = Math.round(routeIncome(G, t.k) * ARCH.routeT); if (v > 0) { G.money[0] += v; G.earned[0] += v; G.ev.push({ t: "route", k: t.k, v, it: IT[R.it] }); } }
   }
 }
+// сводка архипелага для карты (и для гостя — в снимке хозяина): что открыто, где маяки, сундуки, пути
+export function archSummary(G) {
+  if ((G.v || 1) < 2 || G.mode === "vs") return null;
+  const key = Math.floor(G.t); if (G._arS && G._arS.k === key && G._arS.sel === (G.mapSel ?? -1)) return G._arS.v;
+  const A = archOf(G), top = Math.max(A.top || 0, G.bay), nextNew = top + 1 < 4 && isleLit(G, top) ? top + 1 : -1;
+  const isl = [0, 1, 2, 3].map((b) => { const known = isleKnown(G, b); return { known: known ? 1 : 0, lit: isleLit(G, b) ? 1 : 0, nw: b === nextNew ? 1 : 0, ch: known && b !== G.bay ? Math.floor(chestOf(G, b)) : 0, cap: known && b !== G.bay ? Math.floor(chestCap(G, b)) : 0, r: known ? Math.round((b === G.bay ? isleRate(G) : A.isl[b].r || 0) * 60) : 0 }; });
+  const v = { cur: G.bay, isl, rt: A.rt.map((t) => t.k), can: ROUTES.map((_, k) => k).filter((k) => canRoute(G, k)), ri: ROUTES.map((_, k) => Math.round(routeIncome(G, k) * 60)), rc: ROUTES.map((_, k) => routeCost(G, k)), hostSel: G.mapSel ?? -1 };
+  G._arS = { k: key, sel: G.mapSel ?? -1, v }; return v;
+}
 // путь можно проложить, когда оба острова открыты, а на острове-поставщике маяк уже горит
 export function isleKnown(G, b) { const A = archOf(G); return b === G.bay || !!A.isl[b]; }
 export function isleLit(G, b) { const A = archOf(G); return b === G.bay ? G.done >= 0 : !!(A.isl[b] && A.isl[b].lit); }
@@ -1218,7 +1227,7 @@ export function nextPad(G, team) {
 }
 
 /* ---------- сериализация ---------- */
-export function serialize(G) { const o = Object.assign({}, G); o.ev = []; return JSON.stringify(o); }
+export function serialize(G) { const o = Object.assign({}, G); o.ev = []; delete o._arS; delete o.ar; delete o.mapSel; return JSON.stringify(o); }
 export function deserialize(s) {
   try {
     const G = typeof s === "string" ? JSON.parse(s) : s;
