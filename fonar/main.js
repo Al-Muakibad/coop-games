@@ -1,7 +1,7 @@
 // «Красный фонарь» — оболочка: сохранение, интерфейс, звук, ввод, переходы между этапами.
 import { renderer } from "./c3d.js";
 import { GIRL, GIRLS, TYPES, CLIENTS, T2_HOSTS, T2_ALLEYS, T2_SHOP, T2_NIGHTS, SCENES, ART_BY } from "./data.js";
-import { createT1 } from "./t1.js";
+import { createT1, T1_UPG, T1_GOAL, upgCost } from "./t1.js";
 import { createT2 } from "./t2.js";
 import { createT3 } from "./t3.js";
 
@@ -13,7 +13,7 @@ try { tg && tg.ready(); tg && tg.expand(); tg && tg.disableVerticalSwipes && tg.
 const KEY = "fonar_v1";
 function fresh() {
   return { stage: 1, money: 0, scenes: ["SC18-T1-LOLA-1"], lost: 0,
-    t1: { girls: ["lola"], pad: 0, padPaid: 0, cap: 2, served: {} },
+    t1: { v: 2 },
     t2: null, t3: null };
 }
 function t2fresh() { return { night: 0, alleys: ["port", "fonar"], girls: ["lola", "mimi", "vivien", "carmen"], place: { lola: "fonar", mimi: "fonar", vivien: "port", carmen: "port" }, hosts: { fonar: "gosha" }, perfect: 0 }; }
@@ -25,6 +25,7 @@ function t3fresh() {
 let state;
 try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_) {}
 if (!state || !state.t1) state = fresh();
+if (state.t1.v !== 2) { state.t1 = { v: 2 }; state.money = Math.min(state.money, 200); } // старая версия первого этапа
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
 
 /* ---------- звук: записанные CC0-сэмплы из ../promysel/audio ---------- */
@@ -101,7 +102,7 @@ function confirmReset() { return window.confirm ? true : true; }
 $("#menuBtn").onclick = menu;
 
 const HOW = {
-  1: `<div class="mech"><b>Этап 1 · Переулок.</b> Ты зазывала.<br>• Веди пальцем по экрану — идёшь.<br>• Подойди к очереди справа и постой — клиенты пойдут за тобой цепочкой.<br>• Подведи к свободной девушке у стены — она уведёт клиента в номер.<br>• Пройди по монетам у её места — заберёшь деньги.<br>• Постой на светящемся круге — покупка.<br>• Пузырь над клиентом — кого он любит: ⚓ моряки → 🔥, 🎓 студенты → 🌸, 🎩 богачи → 💎. Совпадение = ❤️ ×1,5.<br>• VIP 👑 идут только с шампанским 🍾 из бара.</div>`,
+  1: `<div class="mech"><b>Этап 1 · Переулок.</b> Ты зазывала.<br>• Веди пальцем по экрану — идёшь. Постой у очереди — клиенты пойдут за тобой цепочкой. Подведи к свободной девушке.<br>• После клиента номер грязный 🧺: принеси бельё из прачечной.<br>• Выручка копится у места девушки — пройди по монетам.<br>• Бар даёт шампанское 🍾: отнеси девушке, и к ней можно вести VIP 👑 (платят втрое).<br>• Пузырь над клиентом — кого любит: ⚓ → 🔥, 🎓 → 🌸, 🎩 → 💎. Совпадение = ❤️ ×1,5.<br>• <b>Все улучшения — в Конторе 📒</b> справа: постой в жёлтом круге. Там же помощники, которые делают каждое звено сами.<br>• Новые девушки и бар открываются на розовых кругах прямо на своих местах.</div>`,
   2: `<div class="mech"><b>Этап 2 · Квартал.</b> Ты больше не ходишь — ты менеджер зазывал.<br>• Сверху видны 4 переулка. Клиенты идут из Порта (⚓), с Проспекта (🎩) и из Университета (🎓) волнами — расписание на полосе сверху.<br>• <b>Тап по девушке, потом по переулку</b> — она переходит туда (пока идёт — не работает).<br>• Клиент выбирает переулок, где есть «его» тип девушки. Совпадение = быстрее и ×1,6.<br>• Без зазывалы переулок обслуживает медленно и держит очередь до 3. Зазывалы нанимаются утром.<br>• 👮 Патруль: если в переулке очередь 2+ — штраф. <b>Тап по переулку</b> гасит фонари на 10 с, очередь уходит в другие.<br>• Ночь выполнена, если заработал цель. 4 ночи — повышение.</div>`,
   3: `<div class="mech"><b>Этап 3 · Город.</b> Ты менеджер менеджеров. Ход = неделя.<br>• Тап по району: назначь управляющего и курс — 🌙 Тихо / ⚖️ Ровно / 🔥 Напор (деньги против внимания властей).<br>• Управляющие присылают отчёты — но могут приворовывать. <b>🔍 Аудит</b> (2 в неделю) показывает правду.<br>• Внимание района 100 — облава, район потерян.<br>• Амбициозный управляющий с низкой лояльностью может уйти вместе с районом.<br>• Каждую неделю — событие с выбором.<br>• Цель: 5 районов и доход 4 200 за неделю.</div>`,
 };
@@ -142,6 +143,8 @@ const app = {
   hint() {}, lost() { state.lost++; },
   peek(g) { peekG = g; $("#peek").style.display = g ? "block" : "none"; if (g) $("#peekBtn").textContent = `👁 Заглянуть к ${g.def.n}`; },
   promote(from) { promote(from); },
+  office(on) { officeOn = on; if (on) { drawOffice(); sfx("open"); } $("#office").classList.toggle("on", on); },
+  t1hud(o) { const h = `<span>💰 <b>+${Math.round(o.rate)}</b>/мин</span><span>⚙ <b>${o.auto}/${o.autoN}</b> помощников</span><span>🧺 ${o.linen}/${o.linMax}</span>${o.bar >= 0 ? `<span>🍾 ${o.bar}</span>` : ""}`; const e = $("#t1hud"); if (e.dataset.h !== h) { e.innerHTML = h; e.dataset.h = h; } if (officeOn) { if ((officeT += 1) % 20 === 0) drawOffice(); } },
   t2sel(g) { const el = $("#t2sel"); if (!g) { el.style.display = "none"; return; } el.style.display = "block"; el.innerHTML = `${g.def.n} ${TYPES[g.def.t].ic} ${TYPES[g.def.t].n} — любят ${Object.values(CLIENTS).filter((c) => c.likes === g.def.t && c.n !== "VIP").map((c) => c.ic + " " + c.n.toLowerCase()).join(", ")}.<br>Тапни переулок, куда её перевести`; },
   t2hud(o) { t2hud(o); },
   t2report(r) { t2report(r); },
@@ -151,6 +154,30 @@ $("#peekBtn").onclick = () => {
   if (!state.scenes.includes(id)) { state.scenes.push(id); save(); }
   modal(sceneCard(id) + `<p class="muted">Здесь при открытой двери играет короткая сцена. Пока — заглушка: ID и описание задумки (полностью — в таблице арта).</p><button class="gold" style="width:100%" data-close>Закрыть дверь</button>`);
 };
+
+/* ---------- этап 1: Контора — все улучшения в одном месте ---------- */
+let officeOn = false, officeT = 0, officeKey = "";
+function drawOffice() {
+  if (!cur1) return;
+  const S = state.t1, money = state.money, lv = (id) => S.lv[id] || 0;
+  const spent = Object.values(S.spent || {}).reduce((a, b) => a + b, 0);
+  const ready = S.earned >= T1_GOAL;
+  let h = `<div class="of-h"><b>Контора 📒</b><span>вложено в улучшения: 💰 ${spent.toLocaleString("ru-RU")}</span></div>`;
+  h += `<button class="oc promo ${ready && money >= 1000 ? "ok" : ""}" data-promo ${ready ? "" : "disabled"}><div class="ic">🎩</div><div class="tx"><b>Повышение: менеджер квартала</b><span>${ready ? "Цель выполнена" : `Заработай всего ${T1_GOAL.toLocaleString("ru-RU")}: сейчас ${Math.floor(S.earned).toLocaleString("ru-RU")}`}</span><i class="bar"><u style="width:${Math.min(100, (S.earned / T1_GOAL) * 100)}%"></u></i></div><div class="pr">💰 1 000</div></button>`;
+  let grp = "";
+  for (const u of T1_UPG) {
+    if (u.girl && u.girl !== "lola" && !S.un[u.girl]) continue;
+    if (u.need && !S.un[u.need]) continue;
+    if (u.g !== grp) { grp = u.g; h += `<div class="of-g">${grp}</div>`; }
+    const l = lv(u.id), max = l >= u.max, c = max ? 0 : upgCost(u, l), ok = !max && money >= c;
+    const dots = Array.from({ length: u.max }, (_, k) => `<i class="${k < l ? "on" : ""}"></i>`).join("");
+    h += `<button class="oc ${ok ? "ok" : ""}" data-u="${u.id}" ${max ? "disabled" : ""}><div class="ic">${u.ic}</div><div class="tx"><b>${u.n}</b><span>${u.d}: ${u.v(l, S)}${max ? "" : ` → <em>${u.v(l + 1, S)}</em>`}</span><span class="dots">${dots}${S.spent[u.id] ? `<small>вложено ${S.spent[u.id]}</small>` : ""}</span></div><div class="pr">${max ? "MAX" : "💰 " + c.toLocaleString("ru-RU") + (ok ? "" : `<small>ещё ${(c - Math.floor(money)).toLocaleString("ru-RU")}</small>`)}</div></button>`;
+  }
+  if (h === officeKey) return; officeKey = h;
+  $("#office").innerHTML = h;
+  $("#office").querySelectorAll("[data-u]").forEach((b) => (b.onclick = () => { if (cur1.buyUpg(b.dataset.u)) { officeKey = ""; drawOffice(); } else { sfx("bad"); toast("Не хватает денег"); } }));
+  const pb = $("#office [data-promo]"); if (pb) pb.onclick = () => { if (state.money < 1000) return toast("Нужно 💰 1 000"); addMoney(-1000, true); app.office(false); promote(1); };
+}
 
 /* ---------- этап 2: интерфейс ---------- */
 let tlBuilt = "";
@@ -229,13 +256,16 @@ const PROMO = {
   1: { h: "Новый управляющий квартала!", p: "Хозяйка квартала мадам Ада заметила шустрого зазывалу из переулка «У стены». Теперь у тебя четыре переулка, свои зазывалы и девушки.", mech: HOW[2] },
   2: { h: "Хозяин ночного города?", p: "Квартал приносит больше всех в Порт-Лантерне. Теперь тебе подчиняются управляющие районов. Только верить им на слово не стоит.", mech: HOW[3] },
 };
+let promoting = false;
 function promote(from) {
+  if (promoting) return; promoting = true; // повышение запускается один раз, пока не нажата кнопка
   sfx("promo"); haptic("heavy");
   const P = PROMO[from];
   modal(`<div class="news"><small>ВЕЧЕРНИЙ ВЕСТНИК · ПОРТ-ЛАНТЕРН</small><h1>${P.h}</h1><p>${P.p}</p></div>
     <p class="muted">Новая работа — новые правила:</p>${P.mech}<button class="gold" style="width:100%" data-close data-lock>Начать этап ${from + 1}</button>`, null, () => { jumpTo(from + 1, true); });
 }
 function jumpTo(st, fromPromo) {
+  promoting = false;
   if (st >= 2 && !state.t2) state.t2 = t2fresh();
   if (st >= 3 && !state.t3) state.t3 = t3fresh();
   if (fromPromo && st === 2) state.money = Math.max(state.money, 300);
@@ -246,7 +276,8 @@ function jumpTo(st, fromPromo) {
   setStage(true);
 }
 function setStage(showHow) {
-  tip(""); app.peek(null); $("#t2sel").style.display = "none";
+  tip(""); app.peek(null); $("#t2sel").style.display = "none"; app.office(false);
+  $("#t1hud").style.display = state.stage === 1 ? "flex" : "none";
   cur1 = cur2 = null;
   const st = state.stage;
   $("#t2hud").style.display = st === 2 ? "flex" : "none";
