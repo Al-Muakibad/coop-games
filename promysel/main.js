@@ -1102,7 +1102,7 @@ window.__pm = {
   solo: () => { soloMenu(); return true; }, coopBot: (bay, o) => { start("local", S.newGame(Object.assign({ mode: "coop", seed: 77, meta: prof.meta, diff: 1, bay: bay || 0 }, o || {})), 0, { bot: 1 }); return true; },
   bayDone: () => bayDone(), zoom: (k) => { cam.zk = k; }, fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
-  host: (mode) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1 })); return true; },
+  host: (mode, bay) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1, bay: bay || 0 })); return true; },
   join: (id) => { joinGame(id); return true; },
   money: (v) => { G.money[G.pl[me].team] = v; },
   open: (id) => { const Lr = S.layoutOf(G); S.forceOpen(G, Lr.byId[G.pl[me].team][id]); world.sync(G, true); },
