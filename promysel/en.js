@@ -147,3 +147,4 @@ window.I18N && I18N.add({
   "Поток в норме — реклама у рынка добавит людей": "Flow is fine — advertising by the market brings more people", "цепочек сами": "chains automated", "без тебя": "without you",
 });
 window.I18N && I18N.add({ "нанимай помощников и улучшай их": "hire helpers and upgrade them", "Мало покупателей — дай рекламу у рынка": "Few buyers — advertise by the market" });
+window.I18N && I18N.add({ "Выбери рекламу — нажми на карточку": "Pick an ad — tap a card" });

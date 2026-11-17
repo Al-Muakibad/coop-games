@@ -805,13 +805,13 @@ export function flowOf(G, nItems) {
   if (!nItems) return 0;
   const teams = G.mode === "vs" ? [0, 1] : [0];
   let m = 0; for (const t of teams) m += adMul(G, t) * (0.7 + 0.6 * repOf(G, t)); m /= teams.length;
-  return (16 + 18 * nItems) * Math.min(4.5, m * (evOn(G, "fair") ? 1.6 : 1)) * (G.mode === "vs" ? 1.4 : 1);
+  return (16 + 18 * nItems) * Math.min(4.5, m * (evOn(G, "fair") ? 1.6 : 1)) * (G.mode === "vs" ? 0.9 : 1);
 }
 // цена рекламы — от цены самого дорогого товара, который сейчас продаётся (чтобы в каждой бухте была по карману)
 export function adCost(G, team, k) {
   const L = layoutOf(G); let unit = 2;
   for (const e of L.E) if (e.k === "stall" && G.e[e.i].o && (G.mode !== "vs" || e.team === team)) unit = Math.max(unit, itemPrice(G, e.item));
-  const A = ADS[k]; return Math.round(unit * A.k * (k === "sign" ? Math.pow(A.mult, adOf(G, team).sign || 0) : 1) / 5) * 5;
+  const A = ADS[k]; return Math.round(unit * A.k * (G.mode === "vs" ? (k === "sign" ? 0.15 : 0.3) : 1) * (k === "sign" ? Math.pow(A.mult, adOf(G, team).sign || 0) : 1) / 5) * 5;
 }
 export function canAd(G, team, k) { const a = adOf(G, team); if (k === "sign") return (a.sign || 0) < ADS.sign.max; return !((a[k] || 0) > 0) && !((a[k + "c"] || 0) > 0); }
 function stepAds(G, dt) {

@@ -44,7 +44,7 @@
   #prog .bar { flex: 1; height: 8px; border-radius: 6px; background: rgba(255,255,255,.14); overflow: hidden; min-width: 30px; }
   #prog .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #8fd8ff, #7ed957); border-radius: 6px; transition: width .5s; }
   #prog b { color: var(--ice); }
-  #flow { width: auto; margin: 0; height: 30px; padding: 0 9px; gap: 8px; font-size: 12px; flex: 0 0 auto; } #flow b { font-family: "Rubik", sans-serif; color: var(--cream); } #flow .w { font-style: normal; color: var(--gold); }
+  #flow { gap: 8px; font-size: 12px; padding: 0 9px !important; } #flow b { font-family: "Rubik", sans-serif; color: var(--cream); } #flow .w { font-style: normal; color: var(--gold); }
   .hc.ad .por .em { font-size: 28px; } .hc.ad.on { box-shadow: 0 0 0 3px #ffd34d, 0 3px 0 #c9b48c; } .hc small { display: block; font-size: 11px; font-weight: 900; color: #3a6a2a; } .hc:disabled { opacity: .7; }
   #hire.ads { background: linear-gradient(180deg, #2f6f8f, #1f4f6a); border-color: #163a50; } #hire.ads .hh { color: #e6f4ff; }
   .flowbox { background: rgba(255,255,255,.12); color: #fff; border-radius: 12px; padding: 7px 10px; font-weight: 800; font-size: 13px; } .flowbox b { font-family: "Rubik"; font-size: 17px; color: var(--gold); } .flowbox small { display: block; color: #ffd0a0; font-weight: 800; }
@@ -203,9 +203,8 @@
   </div>
   <div class="row" id="row2">
     <div class="chip" id="prog"><span id="prog-t">Тихая бухта</span><div class="bar"><i id="prog-i"></i></div><b id="prog-n">0/30</b></div>
-    <div class="chip btn hidden" id="flow"></div>
   </div>
-  <div class="row" id="tasks"><div class="chip btn hidden" id="con"></div><div class="chip btn hidden" id="big"></div><div class="chip btn hidden" id="evc"></div></div>
+  <div class="row" id="tasks"><div class="chip btn hidden" id="flow"></div><div class="chip btn hidden" id="con"></div><div class="chip btn hidden" id="big"></div><div class="chip btn hidden" id="evc"></div></div>
   <div class="row"><div class="chip hidden" id="vs"></div></div>
 </div>
 <div class="hud hidden" id="hint"></div>

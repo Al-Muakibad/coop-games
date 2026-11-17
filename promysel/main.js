@@ -887,7 +887,7 @@ function computeHint() {
   let hireE = null, hc = np >= 0 ? S.padCost(G, np) - G.e[np].p : 1e18;
   if (house != null) for (const e of Lr.E) if (e.k === "helper" && mine(e) && S.canHire(G, e.i) && S.hireCost(G, e.i) < hc) { hc = S.hireCost(G, e.i); hireE = e; }
   if (hireE && hireOpen < 0) { if (G.money[team] >= hc) return { ic: "helper", tx: L("Найми в артели") + ": " + entName(hireE), t: Lr.E[house].zin }; np = -1; }
-  if (hireOpen >= 0) return { ic: "helper", tx: L("Выбери, кого нанять — нажми на карточку"), t: null };
+  if (hireOpen >= 0) return boardKind === "ads" ? { ic: "cash", tx: L("Выбери рекламу — нажми на карточку"), t: null } : { ic: "helper", tx: L("Выбери, кого нанять — нажми на карточку"), t: null };
   let cashSum = 0, cashE = null, cd = 1e9;
   for (const e of Lr.E) if (mine(e) && e.zcash && G.e[e.i].o && G.e[e.i].cash > 0) { cashSum += G.e[e.i].cash; const d = Math.hypot(p.x - e.zcash.x, p.z - e.zcash.z); if (d < cd) { cd = d; cashE = e; } }
   if (np >= 0) { const need = S.padCost(G, np) - G.e[np].p; const e = Lr.E[np]; if (G.money[team] >= need) return { ic: "star", tx: (e.k === "goal" ? "🗼 " : "") + L("Открой") + ": " + entName(e), t: e.zpad }; if (G.money[team] + cashSum >= need && cashE) return { ic: "cash", tx: L("Собери выручку — хватит на") + " «" + entName(e) + "»", t: cashE.zcash }; }
