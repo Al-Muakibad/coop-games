@@ -40,7 +40,7 @@ export function makeBot(pi, opt) {
       // управляющий цехом и сейф — когда цех уже обставлен помощниками
       if (G.mode !== "vs") {
         for (const e of mine) { if (!canMgr(G, e.i) || !G.hp.some((h) => L.E[h.e].from === e.i)) continue; const c = mgrCost(G, e.i), w = c * 1.5; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, op: ["g", house, e.i], c }; } }
-        if (!G.safe && G.hp.length >= 6) { const c = safeCost(G), w = c * 1.2; if (w < pc) { pc = w; pad = -1; hireT = { k: "hire", e: house, op: ["s", house], c }; } }
+        // сейфа больше нет — выручку собирает кассир (его нанимают в артели)
       }
     }
     // своя хижина: рюкзак, унты, сеть, длинные руки

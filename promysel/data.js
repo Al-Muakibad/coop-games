@@ -227,6 +227,7 @@ const BAY1 = {
     { id: "runner_soup", k: "helper", n: "Разносчик ухи", role: "runner", from: "kettle", to: ["stall_soup"], cost: 1900, after: ["fisher_soup"] },
     { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 3200, after: ["runner_soup", "cashier"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
   ],
 };
 // Бухта 2 — Ледяной фьорд: лосось с отмели и с мостков, стейки, икра, консервы на судно
@@ -288,6 +289,7 @@ const BAY2 = {
     { id: "loader3", k: "helper", n: "Грузчик бочонков", role: "runner", from: "cooper", to: ["dock"], cost: 6000, after: ["cooper"] },
     { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 11000, after: ["saltman", "feed_keg", "loader3"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
   ],
 };
 // Бухта 3 — Крабовый мыс: краб у камней, варочная, мидийная ферма, лёд и ящики на судно
@@ -352,6 +354,7 @@ const BAY3 = {
     { id: "loader_p", k: "helper", n: "Грузчик паштета", role: "runner", from: "patehouse", to: ["dock"], cost: 10400, after: ["feed_p1"] },
     { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 19000, after: ["loader_p", "feed_p2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
   ],
 };
 // Бухта 4 — Ярмарочная гавань: треска, сушильня, морская капуста, пекарня рыбников, жиротопня и судно в гавани
@@ -419,6 +422,7 @@ const BAY4 = {
     { id: "loader_b", k: "helper", n: "Грузчик корзин", role: "runner", from: "basketry", to: ["dock"], cost: 29000, after: ["feed_b1"] },
     { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 36000, after: ["loader_b", "feed_b2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -8.0, z: 9.3, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
   ],
 };
 export const BAYMAPS = [BAY1, BAY2, BAY3, BAY4];

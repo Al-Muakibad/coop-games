@@ -5,6 +5,7 @@ import * as S from "./sim.js";
 import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW, OUTFITS, PET, RIDES, RARE, ROUTES, ISLES, ARCH, DAILY, DAILY_RW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { ArchMap, ISLE_POS } from "./map3d.js";
+import { hostRoom, joinRoom, newRoomId, validCode } from "./joinx.js";
 import { View, fmt, CASH, PCOL } from "./view.js";
 import { buildIcons, URL as ICONURL } from "./icons.js";
 import { makeBot } from "./bot.js";
@@ -176,12 +177,14 @@ function coopMenu() {
   const draw = () => dialog(`<h2>👥 ${L("Вместе")}</h2><p>${L("Общая бухта, общие деньги. Один ловит — другой продаёт. На доске — заказы на время. Цель — зажечь маяк.")}</p>
     <div class="seg">${DIFF.map((d, i) => `<button data-d="${i}" class="${i === diff ? "on" : ""}">${L(d.n)}<small>${i === 0 ? L("дешевле, терпеливее") : i === 1 ? L("как задумано") : L("дороже, сроки жёстче")}</small></button>`).join("")}</div>
     <button class="b primary" id="c-inv"><span>📨</span><span class="t">${L("Позвать друга")}<small>${L("Ссылка — друг играет со своего телефона")}</small></span></button>
+    <button class="b" id="c-code"><span>🔑</span><span class="t">${L("Войти по коду")}<small>${L("Если друг уже создал комнату")}</small></span></button>
     <button class="b" id="c-bot"><span>🤖</span><span class="t">${L("Вместе с ботом")}<small>${L("Бот ловит и носит, ты управляешь бухтой")}</small></span></button>
     <button class="b ghost" id="c-x">${L("Назад")}</button>`);
   draw();
   const wire = () => {
     $("dlgp").querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => { diff = +b.dataset.d; play("select"); draw(); wire(); }));
     $("c-inv").onclick = () => guardSlot("coop", () => { hideDlg(); hostGame(S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, meta: prof.meta, diff })); });
+    $("c-code").onclick = () => { hideDlg(); codeDialog(); };
     $("c-bot").onclick = () => guardSlot("coop", () => { hideDlg(); start("local", S.newGame({ mode: "coop", seed: (Math.random() * 1e9) | 0, meta: prof.meta, diff }), 0, { bot: 1 }); });
     $("c-x").onclick = () => hideDlg();
   };
@@ -236,41 +239,88 @@ async function resumeSlot(slot) {
 }
 
 /* ---------- онлайн: хозяин ---------- */
-async function hostGame(g, away) {
+// хозяин: комната сразу на всех серверах, код комнаты на экране; игра может начаться до прихода друга
+let hostSt = null;
+function inviteHtml(id, st) {
+  return `<div class="rcode"><small>${L("Код комнаты")}</small><b>${id.toUpperCase()}</b></div>
+    <p class="rnet">${st.ok ? "📶 " + L("Комната открыта") + ` (${L("серверов")}: ${st.ok}/${st.n})` : st.fail >= st.n ? "📵 " + L("Нет связи с сервером") : `<span class="lb-dots">${L("Открываем комнату")}</span>`}</p>`;
+}
+async function hostGame(g, away, keepId) {
   hideAll(); $("title").classList.add("hidden");
-  const text = g.mode === "vs" ? L("Вызываю тебя в «Промысел» ⚔️ Кто быстрее накормит толпу?") : L("Го строить рыбацкую бухту вдвоём 🎣 Заходи!");
-  const r = await Lobby.host(GAME, { text, onCancel: () => showMenu(), onBot: () => start("local", g, 0, { bot: 1 }) });
-  room = r; r.off("peer"); r.off("peer-left");
+  const id = keepId || newRoomId(); let done = false;
+  if (hostSt) hostSt.close();
+  const st = hostSt = hostRoom(GAME, id, myName(), (r) => { if (st !== hostSt) return; if (!done) { done = true; hideDlg(); } else if (!$("dlg").classList.contains("hidden") && $("dlgp").querySelector(".rcode")) hideDlg(); onFriend(r, g, away); });
+  const draw = () => { if (done || st !== hostSt) return;
+    dialog(`<h2>📨 ${L("Позови друга")}</h2><p>${L("Отправь приглашение или скажи код. Друг: «Вместе» → «Войти по коду».")}</p>${inviteHtml(id, st)}
+      <button class="b primary" id="h-inv"><span>📨</span><span class="t">${L("Отправить приглашение")}</span></button>
+      <button class="b" id="h-go"><span>▶</span><span class="t">${L("Играть, пока ждём")}<small>${L("Друг подключится сам, когда откроет ссылку")}</small></span></button>
+      <button class="b" id="h-bot"><span>🤖</span><span class="t">${L("С ботом вместо друга")}</span></button>
+      <button class="b ghost" id="h-x">${L("Отмена")}</button>`, true);
+    $("h-inv").onclick = () => sendInvite(id);
+    $("h-go").onclick = () => { done = true; hideDlg(); startHostWaiting(g, away, st); };
+    $("h-bot").onclick = () => { done = true; st.close(); hostSt = null; hideDlg(); start("local", g, 0, { bot: 1, away }); };
+    $("h-x").onclick = () => { done = true; st.close(); hostSt = null; hideDlg(); showMenu(); };
+  };
+  draw(); sendInvite(id);
+  const tmr = setInterval(() => { if (done || st !== hostSt) { clearInterval(tmr); return; } if ($("dlg").classList.contains("hidden")) return; const el = $("dlgp").querySelector(".rnet"); if (el) el.outerHTML = inviteHtml(id, st).split("</div>")[1]; }, 700);
+}
+// друг зашёл — начинаем общую игру
+function onFriend(r, g, away) {
+  room = r; r.off("peer");
   partner = { name: r.peer ? r.peer.name : L("Друг"), online: true, bot: false };
   hs = new HostSync(room, hostApi());
   St.event("pm_room", { role: "host", mode: g.mode });
+  if (started && G === g) { partnerConn(true, r.peer); hs.go(); return; }
   start("host", g, 0, { away });
   hs.go();
 }
-async function rehost(g, rid, m, away) {
-  hideAll(); $("title").classList.add("hidden");
-  dialog(`<h2>${L("Подключаемся…")}</h2><p class="lb-dots"></p>`, true);
-  let r;
-  try { r = await Net.open(GAME, rid, { name: myName(), host: true }); }
-  catch (_) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); start("local", g, 0, { bot: 1, away }); return; }
-  hideDlg();
-  room = r; partner = { name: (m && m.partner) || L("Друг"), online: !!r.peer, bot: false };
-  hs = new HostSync(room, hostApi());
+// хозяин играет, комната ждёт друга в фоне
+function startHostWaiting(g, away, st) {
   start("host", g, 0, { away });
-  if (room.peer) hs.go(); else { if (g.mode === "vs") G.paused = 1; waitFriend(); }
+  if (G.mode === "vs") G.paused = 1;
+  st.ready.then(() => {});
+  const was = st;
+  const iv = setInterval(() => { if (hostSt !== was || st.won) clearInterval(iv); }, 1000);
+  // когда друг зайдёт — onFriend (уже передан в hostRoom)
+}
+async function rehost(g, rid, m, away) {
+  // возвращаемся в свою же комнату (тот же код), друг подключится по старой ссылке
+  hideAll(); $("title").classList.add("hidden");
+  if (hostSt) hostSt.close();
+  let done = false;
+  const st = hostSt = hostRoom(GAME, rid, myName(), (r) => { if (!$("dlg").classList.contains("hidden") && $("dlgp").querySelector(".rcode")) hideDlg(); onFriend(r, g, away); });
+  partner = { name: (m && m.partner) || L("Друг"), online: false, bot: false };
+  start("host", g, 0, { away });
+  if (g.mode === "vs") G.paused = 1;
+  waitFriend();
+}
+// пересоздать комнату: новый код, старая ссылка больше не нужна (если друг «застрял» на подключении)
+function recreateRoom() {
+  if (!G || role !== "host") return;
+  try { room && room.close(); } catch (_) {} room = null; hs = null; partner.online = false;
+  const g = G, id = newRoomId();
+  if (hostSt) hostSt.close();
+  hostSt = hostRoom(GAME, id, myName(), (r) => { if (!$("dlg").classList.contains("hidden") && $("dlgp").querySelector(".rcode")) hideDlg(); onFriend(r, g, 0); });
+  sendInvite(id);
+  toast(L("Новая комната") + ": " + id.toUpperCase(), "good", 4);
+  waitFriend();
 }
 function waitFriend() {
-  dialog(`<h2>${L("Ждём друга")}</h2><p>${G && G.mode === "vs" ? L("Матч на паузе, пока соперник не вернётся.") : L("Бухта работает — можно играть, друг подключится сам.")} ${L("Если он вышел из игры — отправь ссылку ещё раз.")}</p>
+  const id = (hostSt && hostSt.id) || (room && room.id) || "";
+  dialog(`<h2>${L("Ждём друга")}</h2>${id ? inviteHtml(id, hostSt || { ok: 1, n: 1, fail: 0 }) : ""}<p>${G && G.mode === "vs" ? L("Матч на паузе, пока соперник не вернётся.") : L("Бухта работает — можно играть, друг подключится сам.")} ${L("Если он вышел из игры — отправь ссылку ещё раз.")}</p>
     <button class="b primary" id="w-inv"><span>📨</span><span class="t">${L("Отправить ссылку")}</span></button>
     <button class="b" id="w-bot"><span>🤖</span><span class="t">${G && G.mode === "vs" ? L("Доиграть с ботом") : L("Пусть пока поможет бот")}</span></button>
     ${G && G.mode !== "vs" ? `<button class="b" id="w-go"><span>▶</span><span class="t">${L("Играть, пока ждём")}</span></button>` : ""}
+    <button class="b" id="w-new"><span>🔄</span><span class="t">${L("Пересоздать комнату")}<small>${L("Если друг завис на подключении — новый код")}</small></span></button>
     <button class="b ghost" id="w-menu">${L("В меню")}</button>`, true);
   $("w-inv").onclick = () => sendInvite();
+  $("w-new").onclick = () => recreateRoom();
+  const iv = setInterval(() => { const el = $("dlgp").querySelector(".rnet"); if ($("dlg").classList.contains("hidden") || !el || !hostSt) { clearInterval(iv); return; } el.outerHTML = inviteHtml(hostSt.id, hostSt).split("</div>")[1]; }, 700);
   $("w-bot").onclick = () => { botFor(); hideDlg(); };
   if ($("w-go")) $("w-go").onclick = () => hideDlg();
   $("w-menu").onclick = () => toMenu();
 }
-function sendInvite() { if (!room) return; const link = Net.inviteLink(GAME, room.id); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(G && G.mode === "vs" ? L("Вызываю тебя в «Промысел» ⚔️") : L("Заходи в мою бухту 🎣"))}`); }
+function sendInvite(rid) { rid = rid || (room && room.id) || (hostSt && hostSt.id); if (!rid) return; const link = Net.inviteLink(GAME, rid); T.openLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(G && G.mode === "vs" ? L("Вызываю тебя в «Промысел» ⚔️") : L("Заходи в мою бухту 🎣"))}`); }
 function botFor() { bot = makeBot(1 - me, { skill: "good", seed: 5 }); partner.bot = true; partner.name = "🤖 " + L("Бот"); if (G) G.paused = 0; toast(L("Бот занял место напарника"), "good"); }
 function hostApi() {
   return {
@@ -280,9 +330,28 @@ function hostApi() {
   };
 }
 /* ---------- онлайн: гость ---------- */
+// гость: стучимся по коду во все серверы, честно показываем, что происходит, и ждём хозяина до 60 с
+let joinSt = null;
 async function joinGame(id, opened) {
   hideAll(); $("title").classList.add("hidden"); $("menu").classList.add("hidden"); role = "guest-wait";
-  const r = opened || await Lobby.join(GAME, id, { onCancel: () => showMenu(), onBot: () => showMenu() });
+  if (opened) return joined(opened);
+  if (joinSt) joinSt.close();
+  const t0 = Date.now(); let done = false;
+  const st = joinSt = joinRoom(GAME, id, myName(), (r) => { if (done) return; done = true; joined(r); });
+  const draw = () => {
+    if (done || st !== joinSt) return;
+    const sec = Math.round((Date.now() - t0) / 1000);
+    const line = st.ok ? (sec < 10 ? L("Ищем комнату друга") : sec < 25 ? L("Друг ещё не в игре? Попроси открыть «Промысел»") : L("Не находим комнату. Попроси друга нажать «Пересоздать комнату» и прислать новый код")) : st.fail >= st.n ? L("Нет связи с сервером") : L("Подключаемся к серверу");
+    dialog(`<h2>🔗 ${L("Подключаемся")}</h2><div class="rcode"><small>${L("Код комнаты")}</small><b>${id.toUpperCase()}</b></div><p class="rnet"><span class="${st.fail >= st.n ? "" : "lb-dots"}">${line}</span><br><small>${L("серверов")}: ${st.ok}/${st.n} · ${sec} ${L("с")}</small></p>
+      <button class="b" id="j-code"><span>🔑</span><span class="t">${L("Ввести другой код")}</span></button>
+      <button class="b ghost" id="j-x">${L("Отмена")}</button>`, true);
+    $("j-code").onclick = () => { done = true; st.close(); codeDialog(); };
+    $("j-x").onclick = () => { done = true; st.close(); hideDlg(); showMenu(); };
+    if (sec > 60 && !done) { done = true; st.close(); dialog(`<h2>😕 ${L("Комната не найдена")}</h2><p>${L("Друг вышел из игры или открыл новую комнату. Попроси прислать свежее приглашение или код.")}</p><button class="b primary" id="j-re"><span>🔁</span><span class="t">${L("Попробовать ещё раз")}</span></button><button class="b" id="j-code2"><span>🔑</span><span class="t">${L("Ввести код")}</span></button><button class="b ghost" id="j-m">${L("В меню")}</button>`, true); $("j-re").onclick = () => joinGame(id); $("j-code2").onclick = () => codeDialog(); $("j-m").onclick = () => { hideDlg(); showMenu(); }; }
+  };
+  draw(); const iv = setInterval(() => { if (done || st !== joinSt) { clearInterval(iv); return; } draw(); }, 1000);
+}
+function joined(r) {
   room = r; r.off("peer"); r.off("peer-left");
   partner = { name: r.peer ? r.peer.name : L("Хозяин"), online: true, bot: false };
   gs = new GuestSync(room, guestApi());
@@ -291,17 +360,17 @@ async function joinGame(id, opened) {
   room.send("hi", { name: myName() });
   const hello = setInterval(() => { if (started || !room || role !== "guest-wait") { clearInterval(hello); return; } room.send("hi", { name: myName() }); }, 2000);
 }
-async function rejoin(rid) {
-  hideAll(); $("title").classList.add("hidden");
-  let r = null, gone = false;
-  dialog(`<h2>${L("Ждём хозяина")}</h2><p class="lb-dots">${L("Попроси друга открыть «Промысел» и нажать «Продолжить с другом»")}</p><button class="b ghost" id="rj-x">${L("В меню")}</button>`, true);
-  $("rj-x").onclick = () => { gone = true; try { r && r.close(); } catch (_) {} hideDlg(); showMenu(); };
-  try { r = await Net.open(GAME, rid, { name: myName() }); } catch (_) { if (!gone) { hideDlg(); toast(L("Нет связи с сервером"), "bad"); showMenu(); } return; }
-  if (gone) { try { r.close(); } catch (_) {} return; }
-  if (!r.peer) await new Promise((res) => r.on("peer", () => res()));
-  if (gone) return;
-  joinGame(rid, r);
+// войти по коду (6 знаков)
+function codeDialog() {
+  dialog(`<h2>🔑 ${L("Войти по коду")}</h2><p>${L("Код комнаты — у друга на экране «Позови друга» или в паузе.")}</p>
+    <input id="c-code" class="codein" maxlength="6" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ab3k7m">
+    <button class="b primary" id="c-go"><span>🔗</span><span class="t">${L("Войти")}</span></button><button class="b ghost" id="c-cx">${L("Назад")}</button>`);
+  const inp = $("c-code"); setTimeout(() => inp.focus(), 50);
+  const go = () => { const v = inp.value.trim().toLowerCase(); if (!validCode(v)) { inp.classList.add("bad"); toast(L("Код — 6 букв и цифр"), "bad"); return; } hideDlg(); joinGame(v); };
+  $("c-go").onclick = go; inp.onkeydown = (e) => { if (e.key === "Enter") go(); };
+  $("c-cx").onclick = () => { hideDlg(); showMenu(); };
 }
+async function rejoin(rid) { joinGame(rid); }
 function guestApi() {
   return {
     gi: () => me, name: () => myName(),
@@ -370,7 +439,9 @@ function partnerConn(on, p) {
   } else if (role === "guest") {
     save(true);
     dialog(`<h2>${L("Хозяин отключился")}</h2><p class="lb-dots">${L("Ждём, пока он вернётся. Твой прогресс сохранён как копия.")}</p>
+      <button class="b" id="h-code"><span>🔑</span><span class="t">${L("Войти по новому коду")}<small>${L("Если хозяин пересоздал комнату")}</small></span></button>
       ${G.mode !== "vs" ? `<button class="b" id="h-bot"><span>🤖</span><span class="t">${L("Доиграть копию с ботом")}</span></button>` : ""}<button class="b ghost" id="h-menu">${L("В меню")}</button>`, true);
+    $("h-code").onclick = () => { toMenu(); codeDialog(); };
     if ($("h-bot")) $("h-bot").onclick = () => { const g = G; try { room && room.close(); } catch (_) {} room = null; gs = null; hideDlg(); start("local", g, me, { bot: 1, slot: "guest" }); };
     $("h-menu").onclick = () => toMenu();
   }
@@ -382,7 +453,7 @@ const joy = { on: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 }, keys = {};
 function setupInput() {
   const el = $("joy"), knob = el.firstChild, R = 56;
   const down = (e) => {
-    if (!started || joy.on || !$("dlg").classList.contains("hidden")) return;
+    if (!started || joy.on || mapOn || !$("dlg").classList.contains("hidden")) return;
     if (e.target.closest && e.target.closest(".btn, button, .panel, #hire")) return;
     joy.on = true; joy.id = e.pointerId; joy.ox = e.clientX; joy.oy = e.clientY; joy.x = joy.y = 0;
     el.style.transform = `translate(${joy.ox}px, ${joy.oy}px)`; el.classList.add("on"); knob.style.transform = "";
@@ -408,8 +479,16 @@ function setupInput() {
   const tasks = () => { const t = $("top"); t.classList.toggle("exp"); play("click"); if (t.classList.contains("exp") && G && (G.con || S.bigStage(G))) focusBoard(2.2); updHud(true); };
   for (const id of ["con", "big", "evc"]) $(id).onclick = tasks;
   // нажал на поток — объясняем, отчего людей мало и что даёт автоматизация
+  $("b-map").onclick = () => { play("click"); openMap(); };
+  $("chest").onclick = () => { play("click"); openMap(); toast("🧳 " + L("Другие острова торгуют сами: часть выручки приходит сразу, остальное копится в сундуке — заберёшь, когда приплывёшь"), "good", 4.5); };
   $("flow").onclick = () => { if (!G) return; play("click"); const why = S.flowWhy(G, G.pl[me].team); toast((why ? "⚠ " + L(WHY[why]) : "👥 " + L("Поток в норме — реклама у рынка добавит людей")) + (G.mode !== "vs" ? " · ⚙ " + L("цепочек сами") + ": " + autoInfoC.ok + "/" + autoInfoC.n + " · 💤 " + L("без тебя") + " +" + fmt(G.idle || 0) + L("/мин") : ""), why ? "bad" : "good", 4); };
   $("hirel").addEventListener("click", hireClick);
+  $("hire").querySelector(".hx").onclick = () => { play("click"); hireDismiss(); };
+  swipeDown($("hire"), () => hireDismiss());
+  swipeDown($("dlgp"), () => closeDlgUser());
+  $("dlg").addEventListener("click", (e) => { if (e.target === $("dlg")) closeDlgUser(); });
+  // тап мимо доски (по игре) — закрыть доску
+  $("view").addEventListener("pointerdown", () => { if (hireOpen >= 0) hireDismiss(); }, true);
 }
 function stick() {
   let x = joy.x, z = joy.y;
@@ -442,7 +521,7 @@ function tick(dt) {
       for (const op of S.proximityOps(G, me, dt, gtm)) if (S.applyOp(G, "p" + me, op)) gs.op(op);
       const mine = G.ev.splice(n0); onEvents(mine, false);
     }
-    gs.flush(dt, gloc);
+    gs.flush(dt, gloc); gs.predict(dt);
     return;
   }
   simAcc += dt;
@@ -696,6 +775,7 @@ function nextBayDlg() {
   dialog(`<h2>⛵ ${L(B.n)}${lap ? " · " + L("круг") + " " + (lap + 1) : ""}</h2>
     <div class="news">${icons}</div><p>${L("Новый берег и новые товары")}: ${B.news.map((k) => L(ITEMS[IT[k]].n)).join(", ")}.</p><p>✨ ${L("Особое")}: ${L(B.ev)}</p>
     <div class="carry"><div>🎖 ${L("Знаки промысла")}<b>${nPerk}</b></div><div>👷 ${L("Артель")}<b>${L("ур.")} ${c.crew} / ${c.crewspd}</b></div><div>🎒 ${L("Снаряжение")}<b>${L("целиком")}</b></div><div>🏗 ${L("Постройки")}<b>${L("заново")}</b></div></div>
+    ${(G.v || 1) >= 2 ? `<p class="isl-k">🗺 ${L("Все острова — на карте: кнопка 🗺 вверху экрана или стол с картой у артели.")}</p>` : ""}
     ${(G.v || 1) >= 2 ? `<p class="isl-k">🏝 «${L(BAYS[G.bay % BAYS.length].n)}» ${L("продолжит торговать сама")}: +${fmt(S.isleRate(G) * 60)}${L("/мин")} ${L("в сундук острова. Вернуться можно в любой момент — через «Архипелаг».")}</p>` : ""}
     <button class="b primary" id="n-go"><span>⛵</span><span class="t">${L("Плыть")}: ${L(B.n)}</span></button>
     <button class="b" id="n-stay"><span>🏝</span><span class="t">${L("Остаться пока здесь")}<small>${L("Уплыть можно из меню")}</small></span></button>`, true);
@@ -829,7 +909,7 @@ function drawMapUi() {
     const head = `<div class="amc-h"><b>${open ? (I.lit ? "🗼 " : "🏝 ") : I.nw ? "⛵ " : "❔ "}${L(B.n)}</b><small>${ISLE_W[b][0]} ${L(ISLE_W[b][1])} · <img class="fi" src="${ICONURL[ISLE_FISH[b]] || ""}"> ${L(ITEMS[IT[ISLE_FISH[b]]].n)}</small></div>`;
     let body = "";
     if (b === st.cur) body = `<div class="amc-r"><span>📍 ${L("Ты здесь")}</span><b>+${fmt(I.r)}${L("/мин")}</b><small>${L("столько остров заработает сам, когда уплывёшь")}</small></div>`;
-    else if (I.known) body = `<div class="amc-r"><span>💰 ${L("в сундуке")}</span><b>${fmt(I.ch)}${I.cap ? " / " + fmt(I.cap) : ""}</b><small>+${fmt(I.r)}${L("/мин")} · ${L("заберёшь, когда приплывёшь")}</small></div>`;
+    else if (I.known) body = `<div class="amc-r"><span>💰 ${L("в сундуке")}</span><b>${fmt(I.ch)}${I.cap ? " / " + fmt(I.cap) : ""}</b><small>${L("Остров торгует сам")}: +${fmt(I.r)}${L("/мин")}. ${L("15% приходит тебе сразу, остальное копится в сундуке — заберёшь, когда приплывёшь")}</small></div>`;
     else if (I.nw) body = `<div class="amc-r"><span>✨ ${L("Новый остров")}</span><b></b><small>${L(B.ev)}</small></div>`;
     else body = `<div class="amc-r"><span>🌫 ${L("Остров скрыт туманом")}</span><b></b><small>${L("Откроется, когда зажжёшь маяк на последнем острове")}</small></div>`;
     const goods = open || I.nw ? `<div class="amc-g">${icons}</div>` : "";
@@ -868,12 +948,28 @@ function setupMapInput() {
   $("am-rt").onclick = () => { mapPanel = mapPanel === "routes" ? "" : "routes"; if (mapPanel === "routes") { mapSel = -1; amap.select(-1); if (G && role !== "guest") G.mapSel = -1; } play("select"); drawMapUi(); };
   $("am-sheet").addEventListener("click", mapClick);
 }
+// обучение архипелагу: 3 коротких шага, один раз
+function archTutorial() {
+  if (!G || role === "guest" || (prof.tut && prof.tut.arch)) return;
+  prof.tut = Object.assign({}, prof.tut, { arch: 1 }); SV.saveProfile(prof);
+  const steps = [
+    ["🗺", L("Архипелаг"), L("Каждая бухта — остров. Карту открывает кнопка 🗺 вверху или стол с картой у артели. На карте — «Плыть» на любой открытый остров.")],
+    ["🧳", L("Сундуки островов"), L("Старый остров торгует сам. 15% его выручки приходит тебе сразу, остальное копится в сундуке. Приплывёшь — заберёшь. Сколько накопилось — в шапке: 🧳.")],
+    ["⛵", L("Торговые пути"), L("На карте, кнопка «Пути»: шхуна возит товар с острова на остров и привозит деньги каждые полторы минуты.")],
+  ];
+  const show = (k) => { const [ic, t, d] = steps[k]; dialog(`<div class="tut"><div class="ti">${ic}</div><h2>${t}</h2><p>${d}</p><div class="tdots">${steps.map((_, j) => `<i class="${j === k ? "on" : ""}"></i>`).join("")}</div></div><button class="b primary" id="tu-n"><span>${k < steps.length - 1 ? "➡️" : "👍"}</span><span class="t">${k < steps.length - 1 ? L("Дальше") : L("Понятно")}</span></button>${k === steps.length - 1 ? `<button class="b" id="tu-m"><span>🗺</span><span class="t">${L("Открыть карту")}</span></button>` : ""}`);
+    $("tu-n").onclick = () => { play("select"); if (k < steps.length - 1) show(k + 1); else hideDlg(); };
+    if ($("tu-m")) $("tu-m").onclick = () => { hideDlg(); openMap(); };
+  };
+  show(0);
+}
 function sailIsle(b, lap) {
   const N = S.sailTo(G, b, lap != null ? { lap } : {});
   const wasBot = !!bot, r = role;
   start(r, N, 0, { bot: wasBot, newBay: 1 });
   if (hs) hs.go();
   if (N.chestGot > 0) setTimeout(() => banner("💰 " + L("Сундук острова") + ": +" + fmt(N.chestGot), L("Остров торговал, пока тебя не было"), "gold"), 3200);
+  if (!(prof.tut && prof.tut.arch)) setTimeout(() => { if (started && G === N && $("dlg").classList.contains("hidden")) archTutorial(); }, 4200);
 }
 
 /* ---------- «пока тебя не было» ---------- */
@@ -963,14 +1059,15 @@ const myLoc = () => (role === "guest" ? gloc : G.pl[me]);
 // чем занят помощник — одной строкой
 function jobText(e) {
   const Lr = S.layoutOf(G);
-  if (e.def.role === "cashier") return L("Сам собирает выручку со всех прилавков");
+  if (e.def.role === "cashier") return L("Собирает всю выручку — с прилавков, причала и доски заказов — тебе в кошелёк. Бегать за деньгами не нужно");
   const s = Lr.E[e.from], it = s.k === "spot" || s.k === "gen" ? s.item : s.rec.out, to = e.to.map((i) => entName(Lr.E[i])).join(" / ");
   return s.k === "spot" ? L("Ловит") + " «" + L(ITEMS[it].n) + "» → " + to : L("Носит") + " «" + L(ITEMS[it].n) + "»: " + entName(s) + " → " + to;
 }
 function roleItem(e) { if (e.def.role === "cashier") return "cash"; const s = S.layoutOf(G).E[e.from]; return ITEMS[s.k === "spot" || s.k === "gen" ? s.item : s.rec.out].id; }
 function crewText(u, lv) { return u === "crew" ? L("Помощники несут") + " " + (UPG.crew.v(lv) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) + " → " + (UPG.crew.v(lv + 1) + 2 * S.pk(G, "h_cap") + S.mt(G, "m_hcap")) : L("Скорость помощников") + " +" + Math.round(lv * 12) + "% → +" + Math.round((lv + 1) * 12) + "%"; }
 // одна доска снизу на два дома: «Артель» (наём) и «Реклама» (поток покупателей)
-let boardKind = "";
+let boardKind = "", hireGone = -1, hireDw = 0;
+function hireDismiss() { if (hireOpen < 0) return; hireGone = hireOpen; hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); }
 // автоматизация (раз в секунду): какие цеха работают сами — для значков ⚙ и шапки
 let autoSet = new Set(), autoInfoC = { n: 0, ok: 0 }, autoT = 0;
 function updAuto(dt) {
@@ -979,12 +1076,20 @@ function updAuto(dt) {
   for (const e of Lr.E) if ((G.mode !== "vs" || e.team === team) && S.stationAuto(G, e)) autoSet.add(e.i);
   autoInfoC = G.mode !== "vs" ? S.autoInfo(G, team) : { n: 0, ok: 0 }; view.autoSet = autoSet;
 }
+let mapZone = -1, mapDw = 0;
 function updHire() {
   if (!G || !started) return;
+  // стол с картой: подошёл — открылась карта (снова — когда отойдёшь и вернёшься)
+  // открывается, только если постоять у стола (на бегу мимо — нет)
+  if (!mapOn && $("dlg").classList.contains("hidden")) { const mi = archOk() ? S.atMap(G, me, myLoc()) : -1;
+    if (mi < 0) { mapZone = -1; mapDw = 0; } else if (mapZone !== mi) { mapDw = joy.on && Math.hypot(joy.x, joy.y) > 0.2 ? 0 : mapDw + 0.1; if (mapDw >= 0.5) { mapZone = mi; mapDw = 0; openMap(); } } }
   const busy = G.winner >= 0 || !$("dlg").classList.contains("hidden");
   const hi = busy ? -1 : S.atHire(G, me, myLoc()), ai = busy || hi >= 0 ? -1 : S.atAds(G, me, myLoc()), ui = busy || hi >= 0 || ai >= 0 ? -1 : S.atHut(G, me, myLoc());
   const at = hi >= 0 ? hi : ai >= 0 ? ai : ui, kind = hi >= 0 ? "hire" : ai >= 0 ? "ads" : ui >= 0 ? "hut" : "";
-  if (at < 0) { if (hireOpen >= 0) { hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); } return; }
+  if (at < 0) { hireGone = -1; hireDw = 0; if (hireOpen >= 0) { hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); } return; }
+  if (at === hireGone) return;      // закрыли сами — откроется, когда отойдёшь и вернёшься
+  // на бегу мимо доска не выскакивает: надо остановиться у неё (как у площадок)
+  if (hireOpen !== at) { const moving = (joy.on && Math.hypot(joy.x, joy.y) > 0.2) || (myLoc().mv || 0) > 0.2; hireDw = moving ? 0 : hireDw + 0.1; if (hireDw < 0.3) return; }
   if (hireOpen !== at) { hireOpen = at; boardKind = kind; hireKey = ""; $("hire").classList.remove("hidden"); play("cloth", { vol: 0.5 }); haptic("select"); $("hire").classList.toggle("ads", kind === "ads"); $("hire").classList.toggle("hut", kind === "hut"); $("hire").querySelector(".hh").innerHTML = kind === "ads" ? `<b>${L("РЕКЛАМА")}</b><small>${L("больше покупателей — больше выручки")}</small>` : kind === "hut" ? `<b>${L("ХИЖИНА")}</b><small>${L("твоё снаряжение — переходит в каждую бухту")}</small>` : `<b>${L("АРТЕЛЬ")}</b><small>${L("нанимай помощников и улучшай их")}</small>`; }
   if (kind === "ads") return updAds();
   if (kind === "hut") return updHut();
@@ -996,8 +1101,9 @@ function updHire() {
   const lockHtml = locked.slice(0, 2).map((e) => { const need = e.after.find((a) => !G.e[a].o); return `<div class="hc lock"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[roleItem(e)] || ""}"></div><div class="tx"><b>${esc(entName(e))}</b><span>🔒 ${L("сначала открой")} «${esc(entName(Lr.E[need]))}»</span></div></div>`; }).join("");
   // управляющие цехами (цех сам тянет сырьё тележкой) и сейф с автосбором выручки
   const priceTag = (c) => `<div class="pr">💵 ${fmt(c)}${money >= c ? "" : `<small>${L("ещё")} ${fmt(c - money)}</small>`}</div>`;
-  const mgr = G.mode === "vs" ? "" : Lr.E.filter((e) => S.canMgr(G, e.i) && hired.some((h) => h.from === e.i)).slice(0, 3).map((e) => { const c = S.mgrCost(G, e.i); return `<button class="hc up ${money >= c ? "ok" : ""}" data-g="${e.i}"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[ITEMS[e.rec.out].id] || ""}"></div><div class="tx"><b>${L("Управляющий")}: ${esc(entName(e))}</b><span>${L("Цех сам подтягивает сырьё тележкой — подносить не нужно")}</span></div>${priceTag(c)}</button>`; }).join("");
-  const safe = G.mode !== "vs" && !G.safe && hired.length >= 3 ? (() => { const c = S.safeCost(G); return `<button class="hc up ${money >= c ? "ok" : ""}" data-s="1"><div class="por"><img src="${ICONURL.cashier}"></div><div class="tx"><b>${L("Сейф с автосбором")}</b><span>${L("Вся выручка сама идёт в кошелёк — бегать за деньгами не нужно")}</span></div>${priceTag(c)}</button>`; })() : "";
+  const per = (v) => (v * 60).toFixed(v * 60 < 10 ? 1 : 0).replace(".0", "");
+  const mgr = G.mode === "vs" ? "" : Lr.E.filter((e) => S.canMgr(G, e.i) && hired.some((h) => h.from === e.i)).slice(0, 3).map((e) => { const c = S.mgrCost(G, e.i); return `<button class="hc up ${money >= c ? "ok" : ""}" data-g="${e.i}"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[ITEMS[e.rec.out].id] || ""}"></div><div class="tx"><b>${L("Управляющий")}: ${esc(entName(e))}</b><span>${L("Встаёт у цеха: сырьё подвозит тележкой сам, цех работает быстрее")}: <b class="ba">${per(S.stationRate(G, e))}&nbsp;→&nbsp;${per(S.stationRate(G, e, true))} ${L("шт/мин")} (+${Math.round((S.MGR_K - 1) * 100)}%)</b></span></div>${priceTag(c)}</button>`; }).join("");
+  const safe = "";
   const html = `${avail.map(card).join("")}${safe}${mgr}${crew}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
   if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
 }
@@ -1066,6 +1172,11 @@ function updHud(force) {
   }
   // поток покупателей, автоматизация, доход без тебя
   {
+    // карта архипелага и сундуки других островов
+    const arOk = archOk(); $("b-map").classList.toggle("hidden", !arOk);
+    const ar = arOk ? mapState() : null, others = ar ? ar.isl.filter((I, b) => I.known && b !== ar.cur) : [];
+    const ce = $("chest"); ce.classList.toggle("hidden", !others.length);
+    if (others.length) setText(ce, `🧳 +${fmt(ar.live || 0)}${L("/мин")} · ${fmt(others.reduce((a, I) => a + I.ch, 0))}`);
     const fe = $("flow"), why = S.flowWhy(G, team), ai = autoInfoC;
     const html = `<span>👥 <b>${Math.round(G.flow || 0)}</b>${L("/мин")}${why ? ` <i class="w">⚠</i>` : ""}</span>${G.mode !== "vs" && ai.n ? `<span>⚙ <b>${ai.ok}/${ai.n}</b></span>` : ""}${G.mode !== "vs" && (G.idle || 0) > 0 ? `<span>💤 <b>+${fmt(G.idle)}</b>${L("/мин")}</span>` : ""}`;
     if (fe.dataset.h !== html) { fe.innerHTML = html; fe.dataset.h = html; } fe.classList.remove("hidden");
@@ -1164,7 +1275,23 @@ function updHint() {
 function tipShow(html) { const t = $("tip"); if (!html) { t.classList.remove("show"); return; } if (t.dataset.h !== html) { t.innerHTML = html; t.dataset.h = html; } t.classList.add("show"); }
 // метка у края экрана, если цель за кадром
 let edgeEl = null, tagEl = null;
+// цены «Ускорить цех» — подписью поверх картинки: здание их больше не загораживает
+const upgEl = new Map();
+function drawUpgLabels() {
+  const Lr = S.layoutOf(G), p = view.disp.p[me] || G.pl[me], team = G.pl[me].team, used = new Set();
+  for (const e of Lr.E) {
+    if (e.k !== "supg" || (G.mode === "vs" && e.team !== team) || !S.padVisible(G, e.i)) continue;
+    if (Math.hypot(e.zpad.x - p.x, e.zpad.z - p.z) > 9) continue;
+    const sp = project(e.zpad.x, 0.9, e.zpad.z); if (sp.z > 1 || sp.x < -40 || sp.x > W + 40 || sp.y < 0 || sp.y > H) continue;
+    let el = upgEl.get(e.i); if (!el) { el = document.createElement("div"); el.className = "upl"; $("layer").appendChild(el); upgEl.set(e.i, el); }
+    const t = Lr.E[e.tg], lv = G.e[e.tg].lv || 0, c = S.padCost(G, e.i) - G.e[e.i].p, ok = G.money[team] >= c;
+    setText(el, `⚡ ${entName(t)} ${L("ур.")}${lv}→${lv + 1} · 💵 ${fmt(c)}`); el.classList.toggle("ok", ok);
+    const hw = (el.offsetWidth || 140) / 2 + 6; el.style.transform = `translate(${Math.round(Math.max(hw, Math.min(W - hw, sp.x)))}px, ${Math.round(Math.max(150, sp.y))}px) translate(-50%, -100%)`; el.style.display = ""; used.add(e.i);
+  }
+  for (const [k, el] of upgEl) if (!used.has(k)) el.style.display = "none";
+}
 function drawOverlay() {
+  drawUpgLabels();
   const showGuide = G && hintTarget && (guideForce || S.progress(G, G.pl[me].team).o < 7 || idleT > 4);
   const p = view.disp.p[me];
   if (showGuide && p) view.guide({ x: p.x, z: p.z }, hintTarget); else view.guide(null);
@@ -1203,8 +1330,12 @@ function workName(h) { const Lr = S.layoutOf(G), e = Lr.E[h.e]; return e.def.rol
 function banner(a, b, cls) { const el = $("banner"); el.className = cls || ""; const tp = $("top"); el.style.top = (tp.classList.contains("hidden") ? 90 : tp.getBoundingClientRect().bottom + 8) + "px"; el.innerHTML = esc(a) + (b ? `<small>${esc(b)}</small>` : ""); void el.offsetWidth; el.classList.add("show"); clearTimeout(banner.t); banner.t = setTimeout(() => el.classList.remove("show"), 2600); }
 function toast(txt, cls, life) { const box = $("toasts"); while (box.children.length > 2) box.firstChild.remove(); const el = document.createElement("div"); el.className = "toast " + (cls || ""); el.textContent = txt; box.appendChild(el); setTimeout(() => { el.style.transition = "opacity .4s"; el.style.opacity = "0"; setTimeout(() => el.remove(), 400); }, (life || 2.8) * 1000); }
 function hideAll() { ["menu", "dlg"].forEach((id) => $(id).classList.add("hidden")); }
-function dialog(html, keep) { $("dlgp").innerHTML = html; $("dlg").classList.remove("hidden"); $("dlg").dataset.keep = keep ? 1 : ""; if (joy.on) { joy.on = false; joy.x = joy.y = 0; $("joy").classList.remove("on"); } }
+function dialog(html, keep) { $("dlgp").innerHTML = (keep ? "" : `<button class="dx" id="dlg-x" aria-label="close">✕</button>`) + html; if (!keep) $("dlg-x").onclick = () => closeDlgUser(); $("dlg").classList.remove("hidden"); $("dlg").dataset.keep = keep ? 1 : ""; if (joy.on) { joy.on = false; joy.x = joy.y = 0; $("joy").classList.remove("on"); } }
 function hideDlg() { $("dlg").classList.add("hidden"); }
+// закрыть окно самому (✕, тап мимо окна, свайп вниз): если в окне была кнопка «Назад/Готово» — нажимаем её, иначе просто прячем
+function closeDlgUser() { if ($("dlg").dataset.keep) return; const back = $("dlgp").querySelector("button.ghost[id$='-x'], #f-x, #dl-x, #bk-x, #s-x, #c-x, #v-x, #r-x, #g-x"); play("click"); if (back) back.click(); else hideDlg(); }
+// свайп вниз по окну/доске закрывает его
+function swipeDown(el, fn) { let y0 = null, x0 = 0, sc = 0; el.addEventListener("touchstart", (e) => { const t = e.touches[0]; y0 = t.clientY; x0 = t.clientX; sc = (e.target.closest("#hirel, .panel") || {}).scrollTop || 0; }, { passive: true }); el.addEventListener("touchend", (e) => { if (y0 == null) return; const t = e.changedTouches[0], dy = t.clientY - y0, dx = Math.abs(t.clientX - x0); y0 = null; if (dy > 70 && dx < dy * 0.6 && sc <= 0) fn(); }, { passive: true }); }
 $("dlg").addEventListener("pointerdown", (e) => { if (e.target === $("dlg") && !$("dlg").dataset.keep) hideDlg(); });
 function showHelp(back) {
   const I = (k) => `<img src="${ICONURL[k] || ""}">`;
@@ -1244,7 +1375,7 @@ function openPause() {
   dialog(`<h2>${G.mode === "vs" ? "⚔️ " + L("Матч") : L(BAYS[G.bay].n)}</h2>
     <p>${G.mode !== "vs" ? `${L("Заработано")}: ${fmt(G.earned[0])} · ${L("заказов")}: ${G.cdone} · ⭐ ${G.stars}` : ""}</p>
     <button class="b primary" id="p-go"><span>▶</span><span class="t">${L("Продолжить")}</span></button>
-    ${role === "host" ? `<button class="b" id="p-inv"><span>📨</span><span class="t">${L("Ссылка другу ещё раз")}</span></button>` : ""}
+    ${role === "host" ? `<button class="b" id="p-inv"><span>📨</span><span class="t">${L("Ссылка другу ещё раз")}<small>${L("Код комнаты")}: ${((room && room.id) || (hostSt && hostSt.id) || "").toUpperCase()}</small></span></button><button class="b" id="p-new"><span>🔄</span><span class="t">${L("Пересоздать комнату")}<small>${L("Если друг завис на подключении")}</small></span></button>` : ""}
     ${G.pl.length > 1 && role === "local" && G.mode !== "vs" ? "" : ""}
     ${G.done >= 0 && G.mode !== "vs" && role !== "guest" ? `<button class="b" id="p-next"><span>⛵</span><span class="t">${L("Новая бухта")}</span></button>` : ""}
     ${archOk() ? `<button class="b" id="p-arch"><span>🗺</span><span class="t">${L("Архипелаг")}<small>${L("Острова, сундуки, торговые пути")}</small></span></button>` : ""}
@@ -1254,6 +1385,7 @@ function openPause() {
     <button class="b" id="p-menu"><span>🏠</span><span class="t">${L("В меню")}<small>${L("Прогресс сохранится")}</small></span></button>`);
   $("p-go").onclick = () => hideDlg();
   if ($("p-inv")) $("p-inv").onclick = () => sendInvite();
+  if ($("p-new")) $("p-new").onclick = () => { hideDlg(); recreateRoom(); };
   if ($("p-next")) $("p-next").onclick = () => bayDone();
   $("p-help").onclick = () => showHelp(openPause);
   if ($("p-arch")) $("p-arch").onclick = () => archMenu(openPause);
@@ -1398,6 +1530,8 @@ window.__pm = {
   sail: (b) => sailIsle(b), map: () => openMap(), mapPick: (b) => mapPick(b), get amap() { return amap; }, THREE, get ISLE_POS() { return amap ? amap.P : ISLE_POS; }, closeMap: () => closeMap(false),
   bayDone: () => bayDone(), zoom: (k) => { cam.zk = k; }, fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
+  get hint() { return { tx: $("hint").innerText, t: hintTarget }; }, get hireOpen() { return hireOpen; }, get mapOn() { return mapOn; },
+  get roomId() { return (hostSt && hostSt.id) || (room && room.id) || null; }, codeDialog: () => codeDialog(),
   host: (mode, bay) => { hostGame(S.newGame({ mode: mode || "coop", seed: 99, meta: prof.meta, diff: 1, bay: bay || 0 })); return true; },
   join: (id) => { joinGame(id); return true; },
   money: (v) => { G.money[G.pl[me].team] = v; },

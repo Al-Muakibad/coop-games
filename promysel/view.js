@@ -119,6 +119,7 @@ export class View {
     this.outC = OUTFITS.map((o) => (o.coat ? { coat: new THREE.Color(o.coat), hat: new THREE.Color(o.hat) } : null));
     this.popK = new Map();
     this.disp = { p: [], h: [], c: new Map() };
+    this.mgrCol = { coat: new THREE.Color("#6a4a8f"), hat: new THREE.Color("#2b2b38") };
     this.coats = { p: PCOL.map((c) => ({ coat: new THREE.Color(c.coat), hat: new THREE.Color(c.hat) })), h: { coat: new THREE.Color(HCOL.coat), hat: new THREE.Color(HCOL.hat) },
       c: CUST.map((c, i) => ({ coat: new THREE.Color(c), hat: new THREE.Color(CHAT[(i * 3 + 1) % CHAT.length]) })) };
     this.flyers = []; this.pend = new Map();
@@ -377,6 +378,14 @@ export class View {
         }
       }
     }
+    // управляющие: стоят у своего цеха (фиолетовый жилет) и машут рукой; над ними подпись
+    if (G.mgr) for (const k in G.mgr) {
+      const e = L.E[+k]; if (!e || !G.e[e.i].o) continue;
+      const fz = e.z + e.d / 2 + 0.55, d = this.disp["m" + k] || (this.disp["m" + k] = { x: e.x, z: fz, dir: 0, ph: 0, lean: 0, lv: 0, sp: 0, ox: e.x, oz: fz });
+      d.x = e.x + Math.sin(t * 0.5 + e.i) * 0.25; d.z = fz; d.dir = Math.sin(t * 0.7 + e.i) * 0.5;
+      this.person(d, this.mgrCol, dt, [], "m" + k, false, G, 0.95);
+      if (this.near(e, ctx.cam, 12)) this.label("mg" + k, { x: e.x, z: fz + 0.9, r: 0.6 }, [ITEMS[e.rec.out].id], "hire", tr("УПРАВЛЯЮЩИЙ"));
+    }
     // помощники
     for (let i = 0; i < G.hp.length; i++) {
       const h = G.hp[i]; const d = this.disp.h[i] || (this.disp.h[i] = { x: h.x, z: h.z, dir: h.dir, ph: 0, lean: 0, lv: 0, sp: 0, ox: h.x, oz: h.z });
@@ -596,6 +605,9 @@ export class View {
         if (mine) { ring(e.zin, WHITE, carry.some((it) => accepts(G, e.i, it))); if (s.cash > 0) ring(e.zcash, GRN, true, 0.85); this.label("i" + e.i, e.zin, e.acc.map((i) => ITEMS[i].id), "in", tr("СЮДА")); }
       } else if (e.k === "hut") {
         if (e.slot === ctx.me && (G.pl.length > 1 || e.slot === 0) && (G.mode !== "vs" || e.team === myTeam)) { ring(e.zin, BLUE, true, 1); this.label("i" + e.i, e.zin, ["bag"], "hire", tr("ХИЖИНА")); }
+        else if (e.slot < G.pl.length && (G.mode !== "vs" || e.team === myTeam || true)) this.label("i" + e.i, e.zin, ["bag"], "in", G.mode === "vs" ? tr("СОПЕРНИК") : tr("НАПАРНИК"));      // чужая хижина — тоже с подписью
+      } else if (e.k === "map") {
+        if (G.mode !== "vs") { ring(e.zin, BLUE, true, 0.9); this.label("i" + e.i, e.zin, ["light"], "hire", tr("КАРТА")); }
       } else if (e.k === "ads") {
         if (mine) { ring(e.zin, YEL, true, 1); this.label("i" + e.i, e.zin, ["cash"], "hire", tr("РЕКЛАМА")); }
       } else if (e.k === "hire") {
@@ -604,6 +616,7 @@ export class View {
         this.drawCash(e, s.cash, G);
         const bs = bigStage(G), its = []; if (G.con && !G.con.end) its.push(G.con.it); if (bs && bs.got < bs.need && !its.includes(bs.it)) its.push(bs.it);
         if (mine && its.length) { ring(e.zin, WHITE, true, 1.15); its.forEach((it, k) => this.bubble(e.x + (k - (its.length - 1) / 2) * 0.9, 2.65 + Math.sin(t * 3 + k) * 0.08, e.z, BUB["i_" + ITEMS[it].id], 1.1)); this.label("i" + e.i, e.zin, its.map((it) => ITEMS[it].id), "in", G.con && !G.con.ac && !G.con.end ? tr("ПРИНЯТЬ") : tr("ЗАКАЗ")); }
+        else if (mine && G.e[e.i].o) this.label("i" + e.i, e.zin, ["board"], "hire", tr("ЗАКАЗЫ"));      // заказов нет — всё равно подписана
         if (s.cash > 0) ring(e.zcash, GRN, true, 0.85);
       }
     }

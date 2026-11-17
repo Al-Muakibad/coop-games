@@ -331,6 +331,10 @@ export const BUILD = {
   trap: () => { const b = new Build({ round: true }); b.box(0.7, 0.4, 0.5, "#a06a3b", { p: [0, 0.2, 0], jit: 0.05 }); for (let i = 0; i < 3; i++) b.box(0.72, 0.03, 0.52, PAL.rope, { p: [0, 0.08 + i * 0.13, 0], jit: 0 }); b.cyl(0.1, 0.1, 0.12, 8, "#ff7a3a", { p: [0.45, 0.06, 0.3] }); return b.geo(); },
   flags: (len) => { const b = new Build(); const cols = ["#c9433a", "#f2c14e", "#3aa0c8", "#7ed957", "#f4f1ea"]; for (const sx of [-1, 1]) b.cyl(0.05, 0.06, 3.2, 6, PAL.wood2, { p: [sx * len / 2, 1.6, 0] }); const n = Math.round(len / 0.45);
     for (let i = 0; i < n; i++) { const x = -len / 2 + (i + 0.5) * len / n, sag = 2.9 - Math.sin((i + 0.5) / n * Math.PI) * 0.5; b.cone(0.16, 0.32, 3, cols[i % 5], { p: [x, sag - 0.16, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.2], jit: 0 }); } return b.geo(); },
+  // стол с картой архипелага и указатель с флажком — здесь открывается карта
+  maptable: () => { const b = new Build({ round: true, ao: true }); b.box(1.5, 0.1, 0.9, PAL.woodL, { p: [0, 0.82, 0] }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.1, 0.8, 0.1, PAL.wood2, { p: [sx * 0.62, 0.4, sz * 0.34] });
+    b.box(1.3, 0.02, 0.75, "#f2e6c4", { p: [0, 0.88, 0], jit: 0.02 }); b.box(0.5, 0.025, 0.3, "#5aa0c8", { p: [-0.2, 0.9, 0.05], jit: 0.05 }); b.cyl(0.13, 0.15, 0.03, 8, "#9ab86a", { p: [0.35, 0.905, -0.1] }); b.cyl(0.1, 0.12, 0.03, 8, "#e9eef4", { p: [-0.35, 0.905, -0.15] });
+    b.cyl(0.04, 0.05, 2.1, 6, PAL.wood2, { p: [0.62, 1.05, -0.38] }); b.box(0.06, 0.38, 0.62, "#c9433a", { p: [0.62, 1.85, -0.08], jit: 0 }); b.box(0.9, 0.3, 0.06, PAL.woodL, { p: [0.62, 1.35, -0.38], r: [0, 0.25, 0] }); return b.geo(); },
   flowers: () => { const b = new Build({ round: true }); b.cyl(0.3, 0.26, 0.4, 9, PAL.wood, { p: [0, 0.2, 0] }); b.cyl(0.31, 0.31, 0.04, 9, PAL.dark, { p: [0, 0.3, 0], jit: 0 }); b.sph(0.3, 1, "#4f8a4a", { p: [0, 0.48, 0], s: [1, 0.6, 1] });
     for (let i = 0; i < 6; i++) b.ball(0.06, ["#ff5a4a", "#ffd34d", "#f4f1ea"][i % 3], { p: [Math.cos(i) * 0.18, 0.62, Math.sin(i) * 0.18], jit: 0 }); return b.geo(); },
   // котёл ухи на треноге над костром, лавка
