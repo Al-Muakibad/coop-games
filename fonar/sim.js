@@ -6,7 +6,7 @@
 // Облава: 20 секунд паники — убрать грязные номера и выручку.
 // Баланс под 1–4 игроков — множители потока и терпения (как в PlateUp!).
 
-import { GIRLS, GIRL, CLIENTS } from "./data.js";
+import { GIRLS, GIRL, CLIENTS } from "./data.js?v=3";
 
 export const CUST = [0.8, 1, 1.25, 1.5], PATI = [0.75, 1, 1.1, 1.15];
 export const NIGHTS_PER_LOC = 6, NIGHT_LEN = 150, RAID_FROM = 3;

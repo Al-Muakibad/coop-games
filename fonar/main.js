@@ -1,8 +1,8 @@
 // «Красный фонарь» v2 — оболочка: одиночная игра / хозяин / гость, ввод, интерфейс, звук.
-import { renderer } from "./c3d.js";
-import { GIRL, TYPES, ART_BY } from "./data.js";
-import * as S from "./sim.js";
-import { createView, PCOL } from "./view.js";
+import { renderer } from "./c3d.js?v=3";
+import { GIRL, TYPES, ART_BY } from "./data.js?v=3";
+import * as S from "./sim.js?v=3";
+import { createView, PCOL } from "./view.js?v=3";
 
 const $ = (s) => document.querySelector(s);
 const tg = window.Telegram && window.Telegram.WebApp;
@@ -86,7 +86,7 @@ function showLobby(msg) {
   lb.innerHTML = `<h2>Банда собирается</h2><div class="muted">Код комнаты</div><div class="roomcode">${room.id}</div>
     <div class="pl">${pl.map((p, i) => `<div style="background:${PCOL[i % 4]}">${p.name}${p.host ? " 👑" : ""}</div>`).join("")}</div>
     <p class="muted">Друг жмёт ссылку — и сразу попадает в эту комнату. Код — запасной вариант. Можно зайти и посреди игры. Баланс подстраивается под число игроков (1–4).</p>
-    <button class="gold" id="inv">📨 Отправить ссылку другу</button><button class="ghost" id="cp">🔗 Скопировать ссылку</button>${mode === "host" ? `<button class="gold" id="go">Начать (${pl.length}/4)</button>` : `<p>Ждём, когда хозяин начнёт…</p>`}`;
+    <div class="muted" style="word-break:break-all;font-size:12px">${inviteLink()}</div><button class="gold" id="inv">📨 Отправить ссылку другу</button><button class="ghost" id="cp">🔗 Скопировать ссылку</button>${mode === "host" ? `<button class="gold" id="go">Начать (${pl.length}/4)</button>` : `<p>Ждём, когда хозяин начнёт…</p>`}`;
   $("#inv").onclick = invite;
   $("#cp").onclick = () => { try { navigator.clipboard.writeText(inviteLink()); toast("Ссылка скопирована — отправь её другу"); } catch (_) { prompt("Ссылка в комнату:", inviteLink()); } };
   const go = $("#go"); if (go) go.onclick = () => { begin(false); };

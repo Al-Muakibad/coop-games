@@ -1,7 +1,7 @@
 // «Красный фонарь» v2 — картинка. Рисует «вид мира» (V) — одинаковый у хозяина и гостей.
-import { THREE, renderer, resize, mat, person, animPerson, label, ring, coinMesh, bottle, brickTex, canvasTex, clamp, lerp, angLerp, rnd, GLOW } from "./c3d.js";
-import { GIRL, CLIENTS, TYPES } from "./data.js";
-import { ST, AREA, DOOR, QUEUE, PADS, front, placeSpot, canPlace, grabbable } from "./sim.js";
+import { THREE, renderer, resize, mat, person, animPerson, label, ring, coinMesh, bottle, brickTex, canvasTex, clamp, lerp, angLerp, rnd, GLOW } from "./c3d.js?v=3";
+import { GIRL, CLIENTS, TYPES } from "./data.js?v=3";
+import { ST, AREA, DOOR, QUEUE, PADS, front, placeSpot, canPlace, grabbable } from "./sim.js?v=3";
 
 export const PCOL = ["#d7263d", "#3aa0e8", "#4ec26a", "#f2b01e"];
 
