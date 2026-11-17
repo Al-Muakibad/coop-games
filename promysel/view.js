@@ -570,7 +570,7 @@ export class View {
       } else if (e.k === "board") {
         this.drawCash(e, s.cash, G);
         const bs = bigStage(G), its = []; if (G.con && !G.con.end) its.push(G.con.it); if (bs && bs.got < bs.need && !its.includes(bs.it)) its.push(bs.it);
-        if (mine && its.length) { ring(e.zin, WHITE, true, 1.15); its.forEach((it, k) => this.bubble(e.x + (k - (its.length - 1) / 2) * 0.9, 2.65 + Math.sin(t * 3 + k) * 0.08, e.z, BUB["i_" + ITEMS[it].id], 1.1)); this.label("i" + e.i, e.zin, its.map((it) => ITEMS[it].id), "in", tr("ЗАКАЗ")); }
+        if (mine && its.length) { ring(e.zin, WHITE, true, 1.15); its.forEach((it, k) => this.bubble(e.x + (k - (its.length - 1) / 2) * 0.9, 2.65 + Math.sin(t * 3 + k) * 0.08, e.z, BUB["i_" + ITEMS[it].id], 1.1)); this.label("i" + e.i, e.zin, its.map((it) => ITEMS[it].id), "in", G.con && !G.con.ac && !G.con.end ? tr("ПРИНЯТЬ") : tr("ЗАКАЗ")); }
         if (s.cash > 0) ring(e.zcash, GRN, true, 0.85);
       }
     }

@@ -394,8 +394,9 @@ function setupInput() {
   addEventListener("keyup", (e) => { keys[e.code] = 0; });
   $("b-menu").onclick = () => openPause();
   $("partner").onclick = () => partnerMenu();
-  $("con").onclick = () => { focusBoard(2.4); play("click"); };
-  $("big").onclick = () => { focusBoard(2.4); play("click"); };
+  // нажал на строку задач — подробности (и камера покажет доску заказов)
+  const tasks = () => { const t = $("top"); t.classList.toggle("exp"); play("click"); if (t.classList.contains("exp") && G && (G.con || S.bigStage(G))) focusBoard(2.2); updHud(true); };
+  for (const id of ["con", "big", "evc"]) $(id).onclick = tasks;
   $("hirel").addEventListener("click", hireClick);
 }
 function stick() {
@@ -549,11 +550,12 @@ function onEvents(list, remote) {
       case "contract":
         if (e.s === "new") {
           play("bell", { vol: 0.6 });
-          const c = G.con; if (c) toast("📋 " + L("Заказ") + ": " + L(ITEMS[c.it].n) + " ×" + c.n + " — " + L("неси к доске заказов"), "gold", 4);
+          const c = G.con; if (c) toast("📋 " + L("Новый заказ") + ": " + L(ITEMS[c.it].n) + " ×" + c.n + " — " + L("подойди к доске, чтобы начать"), "gold", 4);
           if (!G.cdone) focusBoard(2.4);       // первый заказ — покажем, где доска
         }
+        else if (e.s === "go") { const c = G.con; if (c) toast("📋 " + L("Заказ принят") + ": " + L(ITEMS[c.it].n) + " ×" + c.n + " · " + Math.round(c.T) + L("с"), "gold", 3); }
         else if (e.s === "done") { play("levelup"); banner(L("Заказ выполнен!") + " +" + fmt(e.amt), L("Награда — у доски заказов"), "gold"); haptic("notify", "success", true); }
-        else { play("error"); toast(L("Заказ сорван — не успели"), "bad"); }
+        else { play("error"); toast(e.amt ? L("Не успели — оплачено за сданное") + ": +" + fmt(e.amt) : L("Заказ сорван — не успели"), "bad"); }
         break;
       case "switch": { const to = Lr.E[e.e]; if (G.mode === "vs") { if (to.team === G.pl[me].team) toast("😊 " + L("Покупатель перешёл к тебе"), "good"); else toast("💢 " + L("Покупатель ушёл к сопернику"), "bad"); } break; }
       case "goal": onGoal(e); break;
@@ -785,28 +787,15 @@ function updHud(force) {
     setText($("ptx"), partner.name || (G.mode === "vs" ? L("Соперник") : L("Напарник")));
     setText($("pnet"), partner.bot ? "" : room ? (on ? (room.rtt ? room.rtt + L("мс") : "") : L("нет связи")) : "");
   }
-  // заказ
-  const ce = $("con");
-  if (G.con && G.mode !== "vs") {
-    ce.classList.remove("hidden"); const c = G.con;
-    const html = `<img src="${ICONURL[ITEMS[c.it].id]}"><div class="ct"><span>${L("Заказ")}: ${L(ITEMS[c.it].n)} <b>${c.got}/${c.n}</b></span><div class="cbar"><i style="width:${Math.max(0, c.t / c.T * 100).toFixed(1)}%"></i></div></div><span class="tm">${c.end ? (c.ok ? "✅" : "❌") : Math.ceil(Math.max(0, c.t)) + L("с")}</span><span class="go">📍</span>`;
-    if (ce.dataset.h !== html) { ce.innerHTML = html; ce.dataset.h = html; }
-    ce.classList.toggle("late", c.t < c.T * 0.25 && !c.end); ce.classList.toggle("ok", !!(c.end && c.ok));
-  } else ce.classList.add("hidden");
-  // большой заказ судна
-  const be = $("big"), bs = G.mode !== "vs" ? S.bigStage(G) : null;
-  if (bs) {
-    be.classList.remove("hidden");
-    const html = `<img src="${ICONURL[ITEMS[bs.it].id]}"><div class="ct"><span>🚢 ${L(bs.n)}: ${L(ITEMS[bs.it].n)} <b>${bs.got}/${bs.need}</b></span><small class="dots">${Array.from({ length: bs.of }, (_, k) => `<i class="${k < bs.s ? "on" : ""}"></i>`).join("")}</small></div>`;
-    if (be.dataset.h !== html) { be.innerHTML = html; be.dataset.h = html; }
-  } else be.classList.add("hidden");
-  // событие бухты: предупреждение и таймер
-  const ec = $("evc"), ev = G.evt;
-  if (ev && ev.ph > 0 && G.mode !== "vs") {
-    ec.classList.remove("hidden"); ec.classList.toggle("warn", ev.ph === 1); ec.classList.toggle("on", ev.ph === 2);
-    const ic = { storm: "🌨", run: "🐟", tide: "🌊", fair: "🎪" }[ev.k] || "⏱";
-    setText(ec, `${ic} ${L(EVENTS[ev.k].n)} ${ev.ph === 1 ? L("через") + " " : ""}${Math.ceil(Math.max(0, ev.t))}${L("с")}`);
-  } else ec.classList.add("hidden");
+  // строка задач под полосой бухты: заказ, заказ судна, событие — коротко; нажал — подробно
+  const exp = $("top").classList.contains("exp");
+  const chip = (el, show, html, cls) => { if (!show) { el.classList.add("hidden"); return; } el.classList.remove("hidden"); if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; } for (const k in cls) el.classList.toggle(k, !!cls[k]); };
+  const c = G.mode !== "vs" ? G.con : null;
+  chip($("con"), !!c, c ? `<img src="${ICONURL[ITEMS[c.it].id]}"><b>${c.got}/${c.n}</b><span class="tm">${c.end ? (c.ok ? "✅" : "⌛") : !c.ac ? "▶ " + Math.ceil(Math.max(0, c.t)) + L("с") : Math.ceil(Math.max(0, c.t)) + L("с")}</span>${exp ? `<span class="full">${c.ac ? L("Заказ") : L("Новый заказ — подойди к доске")}: ${L(ITEMS[c.it].n)}</span>` : ""}<i class="bar" style="width:${c.ac && !c.end ? Math.max(0, c.t / c.T * 100).toFixed(1) : 100}%"></i>` : "", c ? { late: c.ac && c.t < c.T * 0.25 && !c.end, ok: c.end && c.ok, offer: !c.ac } : {});
+  const bs = G.mode !== "vs" ? S.bigStage(G) : null;
+  chip($("big"), !!bs, bs ? `<span class="ic">🚢</span><img src="${ICONURL[ITEMS[bs.it].id]}"><b>${bs.got}/${bs.need}</b><span class="dots">${Array.from({ length: bs.of }, (_, k) => `<i class="${k < bs.s ? "on" : ""}"></i>`).join("")}</span>${exp ? `<span class="full">${L(bs.n)}: ${L(ITEMS[bs.it].n)}</span>` : ""}` : "", {});
+  const ev = G.evt;
+  chip($("evc"), !!(ev && ev.ph > 0), ev && ev.ph > 0 ? `<span class="ic">${{ storm: "🌨", run: "🐟", tide: "🌊", fair: "🎪" }[ev.k] || "⏱"}</span><b>${ev.ph === 1 ? "→ " : ""}${Math.ceil(Math.max(0, ev.t))}${L("с")}</b>${exp ? `<span class="full">${L(EVENTS[ev.k].n)}${ev.ph === 1 ? " — " + L("скоро") : ""}</span>` : ""}` : "", { warn: ev && ev.ph === 1, on: ev && ev.ph === 2 });
   // против
   const ve = $("vs");
   if (G.mode === "vs") {
@@ -836,7 +825,8 @@ function computeHint() {
   guideForce = false;
   // заказ: несёшь нужное — к доске; пока ни одного не сдали — всегда показываем дорогу к доске
   const bi = G.mode !== "vs" ? Lr.byId[0].board : null, con = G.con && !G.con.end ? G.con : null;
-  if (con && bi != null && G.e[bi].o) {
+  if (G.con && !G.con.ac && !G.con.end && bi != null && G.e[bi].o && (!G.cdone || p.st.includes(G.con.it))) return { ic: ITEMS[G.con.it].id, tx: "📋 " + L("Новый заказ — подойди к доске, чтобы начать"), t: Lr.E[bi].zin };
+  if (con && con.ac && bi != null && G.e[bi].o) {
     const be = Lr.E[bi];
     if (p.st.includes(con.it)) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Неси") + " «" + L(ITEMS[con.it].n) + "» " + L("к доске заказов"), t: be.zin }; }
     const np0 = S.nextPad(G, team), afford = np0 >= 0 && G.money[team] >= S.padCost(G, np0) - G.e[np0].p;
@@ -880,7 +870,8 @@ function updHint() {
   // площадка под ногами — подробности
   if (tipE >= 0) {
     const e = S.layoutOf(G).E[tipE], cost = S.padCost(G, tipE), left = cost - G.e[tipE].p, money = G.money[G.pl[me].team];
-    tipShow(`<b>${esc(entName(e))}</b>${esc(entDesc(e))}<br><span class="c">💵 ${fmt(left)}</span>${money < left ? ` · <span class="no">${L("не хватает")} ${fmt(left - money)}</span>` : ` · ${L("постой — и оплата пойдёт")}`}`);
+    const nb = (t) => esc(t).replace(/ → /g, "&nbsp;→&nbsp;").replace(/(\d) /g, "$1&nbsp;").replace(/\+ /g, "+&nbsp;");
+    tipShow(`<b>${esc(entName(e))}</b><span class="d">${nb(entDesc(e))}</span><span class="c">💵 ${fmt(left)}</span>${money < left ? ` · <span class="no">${L("не хватает")} ${fmt(left - money)}</span>` : ` · ${L("постой — и оплата пойдёт")}`}`);
   } else tipShow(null);
 }
 function tipShow(html) { const t = $("tip"); if (!html) { t.classList.remove("show"); return; } if (t.dataset.h !== html) { t.innerHTML = html; t.dataset.h = html; } t.classList.add("show"); }
@@ -922,7 +913,7 @@ const hTags = [];
 function workName(h) { const Lr = S.layoutOf(G), e = Lr.E[h.e]; return e.def.role === "cashier" ? L("к прилавкам") : entName(Lr.E[e.from]); }
 
 /* ---------- окна ---------- */
-function banner(a, b, cls) { const el = $("banner"); el.className = cls || ""; el.innerHTML = esc(a) + (b ? `<small>${esc(b)}</small>` : ""); void el.offsetWidth; el.classList.add("show"); clearTimeout(banner.t); banner.t = setTimeout(() => el.classList.remove("show"), 2600); }
+function banner(a, b, cls) { const el = $("banner"); el.className = cls || ""; const tp = $("top"); el.style.top = (tp.classList.contains("hidden") ? 90 : tp.getBoundingClientRect().bottom + 8) + "px"; el.innerHTML = esc(a) + (b ? `<small>${esc(b)}</small>` : ""); void el.offsetWidth; el.classList.add("show"); clearTimeout(banner.t); banner.t = setTimeout(() => el.classList.remove("show"), 2600); }
 function toast(txt, cls, life) { const box = $("toasts"); while (box.children.length > 2) box.firstChild.remove(); const el = document.createElement("div"); el.className = "toast " + (cls || ""); el.textContent = txt; box.appendChild(el); setTimeout(() => { el.style.transition = "opacity .4s"; el.style.opacity = "0"; setTimeout(() => el.remove(), 400); }, (life || 2.8) * 1000); }
 function hideAll() { ["menu", "dlg"].forEach((id) => $(id).classList.add("hidden")); }
 function dialog(html, keep) { $("dlgp").innerHTML = html; $("dlg").classList.remove("hidden"); $("dlg").dataset.keep = keep ? 1 : ""; if (joy.on) { joy.on = false; joy.x = joy.y = 0; $("joy").classList.remove("on"); } }

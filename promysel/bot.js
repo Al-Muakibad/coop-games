@@ -5,7 +5,7 @@ import { bigStage, layoutOf, padVisible, padCost, accepts, capOf, inZone, via, h
 import { UPG } from "./data.js";
 import { IT, ITEMS } from "./data.js";
 
-const bigNeeds = (G, it) => { const s = bigStage(G); return !!(s && s.it === it && s.got < s.need); };
+const bigNeeds = (G, it) => { const s = bigStage(G); return !!(s && s.it === it && s.got < s.need) || !!(G.con && G.con.ac && !G.con.end && G.con.it === it && G.con.got < G.con.n); };
 export function makeBot(pi, opt) {
   opt = opt || {};
   const skill = opt.skill || "good";
@@ -60,7 +60,7 @@ export function makeBot(pi, opt) {
       if (best < 0 && p.st.length >= cap) { const c = cashTask(G, mine, p, 0); if (c) return c; return { k: "wait" }; }
     }
     // большой заказ судна — важнее, чем собирать выручку впрок
-    if (bigStage(G) && G.mode !== "vs") { const fw = freeWork(G, p, cap); if (fw && (fw.big || fw.bigFish)) return fw; }
+    if ((bigStage(G) || (G.con && G.con.ac && !G.con.end)) && G.mode !== "vs") { const fw = freeWork(G, p, cap); if (fw && (fw.big || fw.bigFish)) return fw; }
     // 3) выручка: если не хватает на площадку или её много скопилось
     const ct = cashTask(G, mine, p, (pad >= 0 || hireT) && G.money[team] + cashSum(G, mine) >= padNeed ? 0.01 : 25 * (G.mode === "vs" ? 1 : 1));
     if (ct) return ct;

@@ -50,22 +50,18 @@
   #partner.off .pd { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
   #partner small { color: var(--muted2); font-weight: 800; font-size: 11px; }
   @keyframes pulse { 50% { opacity: .35; } }
-  #con { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; height: auto; min-height: 42px; padding: 4px 12px 4px 6px; font-size: 13.5px; line-height: 1.15; }
-  #con img { width: 34px; height: 34px; flex: 0 0 34px; }
-  #con .ct { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-  #con .ct span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #con .ct span b { color: var(--gold); }
-  #con .cbar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.14); overflow: hidden; margin-top: 4px; width: 100%; }
-  #con .tm { flex: 0 0 auto; font-family: "Rubik", sans-serif; font-size: 16px; min-width: 38px; text-align: right; }
-  #con .go { flex: 0 0 auto; font-size: 11px; color: var(--muted2); font-weight: 800; }
-  #con .cbar i { display: block; height: 100%; background: var(--gold); }
-  #con.late .cbar i { background: var(--red); }
-  #con.ok { box-shadow: 0 0 0 3px rgba(126,217,87,.6); }
-  #big { flex: 1; min-width: 0; justify-content: flex-start; gap: 8px; height: auto; min-height: 40px; padding: 4px 12px 4px 6px; font-size: 13px; line-height: 1.15; background: linear-gradient(180deg, rgba(40, 70, 110, .85), rgba(20, 40, 70, .85)); }
-  #big img { width: 32px; height: 32px; flex: 0 0 32px; } #big .ct { display: flex; flex-direction: column; flex: 1; min-width: 0; } #big .ct span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #big .ct small { color: var(--muted2); font-size: 11px; font-weight: 800; } #big b { color: var(--gold); }
-  #big .dots { display: flex; gap: 3px; } #big .dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.2); } #big .dots i.on { background: var(--gold); }
-  #evc { flex: 0 0 auto; font-size: 13px; height: 40px; gap: 6px; } #evc b { font-family: "Rubik"; } #evc.warn { box-shadow: 0 0 0 2px rgba(255, 211, 77, .7); animation: pulse 1s infinite; } #evc.on { box-shadow: 0 0 0 2px rgba(143, 216, 255, .8); }
+  /* строка задач: заказ, заказ судна, событие — коротко; #top.exp — подробно */
+  #tasks { flex-wrap: wrap; } #tasks:empty { display: none; }
+  #tasks .chip { position: relative; overflow: hidden; height: 34px; padding: 0 10px 0 4px; gap: 5px; font-size: 13px; flex: 0 1 auto; min-width: 0; }
+  #tasks .chip img { width: 28px; height: 28px; flex: 0 0 28px; } #tasks .chip .ic { font-size: 16px; } #tasks .chip b { font-family: "Rubik", sans-serif; font-size: 14px; color: var(--gold); }
+  #tasks .chip .tm { font-family: "Rubik", sans-serif; font-size: 13px; color: var(--cream); }
+  #tasks .chip .full { font-size: 12px; font-weight: 800; color: var(--muted2); white-space: normal; line-height: 1.15; }
+  #tasks .chip .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); border-radius: 2px; }
+  #con.late .bar { background: var(--red); } #con.late .tm { color: #ffb0a6; } #con.ok { box-shadow: 0 0 0 2px rgba(126,217,87,.7); } #con.offer { box-shadow: 0 0 0 2px rgba(255,211,77,.6); }
+  #big { background: linear-gradient(180deg, rgba(40, 70, 110, .85), rgba(20, 40, 70, .85)); }
+  #big .dots { display: flex; gap: 3px; } #big .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); } #big .dots i.on { background: var(--gold); }
+  #evc.warn { box-shadow: 0 0 0 2px rgba(255, 211, 77, .7); animation: pulse 1s infinite; } #evc.on { box-shadow: 0 0 0 2px rgba(143, 216, 255, .8); }
+  #top.exp #tasks .chip { flex: 1 1 100%; height: auto; min-height: 36px; padding: 4px 10px 6px 4px; }
   #vs { gap: 6px; height: auto; padding: 6px 10px; flex-direction: column; align-items: stretch; flex: 1; }
   #vs .vr { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   #vs .vr b { width: 64px; overflow: hidden; text-overflow: ellipsis; }
@@ -81,13 +77,13 @@
     max-width: min(78vw, 300px); width: max-content; opacity: 0; transition: opacity .2s; font-weight: 800; font-size: 12px; line-height: 1.25; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
   #tip::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: var(--glass2); }
   #tip.show { opacity: 1; }
-  #tip b { display: block; font-size: 14.5px; color: #fff; } #tip .c { color: var(--gold); font-family: "Rubik"; } #tip .no { color: #ffb0a6; }
+  #tip b { display: block; font-size: 14.5px; color: #fff; } #tip .d { display: block; margin: 1px 0 2px; } #tip .c { color: var(--gold); font-family: "Rubik"; } #tip .no { color: #ffb0a6; }
   /* джойстик */
   #joy { position: fixed; left: 0; top: 0; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255,255,255,.12); border: 3px solid rgba(255,255,255,.35); z-index: 6; pointer-events: none; opacity: 0; transition: opacity .12s; }
   #joy i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px; border-radius: 50%; background: rgba(255,255,255,.85); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
   #joy.on { opacity: 1; }
   /* баннеры и тосты */
-  #banner { position: fixed; left: 50%; top: calc(30% + var(--sat)); transform: translate(-50%, -10px) scale(.9); z-index: 7; background: var(--glass2); color: var(--cream); border-radius: 20px; padding: 10px 20px; font-weight: 900; font-size: 20px; text-align: center; opacity: 0; transition: opacity .3s, transform .3s cubic-bezier(.2,1.6,.4,1); pointer-events: none; border: 1px solid var(--line); max-width: 92vw; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  #banner { position: fixed; left: 50%; top: calc(124px + var(--sat)); transform: translate(-50%, -10px) scale(.9); z-index: 7; background: var(--glass2); color: var(--cream); border-radius: 18px; padding: 7px 16px; font-weight: 900; font-size: 17px; width: max-content; text-align: center; opacity: 0; transition: opacity .3s, transform .3s cubic-bezier(.2,1.6,.4,1); pointer-events: none; border: 1px solid var(--line); max-width: 92vw; backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
   #banner small { display: block; font-size: 13px; color: var(--muted2); font-weight: 800; margin-top: 2px; }
   #banner.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
   #banner.gold { background: linear-gradient(180deg, rgba(150, 100, 20, .95), rgba(90, 55, 10, .95)); }
@@ -203,8 +199,8 @@
   <div class="row" id="row2">
     <div class="chip" id="prog"><span id="prog-t">Тихая бухта</span><div class="bar"><i id="prog-i"></i></div><b id="prog-n">0/30</b></div>
   </div>
-  <div class="row"><div class="chip btn hidden" id="con"></div><div class="chip hidden" id="vs"></div></div>
-  <div class="row"><div class="chip btn hidden" id="big"></div><div class="chip hidden" id="evc"></div></div>
+  <div class="row" id="tasks"><div class="chip btn hidden" id="con"></div><div class="chip btn hidden" id="big"></div><div class="chip btn hidden" id="evc"></div></div>
+  <div class="row"><div class="chip hidden" id="vs"></div></div>
 </div>
 <div class="hud hidden" id="hint"></div>
 <div class="hud" id="tip"></div>

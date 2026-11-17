@@ -133,3 +133,6 @@ window.I18N && I18N.add({
   "База украшена": "The base is decorated", "Покупатели довольнее — цены выше на 3%": "Happier buyers — prices +3%", "через": "in", "ЛОВУШКА": "TRAP",
 });
 window.I18N && I18N.add({ "Ярмарочный день!": "Fair day!", "Особое": "Special" });
+window.I18N && I18N.add({ "Новый заказ": "New order", "подойди к доске, чтобы начать": "walk to the board to start", "Заказ принят": "Order accepted", "Не успели — оплачено за сданное": "Out of time — paid for what you delivered",
+  "Новый заказ — подойди к доске": "New order — walk to the board", "Новый заказ — подойди к доске, чтобы начать": "New order — walk to the board to start", "скоро": "soon" });
+window.I18N && I18N.add({ "ПРИНЯТЬ": "ACCEPT" });

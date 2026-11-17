@@ -127,7 +127,7 @@ export const LEGACY = {
    Координаты — для левой базы (команда 0, x < 0). Правая — зеркально по x. */
 export const VS = {
   w: [-15, 15], d: [-18, 21.5], start: [-7, -4.8], deco: [], cm: 1,
-  shore: { base: -7.2, capes: [[3.4, 5.0, -13.4, 2]] },
+  shore: { base: -7.2, capes: [[3.4, 5.0, -13.4, 2]] }, event: "mix",
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -7.0, z: 4.35, w: 3.2, c: "#3aa0c8" }],
   ents: [
     { id: "spot1", k: "spot", n: "Отмель", item: "herring", x: -7.0, z: -9.7, r: 2.5, sx: -7.0, sz: -12, free: 1 },
