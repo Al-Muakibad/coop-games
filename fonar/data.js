@@ -66,10 +66,10 @@ export const T2_HOSTS = [
 ];
 // расписание волн: на каждую ночь (минуты ночи 0..1 → доля) кто и откуда идёт
 export const T2_NIGHTS = [
-  { n: "Ночь 1: тихий вторник", goal: 600, waves: [{ at: 0.05, who: "student", k: 1 }, { at: 0.45, who: "sailor", k: 1.4, why: "в порт зашёл траулер" }, { at: 0.8, who: "rich", k: 0.8 }] },
-  { n: "Ночь 2: корабль из колоний", goal: 900, waves: [{ at: 0.05, who: "sailor", k: 1.8, why: "пришёл большой корабль" }, { at: 0.5, who: "student", k: 1.2, why: "сессия сдана" }, { at: 0.75, who: "rich", k: 1 }] },
-  { n: "Ночь 3: премьера в опере", goal: 1300, waves: [{ at: 0.05, who: "rich", k: 1.4, why: "после оперы" }, { at: 0.35, who: "student", k: 1.2 }, { at: 0.6, who: "sailor", k: 1.6 }, { at: 0.85, who: "vip", k: 0.5, why: "граф со свитой" }] },
-  { n: "Ночь 4: карнавал", goal: 1800, waves: [{ at: 0.05, who: "student", k: 1.6, why: "карнавал" }, { at: 0.3, who: "sailor", k: 1.6 }, { at: 0.55, who: "rich", k: 1.6 }, { at: 0.8, who: "vip", k: 0.8 }] },
+  { n: "Ночь 1: тихий вторник", goal: 1050, waves: [{ at: 0.05, who: "student", k: 1 }, { at: 0.45, who: "sailor", k: 1.4, why: "в порт зашёл траулер" }, { at: 0.8, who: "rich", k: 0.8 }] },
+  { n: "Ночь 2: корабль из колоний", goal: 1500, waves: [{ at: 0.05, who: "sailor", k: 1.8, why: "пришёл большой корабль" }, { at: 0.5, who: "student", k: 1.2, why: "сессия сдана" }, { at: 0.75, who: "rich", k: 1 }] },
+  { n: "Ночь 3: премьера в опере", goal: 1900, waves: [{ at: 0.05, who: "rich", k: 1.4, why: "после оперы" }, { at: 0.35, who: "student", k: 1.2 }, { at: 0.6, who: "sailor", k: 1.6 }, { at: 0.85, who: "vip", k: 0.5, why: "граф со свитой" }] },
+  { n: "Ночь 4: карнавал", goal: 2500, waves: [{ at: 0.05, who: "student", k: 1.6, why: "карнавал" }, { at: 0.3, who: "sailor", k: 1.6 }, { at: 0.55, who: "rich", k: 1.6 }, { at: 0.8, who: "vip", k: 0.8 }] },
 ];
 export const T2_SHOP = [
   { id: "alley_bulvar", n: "Открыть Бульварный переулок", cost: 400, k: "alley", v: "bulvar" },

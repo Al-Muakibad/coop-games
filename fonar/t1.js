@@ -6,10 +6,10 @@ import { GLOW } from "./c3d.js";
 
 const SPOTS = [-3.3, -1.1, 1.1, 3.3]; // x мест у стены
 const WALL_Z = -5, SPOT_Z = -3.9, CASH_DZ = 1.45;
-const QUEUE = { x: 2.6, z: 4.5 }, BAR = { x: -3.4, z: 4.3 };
-const BOUNDS = { x0: -4.6, x1: 5.4, z0: -3.2, z1: 6.6 };
-const PAD_POS = { girl: null, bar: { x: -3.4, z: 4.3 }, helper: { x: 3.9, z: 1.6 }, promo: { x: 1.4, z: 1.4 } };
-const DEF_PAD = { x: -1.5, z: 1.4 };
+const QUEUE = { x: 2.6, z: 6.2 }, BAR = { x: -3.4, z: 6.0 };
+const BOUNDS = { x0: -4.6, x1: 5.4, z0: -3.2, z1: 8.2 };
+const PAD_POS = { girl: null, bar: { x: -3.4, z: 6.0 }, helper: { x: 3.9, z: 3.0 }, promo: { x: 1.4, z: 2.6 } };
+const DEF_PAD = { x: -1.5, z: 2.6 };
 const BASE_PAY = { sailor: 12, student: 10, rich: 18, vip: 45 };
 
 export function createT1(app) {
@@ -34,6 +34,10 @@ export function createT1(app) {
   ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, 2); ground.receiveShadow = true; scene.add(ground);
   const walk = new THREE.Mesh(new THREE.PlaneGeometry(22, 1.6), mat("#3a3240")); walk.rotation.x = -Math.PI / 2; walk.position.set(0, 0.02, -4.3); walk.receiveShadow = true; scene.add(walk);
 
+  // улица внизу: бордюр, мостовая темнее, трамвайные рельсы — откуда приходят клиенты
+  const curb = new THREE.Mesh(new THREE.BoxGeometry(40, 0.18, 0.35), mat("#5a5260")); curb.position.set(0, 0.09, 9.0); scene.add(curb);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(40, 8), mat("#1a1622")); road.rotation.x = -Math.PI / 2; road.position.set(0, 0.015, 13.1); road.receiveShadow = true; scene.add(road);
+  for (const z of [10.6, 11.6, 13.4, 14.4]) { const r = new THREE.Mesh(new THREE.BoxGeometry(40, 0.05, 0.1), mat("#8a8494", { std: true, m: 0.9, r: 0.25 })); r.position.set(0, 0.04, z); scene.add(r); }
   const brick = new THREE.MeshLambertMaterial({ map: brickTex() });
   const wall = new THREE.Mesh(new THREE.BoxGeometry(22, 9, 1), brick); wall.position.set(0, 4.5, WALL_Z - 0.5); wall.receiveShadow = true; scene.add(wall);
   const cornice = new THREE.Mesh(new THREE.BoxGeometry(22.4, 0.35, 1.4), mat("#2a1a20")); cornice.position.set(0, 3.4, WALL_Z - 0.3); scene.add(cornice);
@@ -70,7 +74,7 @@ export function createT1(app) {
     g.position.set(x, 0, z); scene.add(g); lampPosts.push({ g, l, base: int });
     return g;
   }
-  lampPost(-4.6, -3.1); lampPost(4.6, -3.1); lampPost(5.3, 5.2);
+  lampPost(-4.6, -3.1); lampPost(4.6, -3.1); lampPost(5.3, 6.9);
   let extraLamp = null;
   // скамья очереди
   const bench = new THREE.Group();
@@ -80,7 +84,7 @@ export function createT1(app) {
   bench.position.set(QUEUE.x + 1.9, 0, QUEUE.z + 2.0); bench.rotation.y = Math.PI * 0.85; scene.add(bench);
   // афишная тумба
   const tumba = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 2.6, 12), new THREE.MeshLambertMaterial({ map: canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#e8d8b0"; g.fillRect(0, 0, w, h); g.fillStyle = "#8a1a2a"; g.font = "900 34px Rubik, sans-serif"; g.fillText("КАБАРЕ", 20, 60); g.fillStyle = "#222"; g.font = "800 22px Nunito, sans-serif"; g.fillText("каждую ночь", 30, 100); g.fillStyle = "#1f5a7a"; g.fillRect(10, 130, w - 20, 100); g.fillStyle = "#ffd34d"; g.font = "900 30px Rubik"; g.fillText("ЦИРК!", 60, 195); }) }));
-  tumba.position.set(5.9, 1.3, 0.6); tumba.castShadow = true; scene.add(tumba);
+  tumba.position.set(5.9, 1.3, 2.0); tumba.castShadow = true; scene.add(tumba);
   // бар
   const barG = new THREE.Group(); barG.position.set(BAR.x - 1.35, 0, BAR.z); barG.rotation.y = Math.PI / 2; scene.add(barG);
   const counter = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.1, 0.9), mat("#6a3a22")); counter.position.y = 0.55; counter.castShadow = true; barG.add(counter);
@@ -98,7 +102,7 @@ export function createT1(app) {
   neon.position.set(0, 4.05, WALL_Z + 0.25); neon.visible = false; scene.add(neon);
   const neonL = new THREE.PointLight("#ff2a6a", 0, 14, 1.4); neonL.position.set(0, 3.6, WALL_Z + 2); scene.add(neonL);
   // ящики и бочки по краям (не на пути)
-  for (const [x, z] of [[-5.3, -2.4], [-5.2, 6.4], [6.0, 7.2]]) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat("#4a3020")); c.position.set(x, 0.4, z); c.rotation.y = R(); c.castShadow = true; scene.add(c); }
+  for (const [x, z] of [[-5.3, -2.4], [-5.2, 8.2], [6.0, 8.9]]) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat("#4a3020")); c.position.set(x, 0.4, z); c.rotation.y = R(); c.castShadow = true; scene.add(c); }
   // дождь
   const RAIN = 300, rainPos = new Float32Array(RAIN * 6);
   for (let i = 0; i < RAIN; i++) { const x = (R() - 0.5) * 20, y = R() * 12, z = (R() - 0.5) * 16 + 2; rainPos.set([x, y, z, x + 0.03, y - 0.35, z + 0.02], i * 6); }
@@ -108,7 +112,7 @@ export function createT1(app) {
   /* ---------- люди ---------- */
   const player = person("man", { coat: "#3a2a4a", hat: "#2a2030", pants: "#1c1824", scarf: "#d7263d", skin: "#e8b896" });
   scene.add(player.root);
-  const P = { x: S.px ?? 0, z: S.pz ?? 2.6, vx: 0, vz: 0, yaw: Math.PI, still: 0, carry: [], bottles: [] };
+  const P = { x: S.px ?? 0, z: S.pz ?? 3.6, vx: 0, vz: 0, yaw: Math.PI, still: 0, carry: [], bottles: [] };
   player.root.position.set(P.x, 0, P.z);
   const ringP = ring(0.55, "#ffd34d", { op: 0.5 }); scene.add(ringP);
 
@@ -135,20 +139,20 @@ export function createT1(app) {
     if (S.bar && R() < (S.neon ? 0.3 : 0.16)) type = "vip";
     const d = CLIENTS[type];
     const p = person("man", { coat: d.coat, hat: d.hat, hatType: type === "sailor" ? "sailor" : type === "rich" || type === "vip" ? "top" : "cap", pants: type === "sailor" ? "#1a2a4a" : "#222", skin: ["#f1c7a5", "#e3b08a", "#c98b62", "#a8714c"][Math.floor(R() * 4)] });
-    p.root.position.set(6.5, 0, 10);
+    p.root.position.set(6.5, 0, 12);
     scene.add(p.root);
     const bub = label(d.ic + (type === "vip" ? "🍾" : ""), { fs: 44, size: 0.3, bg: type === "vip" ? "#5a1f2a" : "rgba(255,255,255,.92)", col: "#111", stroke: TYPES[d.likes].col });
     bub.position.y = 2.2; p.root.add(bub);
-    const c = { id: nextId++, type, p, st: "arrive", x: 6.5, z: 10, pat: 30, bub, tx: 0, tz: 0, sp: 2.6 + R() * 0.5 };
+    const c = { id: nextId++, type, p, st: "arrive", x: 6.5, z: 12, pat: 30, bub, tx: 0, tz: 0, sp: 2.6 + R() * 0.5 };
     clients.push(c);
   }
   // помощник
   let helper = null;
   function makeHelper() {
     const p = person("man", { coat: "#6a5a2a", hat: "#3a2a12", pants: "#2a2218", skin: "#f1c7a5", scarf: "#3aa0c8" });
-    p.root.position.set(3.6, 0, 2.8); scene.add(p.root);
+    p.root.position.set(3.6, 0, 4.4); scene.add(p.root);
     const tg = label("Гоша", { fs: 32, size: 0.3 }); tg.position.y = 2.1; p.root.add(tg);
-    helper = { p, x: 3.6, z: 2.8, st: "idle", carry: [], target: null, yaw: 0 };
+    helper = { p, x: 3.6, z: 4.4, st: "idle", carry: [], target: null, yaw: 0 };
   }
   if (S.helper) makeHelper();
 
@@ -188,7 +192,7 @@ export function createT1(app) {
     if (def.k === "promo") { app.promote(1); return; }
     S.pad++; S.padPaid = 0; makePad(); app.save();
   }
-  function buildLamp() { if (!extraLamp && S.lamp) { extraLamp = lampPost(-0.6, 6.6, "#ff8a5a", 11); poof(extraLamp.position); } }
+  function buildLamp() { if (!extraLamp && S.lamp) { extraLamp = lampPost(-0.6, 8.5, "#ff8a5a", 11); poof(extraLamp.position); } }
   function buildBar() { barLock.visible = !S.bar; barLight.intensity = S.bar ? 6 : 0; }
   function buildNeon() { neon.visible = !!S.neon; signWood.visible = !S.neon; neonL.intensity = S.neon ? 10 : 0; }
   buildLamp(); buildBar(); buildNeon();
@@ -349,11 +353,11 @@ export function createT1(app) {
 
     // камера
     const asp = window.innerWidth / window.innerHeight, portrait = asp < 1;
-    const cx = clamp(P.x, portrait ? -1.6 : 0, portrait ? 1.8 : 0), cz = clamp(P.z, -0.5, 3);
-    const fov = portrait ? 58 : 42; if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
-    const H = portrait ? 15 : 13, BZ = portrait ? 6.4 : 7.5;
+    const cx = clamp(P.x, portrait ? -1.6 : 0, portrait ? 1.8 : 0), cz = clamp(P.z, 0.5, 4.6);
+    const fov = portrait ? 46 : 42; if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    const H = portrait ? 22 : 13, BZ = portrait ? 8.5 : 7.5;
     cam.position.x = lerp(cam.position.x, cx, 1 - Math.exp(-dt * 5));
-    cam.position.y = H; cam.position.z = lerp(cam.position.z, cz + BZ - 1.2, 1 - Math.exp(-dt * 5));
+    cam.position.y = H; cam.position.z = lerp(cam.position.z, cz + BZ + 0.3, 1 - Math.exp(-dt * 5));
     cam.lookAt(cam.position.x, 0, cam.position.z - BZ);
     moon.position.set(cam.position.x - 8, 16, cam.position.z);
     moon.target.position.set(cam.position.x, 0, cam.position.z - 10);
@@ -388,7 +392,7 @@ export function createT1(app) {
         g.served++; S.served[g.def.id] = g.served; S.everServed = 1;
         if (g.served === 8) app.unlockScene(`SC18-T1-${g.def.id.toUpperCase()}-2`, `${g.def.n}: новая сцена в альбоме`);
         if (c.type === "vip") app.unlockScene("SC18-T1-VIP", "VIP-номер: сцена в альбоме");
-        c.st = "leave"; c.tx = -1 + R() * 4; c.tz = 11; c.happy = match;
+        c.st = "leave"; c.tx = -1 + R() * 4; c.tz = 13; c.happy = match;
         c.bub.material.map.dispose(); c.p.root.remove(c.bub);
         const h = label(match ? "😍" : "🙂", { fs: 50, size: 0.4, bg: false }); h.position.y = 2.2; c.p.root.add(h);
       }
@@ -419,10 +423,10 @@ export function createT1(app) {
       c.p.root.rotation.y = angLerp(c.p.root.rotation.y, -Math.PI / 2, dt * 4);
       c.pat -= dt;
       if (c.pat < 8) c.bub.material.opacity = 0.5 + 0.5 * Math.abs(Math.sin(performance.now() / 150));
-      if (c.pat <= 0) { c.st = "leave"; c.tx = 6.5; c.tz = 11; app.lost(); const h = label("😤", { fs: 50, size: 0.4, bg: false }); h.position.y = 2.6; c.p.root.add(h); }
+      if (c.pat <= 0) { c.st = "leave"; c.tx = 6.5; c.tz = 13; app.lost(); const h = label("😤", { fs: 50, size: 0.4, bg: false }); h.position.y = 2.6; c.p.root.add(h); }
     }
     if (c.st === "toGirl" && d < 0.12) { c.st = "atGirl"; c.p.root.rotation.y = Math.PI; }
-    if (c.st === "leave" && c.z > 10.5) c.st = "gone";
+    if (c.st === "leave" && c.z > 12.5) c.st = "gone";
   }
   function stepHelper(dt) {
     const H = helper;
@@ -452,7 +456,7 @@ export function createT1(app) {
         }
       }
     }
-    if (H.st === "idle") { tx = 4.4; tz = 3.4; }
+    if (H.st === "idle") { tx = 4.4; tz = 4.8; }
     const dx = tx - H.x, dz = tz - H.z, d = Math.hypot(dx, dz), sp = 3.4;
     let mv = 0;
     if (d > 0.05) { const st = Math.min(d, sp * dt); H.x += (dx / d) * st; H.z += (dz / d) * st; mv = 0.8; H.yaw = angLerp(H.yaw, Math.atan2(dx, dz), 1 - Math.exp(-dt * 10)); }
@@ -460,7 +464,7 @@ export function createT1(app) {
     animPerson(H.p, dt, mv, H.carry.length ? "wave" : "idle");
   }
   // столкновения: только мягкое выталкивание из бара/скамьи/тумбы + границы — застрять негде
-  const OB = [{ x: BAR.x - 1.35, z: BAR.z, rx: 0.5, rz: 1.25 }, { x: bench.position.x, z: bench.position.z, rx: 1.4, rz: 0.45 }, { x: 5.9, z: 0.6, rx: 0.75, rz: 0.75 }];
+  const OB = [{ x: BAR.x - 1.35, z: BAR.z, rx: 0.5, rz: 1.25 }, { x: bench.position.x, z: bench.position.z, rx: 1.4, rz: 0.45 }, { x: 5.9, z: 2.0, rx: 0.75, rz: 0.75 }];
   function collide(o) {
     o.x = clamp(o.x, BOUNDS.x0, BOUNDS.x1); o.z = clamp(o.z, BOUNDS.z0, BOUNDS.z1);
     for (const b of OB) {
@@ -469,7 +473,7 @@ export function createT1(app) {
     }
   }
 
-  cam.position.set(clamp(P.x, -1.2, 1.4), 15, clamp(P.z, 0.5, 3) + 5.2);
+  cam.position.set(clamp(P.x, -1.6, 1.8), 17.5, clamp(P.z, 0.5, 4.6) + 4.8);
   return {
     scene, cam, clients, girls, P, pad: () => pad,
     update,
