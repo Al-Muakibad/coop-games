@@ -69,6 +69,13 @@ function check(why) {
       if (Math.hypot(p.x - cx, p.z - cz) < p.r * 0.6) bad(`[${why}] площадка «${e.def.n || e.id}» лежит под «${o.def.n}»`);
     }
   }
+  // 6) соседние зоны разных мест не впритык: между краями хотя бы 0,3 м (чтобы не купить и не взять не то)
+  const zs = [];
+  for (const e of L.E) { if (S.padVisible(G, e.i)) zs.push([e, e.zpad, "площадка"]); if (!G.e[e.i].o || e.k === "spot") continue; for (const k of ["zin", "zout", "zcash"]) if (e[k]) zs.push([e, e[k], k]); }
+  for (let a = 0; a < zs.length; a++) for (let b = a + 1; b < zs.length; b++) {
+    const [ea, za, ka] = zs[a], [eb, zb, kb] = zs[b]; if (ea === eb || ea.team !== eb.team) continue;
+    const d = Math.hypot(za.x - zb.x, za.z - zb.z); if (d < za.r + zb.r + 0.3) bad(`[${why}] тесно: ${nm(ea)} (${ka}) и ${nm(eb)} (${kb}) — ${(d - za.r - zb.r).toFixed(2)} м между краями`);
+  }
   for (const c of G.cu) if (c.s < 4 && ![0, 1].slice(0, G.teams).some((t) => S.chainOK(G, t, c.w))) bad(`[${why}] покупатель ждёт «${ITEMS[c.w].n}», которое нельзя сделать`);
 }
 check("старт");
