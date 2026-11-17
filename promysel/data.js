@@ -166,7 +166,7 @@ const GEAR = (z, xs, after) => [
 ];
 // Бухта 1 — Тихая бухта: сельдь, филе, засолка, коптильня с дровами
 const BAY1 = {
-  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -4.4], cm: 1,
+  w: [-14.5, 14.5], d: [-18, 21.5], start: [-6.4, -4.4], cm: 1, ck: 0.85,
   shore: { base: -7.2, capes: [[9.2, 10.6, -13.2, 1]] },
   signs: [{ t: "СНАРЯЖЕНИЕ", x: -6.0, z: 3.05, w: 3.4, c: "#3aa0c8" }],
   ents: [
@@ -199,7 +199,7 @@ const BAY1 = {
     { id: "su_table2", k: "supg", of: "table2", x: 11.6, z: -5.4, after: ["table2"] },
     { id: "fisher2", k: "helper", n: "Рыбак второго стола", role: "fisher", from: "spot1", to: ["table2"], cost: 1050, after: ["table2"] },
     { id: "runner2", k: "helper", n: "Носильщик второго стола", role: "runner", from: "table2", to: ["smoke", "stall_fillet"], cost: 1200, after: ["fisher2"] },
-    { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 2400, after: ["runner2", "cashier"] },
+    { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 2300, after: ["runner2", "cashier"] },
   ],
 };
 // Бухта 2 — Ледяной фьорд: лосось с отмели и с мостков, стейки, икра, консервы на судно

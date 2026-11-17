@@ -18,13 +18,13 @@ export const THEMES = [
     snow: ["#f1f5fb", "#d3e0f0"], deck: [0.85, 0.53, 0.4], trees: 0, fall: 1 },
   // Ледяной фьорд — синий холод, скалы по краям, льдины в воде, серый настил
   { sky: "#a9c6e6", sky2: "#dbe8f6", fog: "#cddcee", deep: "#103a66", mid: "#1d5a8e", shal: "#4e9cc8", sun: "#eef4ff", hemi: "#d8e6ff", ground: "#7d8fb0", sunI: 2.05,
-    snow: ["#f4f8fd", "#d9e6f4"], deck: [0.5, 0.52, 0.58], trees: 0, fall: 1, cliffs: 1, bergs: 1 },
+    snow: ["#f4f8fd", "#d9e6f4"], deck: [0.36, 0.42, 0.54], trees: 0, fall: 1, cliffs: 1, bergs: 1 },
   // Крабовый мыс — летняя тундра: мох, валуны, кусты с ягодой, ловушки на берегу, без снега
   { sky: "#f4dcb8", sky2: "#fbeedd", fog: "#efe2cf", deep: "#185f6e", mid: "#23808c", shal: "#5fbfbd", sun: "#fff0d4", hemi: "#fff6e8", ground: "#8f8a72", sunI: 2.15,
     snow: ["#a3ad78", "#8d9a62"], sand: "#d8c49a", deck: [0.78, 0.62, 0.42], trees: 1, fall: 0, shrubs: 1, traps: 1 },
   // Ярмарочная гавань — вечер, тёплый свет, домики за рынком, флажки, каменная мостовая
   { sky: "#f2b98e", sky2: "#fde3cb", fog: "#f0d6c0", deep: "#1b4474", mid: "#2b6296", shal: "#62a6d0", sun: "#ffd2a0", hemi: "#ffe6d0", ground: "#8a7f8e", sunI: 2.0,
-    snow: ["#f6f1ec", "#e3dbd6"], deck: [0.74, 0.6, 0.5], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1 },
+    snow: ["#f6f1ec", "#e3dbd6"], deck: [0.6, 0.6, 0.56], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1 },
 ];
 
 export const figMat = () => {

@@ -737,9 +737,9 @@ function stepContract(G, dt) {
     const tier = ITEMS[it].price || ITEMS[it].ship;
     let n = Math.max(5, Math.round((7 + G.cdone * 1.6) * Math.pow(6 / tier, 0.3)));
     // успеть можно: не больше, чем цепочка даст за срок (с запасом)
-    const T0 = 60 + n * 7, rate = chainRate(G, 0, it);
+    const T0 = 75 + n * 8, rate = chainRate(G, 0, it);
     n = Math.max(4, Math.min(n, Math.floor(T0 * rate * 0.35)));
-    const T = Math.round((60 + n * 7) * DIFF[G.diff].ct * (1 + 0.2 * pk(G, "e_order")));
+    const T = Math.round((75 + n * 8) * DIFF[G.diff].ct * (1 + 0.2 * pk(G, "e_order")));
     G.con = { it, n, got: 0, T, t: T, rw: Math.round(itemPrice(G, it) * n * 2.6 * (1 + 0.4 * pk(G, "e_order"))), end: 0 };
     G.ev.push({ t: "contract", s: "new" });
     return;

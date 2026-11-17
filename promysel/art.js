@@ -119,15 +119,20 @@ export const ITEM_H = { herring: 0.2, fillet: 0.13, log: 0.22, smoked: 0.21, sal
   salted: 0.28, crab: 0.17, crabc: 0.14, mussel: 0.16, cod: 0.24, stockfish: 0.12, seaweed: 0.19, oil: 0.38, pie: 0.17 };
 
 // рыба для косяка в воде (лёгкая)
-export function schoolFishGeo(salmon) {
+export function schoolFishGeo(kind) {
   const b = new Build();
-  b.sph(0.5, 1, salmon ? "#e08a6e" : "#7fb0cf", { p: [0, 0, 0], s: [0.36, 0.13, 0.1] });
-  b.sph(0.5, 1, salmon ? "#f6c0aa" : "#d9eef8", { p: [0.02, -0.02, 0], s: [0.28, 0.08, 0.09] });
-  b.cone(0.07, 0.14, 3, salmon ? "#b8664f" : "#4f80a0", { p: [-0.22, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.4] });
-  b.cone(0.04, 0.08, 3, salmon ? "#b8664f" : "#4f80a0", { p: [0.0, 0.07, 0], s: [1.4, 1, 0.3] });
+  if (kind === 2) {     // краб: плоский, бочком, с клешнями
+    b.sph(0.5, 1, "#c9503a", { p: [0, 0, 0], s: [0.22, 0.07, 0.17] });
+    for (const sx of [-1, 1]) { b.sph(0.5, 0, "#d65a40", { p: [0.13, 0.01, sx * 0.1], s: [0.08, 0.05, 0.06] }); for (let i = 0; i < 3; i++) b.cyl(0.012, 0.01, 0.12, 4, "#b8442f", { p: [-0.04 + i * 0.05, -0.01, sx * 0.12], r: [sx * 1.2, 0, 0] }); }
+    return b.geo();
+  }
+  const c = kind === 1 ? ["#e08a6e", "#f6c0aa", "#b8664f"] : kind === 3 ? ["#8f8a5c", "#e8e2c8", "#6b6644"] : ["#7fb0cf", "#d9eef8", "#4f80a0"], k = kind === 3 ? 1.2 : 1;
+  b.sph(0.5, 1, c[0], { p: [0, 0, 0], s: [0.36 * k, 0.13 * k, 0.1 * k] });
+  b.sph(0.5, 1, c[1], { p: [0.02, -0.02, 0], s: [0.28 * k, 0.08 * k, 0.09 * k] });
+  b.cone(0.07 * k, 0.14 * k, 3, c[2], { p: [-0.22 * k, 0, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.4] });
+  b.cone(0.04 * k, 0.08 * k, 3, c[2], { p: [0.0, 0.07 * k, 0], s: [1.4, 1, 0.3] });
   return b.geo();
 }
-
 /* ---------- природа ---------- */
 // ель под снегом: пухлые ярусы, сверху почти белые, снизу — сине-зелёная тень
 export function pineGeo(v, summer) {

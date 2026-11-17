@@ -85,7 +85,9 @@ export class View {
     this.items = ITEM_NAMES.map((n) => new Pool(this.root, ITEM_GEO[n](), fm, n === "cash" ? 500 : 420, { receive: true }));
     this.fu = { value: 0 };
     const fsm = fishMat(this.fu);
-    this.fish = [new Pool(this.root, schoolFishGeo(0), fsm, 120, { shadow: false }), new Pool(this.root, schoolFishGeo(1), fsm, 80, { shadow: false })];
+    // косяки: сельдь, лосось, крабы, треска — пулы заводим только под товары этой бухты
+    const kinds = new Set(this.L.E.filter((e) => e.k === "spot").map((e) => this.fishKind(e.item))); kinds.add(0);
+    this.fish = [0, 1, 2, 3].map((k) => (kinds.has(k) ? new Pool(this.root, schoolFishGeo(k), k === 2 ? new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }) : fsm, 120, { shadow: false }) : null));
     // пятна-тени
     const bg = new THREE.PlaneGeometry(1, 1); bg.rotateX(-Math.PI / 2);
     this.blobs = new THREE.InstancedMesh(bg, new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }), 220);
@@ -324,7 +326,7 @@ export class View {
   update(G, dt, ctx) {
     this.t += dt; this.G0 = G;
     const L = this.L, t = this.t;
-    this.torso.begin(); this.leg.begin(); this.arm.begin(); this.pack.begin(); for (const p of this.items) p.begin(); for (const f of this.fish) f.begin();
+    this.torso.begin(); this.leg.begin(); this.arm.begin(); this.pack.begin(); for (const p of this.items) p.begin(); for (const f of this.fish) if (f) f.begin();
     this.fu.value = this.t; this.blobN = 0;
     this.bN = 0;
     // игроки
@@ -334,7 +336,7 @@ export class View {
       else { const k = Math.min(1, dt * (ctx.remoteK || 14)); d.x = lerp(d.x, p.x, k); d.z = lerp(d.z, p.z, k); if (p.mv) d.dir = angLerp(d.dir, p.dir, Math.min(1, dt * 12)); }
       this.person(d, this.coats.p[G.mode === "vs" ? p.team : i], dt, p.st, "p" + i, true, G, 1.0);
       // в зоне лова — в руках большая сеть, в ней бьётся улов
-      let fishing = false; for (const e of this.L.E) if (e.k === "spot" && G.e[e.i].o && Math.hypot(d.x - e.zin.x, d.z - e.zin.z) < e.zin.r + 0.1) fishing = true;
+      let fishing = false, fk = 0; for (const e of this.L.E) if (e.k === "spot" && G.e[e.i].o && Math.hypot(d.x - e.zin.x, d.z - e.zin.z) < e.zin.r + 0.1) { fishing = true; fk = this.fishKind(e.item); }
       d.netK = lerp(d.netK || 0, fishing ? 1 : 0, Math.min(1, dt * 7));
       const net = this.nets[i];
       if (net) {
@@ -343,7 +345,7 @@ export class View {
           const k = d.netK, ox = Math.sin(d.dir) * 0.95, oz = Math.cos(d.dir) * 0.95;
           net.position.set(d.x + ox, -0.02 + Math.sin(this.t * 3) * 0.02, d.z + oz); net.rotation.y = d.dir + Math.sin(this.t * 1.7) * 0.06; net.scale.setScalar(k * (1 + Math.sin(this.t * 5) * 0.02));
           const nf = Math.min(7, this.pendOf("p" + i) + 2);
-          for (let j = 0; j < nf; j++) { const a = j * 2.4 + this.t * (j % 2 ? 2 : -1.6), r = 0.12 + (j % 3) * 0.13; EU.set(0, a + Math.PI / 2, Math.sin(this.t * 14 + j) * 0.4); Q.setFromEuler(EU); M4.compose(P.set(net.position.x + Math.cos(a) * r * k, 0.02 + Math.abs(Math.sin(this.t * 7 + j)) * 0.12, net.position.z + Math.sin(a) * r * k), Q, SV.setScalar(1.6 * k)); this.fish[0].push(M4); }
+          for (let j = 0; j < nf; j++) { const a = j * 2.4 + this.t * (j % 2 ? 2 : -1.6), r = 0.12 + (j % 3) * 0.13; EU.set(0, a + Math.PI / 2, Math.sin(this.t * 14 + j) * 0.4); Q.setFromEuler(EU); M4.compose(P.set(net.position.x + Math.cos(a) * r * k, 0.02 + Math.abs(Math.sin(this.t * 7 + j)) * 0.12, net.position.z + Math.sin(a) * r * k), Q, SV.setScalar(1.6 * k)); (this.fish[fk] || this.fish[0]).push(M4); }
         }
       }
     }
@@ -400,10 +402,11 @@ export class View {
       sp.setXYZ(i, x, y, z);
     }
     sp.needsUpdate = true;
-    this.torso.end(); this.leg.end(); this.arm.end(); this.pack.end(); for (const p of this.items) p.end(); for (const f of this.fish) f.end();
+    this.torso.end(); this.leg.end(); this.arm.end(); this.pack.end(); for (const p of this.items) p.end(); for (const f of this.fish) if (f) f.end();
     this.bPos.needsUpdate = true; this.bCell.needsUpdate = true; this.bub.geometry.instanceCount = this.bN;
     this.blobs.count = this.blobN; if (this.blobN) this.blobs.instanceMatrix.needsUpdate = true;
   }
+  fishKind(it) { return it === IT.salmon ? 1 : it === IT.crab ? 2 : it === IT.cod ? 3 : 0; }
   near(d, c, r) { return Math.abs(d.x - c.x) < r && Math.abs(d.z - c.z) < r * 1.4; }
   groundY(x, z) { const g = this.G0 && deckY(this.G0, x, z); return g != null ? Math.max(g, this.world.height(x, z)) : Math.max(this.world.height(x, z), -0.42); }
   // человек: туловище, ноги, руки; стопка — на коробе за спиной (pack) или в руках (покупатель)
@@ -587,7 +590,7 @@ export class View {
     const N = 40;
     let sc = this.schools.get(e.i);
     if (!sc) { sc = { fish: [], jt: 0 }; for (let i = 0; i < N; i++) sc.fish.push({ a: Math.random() * 6.28, r: 0.3 + Math.random() * 2.2, sp: 0.35 + Math.random() * 0.5, y: Math.random(), ph: Math.random() * 6, ox: 0, oz: 0, big: i % 11 === 3 }); this.schools.set(e.i, sc); }
-    const pool = this.fish[e.item === IT.salmon ? 1 : 0];
+    const pool = this.fish[this.fishKind(e.item)] || this.fish[0];
     // косяк держится у места лова и тянется к ловцам; рядом с сетью рыбы разбегаются
     let tx = e.school.x, tz = e.school.z, cnt = 0, sx = 0, sz = 0;
     const cat = [];
@@ -608,7 +611,7 @@ export class View {
     }
     // иногда рыба выпрыгивает
     sc.jt -= dt;
-    if (sc.jt <= 0 && show > 3) { sc.jt = 0.7 + Math.random() * 1.4; const a = Math.random() * 6.28, r = Math.random() * 1.8; const x = sc.cx + Math.cos(a) * r, z = sc.cz + Math.sin(a) * r; this.fly(e.item, { x, y: -0.1, z }, { x: x + 0.7, y: -0.1, z: z + 0.25 }, { dur: 0.6, h: 0.9, s: 0.9 }); this.burst(x, 0.02, z, "splash", 6); }
+    if (sc.jt <= 0 && show > 3 && e.item !== IT.crab) { sc.jt = 0.7 + Math.random() * 1.4; const a = Math.random() * 6.28, r = Math.random() * 1.8; const x = sc.cx + Math.cos(a) * r, z = sc.cz + Math.sin(a) * r; this.fly(e.item, { x, y: -0.1, z }, { x: x + 0.7, y: -0.1, z: z + 0.25 }, { dur: 0.6, h: 0.9, s: 0.9 }); this.burst(x, 0.02, z, "splash", 6); }
   }
 }
 
