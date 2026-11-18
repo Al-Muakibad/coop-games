@@ -7,7 +7,7 @@
 import * as S from "../sim.js";
 import { makeBot } from "../bot.js";
 
-const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["solo", 0], ["vs", 0], ["coop", 0, 1]];
+const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["coop", 4], ["coop", 5], ["coop", 6], ["coop", 7], ["solo", 0], ["vs", 0], ["coop", 0, 1]];
 let total = 0;
 for (const [mode, bay, old] of runs) {
   const G = S.newGame({ mode, seed: 5, bay, v: old ? 1 : 2 });

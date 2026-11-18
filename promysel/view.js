@@ -187,7 +187,7 @@ export class View {
       uniforms: { uTex: { value: bubbleAtlas() } }, transparent: true, depthWrite: false, depthTest: true,
       vertexShader: `attribute vec3 iPos; attribute vec2 iCell; varying vec2 vUv; varying float vA;
         void main(){ float cell = iCell.x; float sc = iCell.y; vA = clamp(sc * 3.0, 0.0, 1.0);
-          vec2 c = vec2(mod(cell, 8.0), floor(cell / 8.0)); vUv = (c + vec2(uv.x, 1.0 - uv.y)) / vec2(8.0, 16.0); vUv.y = 1.0 - vUv.y;
+          vec2 c = vec2(mod(cell, 8.0), floor(cell / 8.0)); vUv = (c + vec2(uv.x, 1.0 - uv.y)) / vec2(8.0, 20.0); vUv.y = 1.0 - vUv.y;
           vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]); vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
           vec3 p = iPos + right * position.x * sc + up * position.y * sc;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
@@ -446,7 +446,7 @@ export class View {
     this.bPos.needsUpdate = true; this.bCell.needsUpdate = true; this.bub.geometry.instanceCount = this.bN;
     this.blobs.count = this.blobN; if (this.blobN) this.blobs.instanceMatrix.needsUpdate = true;
   }
-  fishKind(it) { return it === IT.salmon ? 1 : it === IT.crab ? 2 : it === IT.cod ? 3 : 0; }
+  fishKind(it) { return it === IT.salmon || it === IT.semga ? 1 : it === IT.crab ? 2 : it === IT.cod || it === IT.redfish || it === IT.halibut ? 3 : 0; }
   near(d, c, r) { return Math.abs(d.x - c.x) < r && Math.abs(d.z - c.z) < r * 1.4; }
   groundY(x, z) { const g = this.G0 && deckY(this.G0, x, z); return g != null ? Math.max(g, this.world.height(x, z)) : Math.max(this.world.height(x, z), -0.42); }
   // человек: туловище, ноги, руки; стопка — на коробе за спиной (pack) или в руках (покупатель)
@@ -606,6 +606,8 @@ export class View {
       } else if (e.k === "hut") {
         if (e.slot === ctx.me && (G.pl.length > 1 || e.slot === 0) && (G.mode !== "vs" || e.team === myTeam)) { ring(e.zin, BLUE, true, 1); this.label("i" + e.i, e.zin, ["bag"], "hire", tr("ХИЖИНА")); }
         else if (e.slot < G.pl.length && (G.mode !== "vs" || e.team === myTeam || true)) this.label("i" + e.i, e.zin, ["bag"], "in", G.mode === "vs" ? tr("СОПЕРНИК") : tr("НАПАРНИК"));      // чужая хижина — тоже с подписью
+      } else if (e.k === "jetty") {
+        if (G.mode !== "vs") { ring(e.zin, YEL, true, 0.9); this.label("i" + e.i, e.zin, ["chest"], "hire", tr("ПРИЧАЛ")); }
       } else if (e.k === "map") {
         if (G.mode !== "vs") { ring(e.zin, BLUE, true, 0.9); this.label("i" + e.i, e.zin, ["light"], "hire", tr("КАРТА")); }
       } else if (e.k === "ads") {
@@ -620,6 +622,10 @@ export class View {
         if (s.cash > 0) ring(e.zcash, GRN, true, 0.85);
       }
     }
+    // сундук для перевода ждёт у артели; чайки над тем, кто его несёт
+    if (G.cx && G.cx.s === 0 && this.items[IT.chest]) { EU.set(0, t * 0.5, 0); Q.setFromEuler(EU); M4.compose(P.set(G.cx.x, this.groundY(G.cx.x, G.cx.z) + 0.05 + Math.abs(Math.sin(t * 3)) * 0.05, G.cx.z), Q, SV.setScalar(1.3)); this.items[IT.chest].push(M4); }
+    if (!this.gulls) { const b = new Build(); b.sph(0.18, 1, "#f4f4f2", { s: [1.4, 0.8, 0.8] }); b.cone(0.05, 0.14, 4, "#f2b030", { p: [0.28, 0.02, 0], r: [0, 0, -Math.PI / 2] }); for (const sz of [-1, 1]) b.box(0.18, 0.03, 0.5, "#c8ccd0", { p: [-0.02, 0.06, sz * 0.28], r: [sz * 0.3, 0, 0] }); const g = b.geo(); this.gulls = [0, 1].map(() => { const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })); m.visible = false; this.root.add(m); return m; }); }
+    this.gulls.forEach((m, k) => { const g = G.gl && G.gl[k]; m.visible = !!g; if (!g) return; m.position.set(g.x, g.s === 1 ? 2.25 + Math.abs(Math.sin(t * 12)) * 0.08 : 2.8 + Math.sin(t * 6 + k) * 0.3, g.z); m.rotation.y = g.s === 2 ? -0.8 : t * 2 + k; m.rotation.z = g.s === 1 ? Math.sin(t * 14) * 0.4 : 0; });
     // ловушки с крабами на отливе
     if (G.traps && G.traps.length) for (let k = 0; k < G.traps.length; k++) { const tp = G.traps[k]; if (tp.n <= 0) continue; const z = { x: tp.x, z: tp.z, r: 0.9 }; ring(z, GRN, true, 1); this.label("trap" + k, z, ["crab"], "out", tr("ЛОВУШКА")); for (let j = 0; j < Math.min(tp.n, 6); j++) { EU.set(0, j * 1.3, 0); Q.setFromEuler(EU); M4.compose(P.set(tp.x + Math.cos(j * 1.9) * 0.25, this.groundY(tp.x, tp.z) + 0.05 + (j > 2 ? 0.15 : 0), tp.z + Math.sin(j * 1.9) * 0.2), Q, S1); this.items[IT.crab].push(M4); } }
     // подсветка мест, куда идёт новый помощник

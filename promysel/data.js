@@ -42,6 +42,43 @@ export const ITEMS = [
   { id: "smcod", n: "Копчёная треска", price: 16, h: 0.2, c: "#b8742f" },
   { id: "klip", n: "Клипфиск", price: 0, ship: 30, h: 0.14, c: "#e8dcc0" },
   { id: "basket", n: "Ярмарочная корзина", price: 0, ship: 140, h: 0.3, c: "#c8963f" },
+  { id: "chest", n: "Сундук с деньгами", price: 0, h: 0.4, c: "#a0703f", g: "chest" },
+  // раунд 10: ещё четыре острова. g — какой формы значок/модель (см. art.js ITEM_GEO)
+  // Северный фьорд
+  { id: "semga", n: "Сёмга", price: 4, h: 0.26, c: "#e09a86", g: "fish" },
+  { id: "gravlax", n: "Гравлакс", price: 8, h: 0.14, c: "#ff9a6a", g: "slab" },
+  { id: "balyk", n: "Балык", price: 20, h: 0.18, c: "#d9663a", g: "smoke" },
+  { id: "pres", n: "Пресервы", price: 0, ship: 13, h: 0.18, c: "#3a8a7a", g: "jar" },
+  { id: "nordset", n: "Северный набор", price: 0, ship: 32, h: 0.22, c: "#3a6ab8", g: "gift" },
+  { id: "kulebyaka", n: "Кулебяка", price: 28, h: 0.17, c: "#d9a050", g: "pie" },
+  { id: "balykbar", n: "Бочка балыка", price: 0, ship: 60, h: 0.28, c: "#8a5a32", g: "barrel" },
+  // Ледник
+  { id: "saika", n: "Сайка", price: 3, h: 0.2, c: "#a8bcd0", g: "fish" },
+  { id: "strogan", n: "Строганина", price: 9, h: 0.14, c: "#eef4fa", g: "slab" },
+  { id: "urchin", n: "Морской ёж", price: 15, h: 0.18, c: "#5a3a6a", g: "urchin" },
+  { id: "icebox", n: "Ледяной короб", price: 0, ship: 24, h: 0.32, c: "#bfe4f4", g: "box" },
+  { id: "nordplat", n: "Северное ассорти", price: 36, h: 0.1, c: "#b8d8ec", g: "plate" },
+  { id: "urchroe", n: "Икра ежа", price: 32, h: 0.16, c: "#f2a03a", g: "jar" },
+  { id: "saikapate", n: "Паштет из сайки", price: 0, ship: 52, h: 0.18, c: "#c8b89a", g: "tin" },
+  // Вулканический остров
+  { id: "redfish", n: "Морской окунь", price: 5, h: 0.24, c: "#e0503a", g: "fish" },
+  { id: "bakedfish", n: "Окунь из каменной печи", price: 11, h: 0.16, c: "#c86a3a", g: "slab" },
+  { id: "warmweed", n: "Тёплые водоросли", price: 19, h: 0.2, c: "#6aa04a", g: "weed" },
+  { id: "volpie", n: "Вулканический пирог", price: 45, h: 0.18, c: "#b85a2a", g: "pie" },
+  { id: "rliver", n: "Печень окуня", price: 28, h: 0.14, c: "#d9a86a", g: "tin" },
+  { id: "fishmeal", n: "Рыбная мука", price: 0, ship: 28, h: 0.3, c: "#d8c8a0", g: "box" },
+  { id: "steam", n: "Пар гейзера", price: 0, h: 0.26, c: "#e8f0f4", g: "steam" },
+  { id: "hotsmoke", n: "Окунь горячего копчения", price: 17, h: 0.21, c: "#a0502a", g: "smoke" },
+  { id: "saltred", n: "Солёный окунь", price: 0, ship: 32, h: 0.14, c: "#e8c8b0", g: "slab" },
+  { id: "volbasket", n: "Вулканическая корзина", price: 0, ship: 145, h: 0.3, c: "#8a3a2a", g: "basket" },
+  // Туманные шхеры — самая дорогая рыба
+  { id: "halibut", n: "Палтус", price: 8, h: 0.24, c: "#8a8070", g: "flat" },
+  { id: "halisteak", n: "Стейк палтуса", price: 15, h: 0.15, c: "#f4e8d8", g: "slab" },
+  { id: "halismoke", n: "Палтус горячего копчения", price: 34, h: 0.2, c: "#b8803a", g: "smoke" },
+  { id: "halican", n: "Консервы из палтуса", price: 0, ship: 20, h: 0.2, c: "#6a7a8a", g: "tin" },
+  { id: "royalset", n: "Королевский набор", price: 0, ship: 52, h: 0.22, c: "#6a2a8a", g: "gift" },
+  { id: "halipie", n: "Пирог с палтусом", price: 44, h: 0.17, c: "#e0b060", g: "pie" },
+  { id: "skerkeg", n: "Бочонок шхер", price: 0, ship: 90, h: 0.28, c: "#4a4a5a", g: "barrel" },
 ];
 export const IT = {}; ITEMS.forEach((it, i) => { it.i = i; IT[it.id] = i; });
 export const NIT = ITEMS.length;
@@ -227,7 +264,8 @@ const BAY1 = {
     { id: "runner_soup", k: "helper", n: "Разносчик ухи", role: "runner", from: "kettle", to: ["stall_soup"], cost: 1900, after: ["fisher_soup"] },
     { id: "light", k: "goal", n: "Маяк", x: 11.8, z: -11.0, pad: [12.4, -7.8], cost: 3200, after: ["runner_soup", "cashier"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
-    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -12.95, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "jetty", k: "jetty", n: "Причал перевозки", x: 3.75, z: -6.3, w: 1.6, d: 1.0, free: 1 },
   ],
 };
 // Бухта 2 — Ледяной фьорд: лосось с отмели и с мостков, стейки, икра, консервы на судно
@@ -289,7 +327,8 @@ const BAY2 = {
     { id: "loader3", k: "helper", n: "Грузчик бочонков", role: "runner", from: "cooper", to: ["dock"], cost: 6000, after: ["cooper"] },
     { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 11000, after: ["saltman", "feed_keg", "loader3"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
-    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -12.95, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "jetty", k: "jetty", n: "Причал перевозки", x: 10.5, z: -12.2, w: 1.6, d: 1.0, free: 1 },
   ],
 };
 // Бухта 3 — Крабовый мыс: краб у камней, варочная, мидийная ферма, лёд и ящики на судно
@@ -354,7 +393,8 @@ const BAY3 = {
     { id: "loader_p", k: "helper", n: "Грузчик паштета", role: "runner", from: "patehouse", to: ["dock"], cost: 10400, after: ["feed_p1"] },
     { id: "light", k: "goal", n: "Маяк", x: -12.0, z: -10.8, pad: [-12.6, -7.6], cost: 19000, after: ["loader_p", "feed_p2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -7.6, z: 9.3, free: 1 },
-    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -12.95, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "jetty", k: "jetty", n: "Причал перевозки", x: 4.0, z: -5.74, w: 1.6, d: 1.0, free: 1 },
   ],
 };
 // Бухта 4 — Ярмарочная гавань: треска, сушильня, морская капуста, пекарня рыбников, жиротопня и судно в гавани
@@ -422,19 +462,71 @@ const BAY4 = {
     { id: "loader_b", k: "helper", n: "Грузчик корзин", role: "runner", from: "basketry", to: ["dock"], cost: 29000, after: ["feed_b1"] },
     { id: "light", k: "goal", n: "Маяк", x: 12.0, z: -11.0, pad: [12.6, -7.8], cost: 36000, after: ["loader_b", "feed_b2"] },
     { id: "ads", k: "ads", n: "Реклама", x: -8.0, z: 9.3, free: 1 },
-    { id: "maptable", k: "map", n: "Карта архипелага", x: -13.3, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "maptable", k: "map", n: "Карта архипелага", x: -12.95, z: 4.6, w: 1.5, d: 1.0, free: 1 },
+    { id: "jetty", k: "jetty", n: "Причал перевозки", x: -5.0, z: -7.5, w: 1.6, d: 1.0, free: 1 },
   ],
 };
-export const BAYMAPS = [BAY1, BAY2, BAY3, BAY4];
+// Новые острова строятся на проверенной раскладке старой бухты: свои товары, цепочки, названия, погода и событие.
+function reskin(base, o) {
+  const M = JSON.parse(JSON.stringify(base));
+  const it = (s) => o.items[s] || s, nm = (s) => (ITEMS[IT[s]] || { n: s }).n;
+  const byId = {}; for (const e of M.ents) byId[e.id] = e;
+  for (const e of M.ents) {
+    if (o.drop && o.drop.includes(e.id)) continue;
+    if (e.item) e.item = it(e.item);
+    if (e.rec) e.rec = { in: e.rec.in.map(it).filter((s) => !(o.noIn || []).includes(s)), out: it(e.rec.out), t: e.rec.t };
+    if (e.accept) e.accept = e.accept.map(it);
+    if (o.models && o.models[e.id]) e.model = o.models[e.id];
+  }
+  const prod = (e) => (e.k === "spot" || e.k === "gen" ? e.item : e.rec ? e.rec.out : null);
+  for (const e of M.ents) {
+    if (o.names[e.id]) { e.n = o.names[e.id]; continue; }
+    if (e.k === "stall") e.n = "Прилавок: " + nm(e.item);
+    else if (e.k === "spot") e.n = (e.def2 || (e.auto ? "Глубина: " : o.spotWord || "Отмель: ")) + nm(e.item);
+    else if (e.k === "helper" && e.role === "fisher") e.n = "Рыбак: " + nm(prod(byId[e.from])) + (e.to && byId[e.to[0]] && byId[e.to[0]].k !== "stall" ? " → " + (o.names[e.to[0]] || byId[e.to[0]].n) : "");
+    else if (e.k === "helper" && e.role === "runner") { const p = prod(byId[e.from]); e.n = "Носильщик: " + nm(p).toLowerCase(); }
+  }
+  M.big = base.big.map((b, i) => ({ n: (o.big && o.big[i]) || b.n, after: b.after, st: b.st.map(([s, n]) => [it(s), n]), rw: b.rw }));
+  M.event = o.event; if (o.shore) M.shore = o.shore;
+  const g = M.ents.find((e) => e.k === "goal"); if (g && o.light) g.cost = o.light;
+  return M;
+}
+// 5. Северный фьорд — узкие бухты между скал, сёмга (раскладка Ледяного фьорда)
+const BAY5 = reskin(BAY2, { event: "run", light: 13000,
+  items: { salmon: "semga", steak: "gravlax", caviar: "balyk", can: "pres", gift: "nordset", lox: "kulebyaka", keg: "balykbar" },
+  names: { steak: "Засолочный стол", caviar: "Балычная", cannery: "Цех пресервов", pack: "Упаковочная", smokery: "Пекарня кулебяк", cooper: "Бондарня балыка", pier: "Мостки в узкой бухте", dock: "Причал фьорда" },
+  big: ["Заказ рыбной лавки", "Поставка наборов", "Флотский контракт"] });
+// 6. Ледник — айсберги и тюлени, ловят только в прорубях (раскладка Крабового мыса)
+const BAY6 = reskin(BAY3, { event: "storm", light: 21000, spotWord: "Прорубь: ",
+  items: { crab: "saika", crabc: "strogan", mussel: "urchin", crate: "icebox", platter: "nordplat", dmussel: "urchroe", pate: "saikapate" },
+  names: { boil: "Разделка строганины", farm: "Ежовая лунка", icehouse: "Ледяной погреб", icehole: "Большая прорубь", bar: "Закусочная «Север»", farm2: "Вторая ежовая лунка", drysh: "Икорня ежей", boil2: "Вторая разделка", patehouse: "Паштетная", dock: "Причал у льдины" },
+  big: ["Заказ полярной станции", "Поставка ассорти", "Флотский контракт"] });
+BAY6.traps = [];      // на леднике ловушек на отливе нет
+// 7. Вулканический остров — горячие источники, вода не замерзает, коптильня на гейзере (раскладка Ярмарочной гавани)
+const BAY7 = reskin(BAY4, { event: "geyser", light: 38000,
+  items: { cod: "redfish", stockfish: "bakedfish", seaweed: "warmweed", pie: "volpie", liver: "rliver", oil: "fishmeal", smcod: "hotsmoke", log: "steam", klip: "saltred", basket: "volbasket" },
+  names: { dryer: "Каменная печь", plant: "Тёплая заводь", bakery: "Пекарня у кратера", render: "Мельница рыбной муки", liverhouse: "Цех печени", wood: "Гейзер", smokery: "Коптильня на гейзере", saltpan: "Солеварня на источнике", klipyard: "Засолка окуня", basketry: "Корзинная лавка", woodman: "Носильщик пара", dock: "Причал у кратера" },
+  models: { wood: "geyser" },
+  big: ["Заказ курорта", "Поставка пирогов", "Флотский контракт"] });
+// 8. Туманные шхеры — финал: туман, без маяка лодки теряются, самая дорогая рыба (раскладка Ледяного фьорда)
+const BAY8 = reskin(BAY2, { event: "fog", light: 70000,
+  items: { salmon: "halibut", steak: "halisteak", caviar: "halismoke", can: "halican", gift: "royalset", lox: "halipie", keg: "skerkeg" },
+  names: { steak: "Разделка палтуса", caviar: "Коптильня шхер", cannery: "Консервный цех", pack: "Королевская упаковочная", smokery: "Пекарня шхер", cooper: "Бондарня шхер", pier: "Мостки между шхерами", dock: "Причал в тумане" },
+  big: ["Заказ смотрителя", "Королевская поставка", "Последний флотский контракт"] });
+export const BAYMAPS = [BAY1, BAY2, BAY3, BAY4, BAY5, BAY6, BAY7, BAY8];
 // бухты: название, тема мира, что нового (для окна перехода)
 export const BAYS = [
   { n: "Тихая бухта", theme: 0, news: ["herring", "fillet", "salted", "smoked", "soup"], ev: "Бураны: косяк уходит — держи запас" },
   { n: "Ледяной фьорд", theme: 1, news: ["salmon", "steak", "caviar", "can", "gift", "lox", "keg"], ev: "Ход лосося: улов вдвое" },
   { n: "Крабовый мыс", theme: 2, news: ["crab", "crabc", "mussel", "crate", "platter", "dmussel", "pate"], ev: "Приливы и отливы: на отливе — ловушки с крабами" },
   { n: "Ярмарочная гавань", theme: 3, news: ["cod", "stockfish", "seaweed", "pie", "liver", "oil", "smcod", "klip", "basket"], ev: "Ярмарочный день: важные гости платят втрое" },
+  { n: "Северный фьорд", theme: 4, news: ["semga", "gravlax", "balyk", "pres", "nordset", "kulebyaka", "balykbar"], ev: "Ход сёмги: улов вдвое" },
+  { n: "Ледник", theme: 5, news: ["saika", "strogan", "urchin", "icebox", "nordplat", "urchroe", "saikapate"], ev: "Буран: рыба уходит подо лёд — держи запас" },
+  { n: "Вулканический остров", theme: 6, news: ["redfish", "bakedfish", "warmweed", "volpie", "rliver", "fishmeal", "hotsmoke", "saltred", "volbasket"], ev: "Гейзер: все цеха работают вдвое быстрее" },
+  { n: "Туманные шхеры", theme: 7, news: ["halibut", "halisteak", "halismoke", "halican", "royalset", "halipie", "skerkeg"], ev: "Туман: без маяка лодки теряются — судно опаздывает, покупателей меньше" },
 ];
 // сколько платят за товар в каждой бухте (выручка, не цены построек): подогнано, чтобы каждая бухта шла 30–40 минут
-export const BAY_INCOME = [1.1, 1.3, 0.75, 0.85];
+export const BAY_INCOME = [1.1, 1.3, 0.75, 0.85, 0.55, 0.66, 0.745, 0.6];
 // старые бухты (версия 1: одна карта, цены умножались)
 export const BAYS_OLD = [{ mult: 1 }, { mult: 3.5 }, { mult: 12 }, { mult: 40 }];
 
@@ -474,6 +566,8 @@ export const EVENTS = {
   run: { n: "Ход лосося", first: 360, every: 300, warn: 10, dur: 35 },
   tide: { n: "Отлив", first: 150, every: 140, warn: 10, dur: 55 },
   fair: { n: "Ярмарочный день", first: 420, every: 330, warn: 12, dur: 60 },
+  geyser: { n: "Гейзер", first: 300, every: 300, warn: 10, dur: 40 },      // все цеха вдвое быстрее
+  fog: { n: "Туман", first: 240, every: 260, warn: 12, dur: 50 },      // пока маяк не горит: судно опаздывает, покупателей меньше
 };
 export const DECO_MAX = 3;      // украшения базы: фонари, флажки, вывески — за ступени больших заказов
 // сколько якорей за бухту
@@ -507,7 +601,15 @@ export const ROUTES = [
   { a: 3, b: 0, it: "seaweed", n: "Ламинария в уху Тихой бухты", cost: 9000 },
   { a: 0, b: 2, it: "smoked", n: "Копчёности на мыс", cost: 6000 },
   { a: 1, b: 3, it: "caviar", n: "Икра на ярмарку", cost: 12000 },
+  { a: 3, b: 4, it: "pie", n: "Рыбники во фьорд", cost: 12000 },
+  { a: 4, b: 5, it: "pres", n: "Пресервы для полярников", cost: 14000 },
+  { a: 5, b: 6, it: "icebox", n: "Лёд на вулкан", cost: 16000 },
+  { a: 6, b: 7, it: "hotsmoke", n: "Копчёный окунь в шхеры", cost: 18000 },
+  { a: 7, b: 0, it: "royalset", n: "Королевские наборы в Тихую бухту", cost: 20000 },
 ];
+// перевод денег между островами: телеграф (сразу, комиссия; прокачка в артели), инкассаторская шхуна (без комиссии, ~90 с, риск),
+// сундук своими руками (без комиссии и риска; чайки клюют, если никто не отгоняет)
+export const XFER = { tel: [0.25, 0.2, 0.15, 0.1], telCost: [3000, 9000, 20000], guardCost: [4000, 12000], lhCost: [2500, 6000, 12000], shipT: 90, risk: 0.35, riskLh: 0.07, riskGuard: 0.08, loss: [0.2, 0.4], peck: 0.025, gullEvery: 6, carrySpeed: 0.78, min: 50 };
 export const ARCH = { cap: 7200, routeK: 0.25, routeT: 90, srcBonus: 0.1 };     // сундук острова — до 2 часов дохода; путь: 25% дохода острова-поставщика
 
 /* ---------- хижина: наряды, пёс, санки и лодка (за деньги в игре, переносятся) ---------- */
@@ -537,6 +639,10 @@ export const RARE = [
   { id: "pearl", n: "Жемчужина", d: "Нашлась в мидии", ic: "🦪", bay: 2, p: 1 / 800, v: 1200, tr: 1 },
   { id: "giant", n: "Гигантская треска", d: "Еле влезла в короб", ic: "🐡", f: "hue-rotate(60deg)", bay: 3, p: 1 / 500, v: 1200 },
   { id: "anchor", n: "Старинный якорь", d: "С затонувшего брига", ic: "⚓", bay: 3, p: 1 / 800, v: 2000, tr: 1 },
+  { id: "silver", n: "Серебряная сёмга", d: "Чешуя как зеркало", ic: "🐟", f: "grayscale(1) brightness(1.3)", bay: 4, p: 1 / 500, v: 1100 },
+  { id: "seal", n: "Тюленёнок-соня", d: "Уснул в сетке, его отпустили — на удачу", ic: "🦭", bay: 5, p: 1 / 800, v: 1500, tr: 1 },
+  { id: "obsidian", n: "Обсидиановая раковина", d: "Тёплая, как камень у гейзера", ic: "🐚", f: "brightness(0.5) saturate(2)", bay: 6, p: 1 / 800, v: 2200, tr: 1 },
+  { id: "ghost", n: "Призрачный палтус", d: "Видели только в тумане", ic: "🐡", f: "grayscale(1) opacity(.8)", bay: 7, p: 1 / 500, v: 3000 },
   { id: "moon", n: "Рыба-луна", d: "Говорят, приносит удачу", ic: "🌕", bay: -1, p: 1 / 5000, v: 5000 },
 ];
 

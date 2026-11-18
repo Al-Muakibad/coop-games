@@ -25,6 +25,18 @@ export const THEMES = [
   // Ярмарочная гавань — вечер, тёплый свет, домики за рынком, флажки, каменная мостовая
   { sky: "#f2b98e", sky2: "#fde3cb", fog: "#f0d6c0", deep: "#1b4474", mid: "#2b6296", shal: "#62a6d0", sun: "#ffd2a0", hemi: "#ffe6d0", ground: "#8a7f8e", sunI: 2.0,
     snow: ["#f6f1ec", "#e3dbd6"], deck: [0.6, 0.6, 0.56], cobble: 1, trees: 0, fall: 1, houses: 1, flags: 1, outfit: 2 },
+  // Северный фьорд — узкие бухты между отвесными скалами, зелёные склоны, морось
+  { sky: "#9cc0d4", sky2: "#cfe0ea", fog: "#c2d4de", deep: "#0f3f50", mid: "#1b6072", shal: "#4f9aa8", sun: "#f2f6f2", hemi: "#e2eef0", ground: "#6f8a7a", sunI: 1.85,
+    snow: ["#8fa877", "#7a9462"], deck: [0.62, 0.5, 0.38], trees: 1, fall: 0, cliffs: 2, outfit: 1, fogN: 30, fogF: 70 },
+  // Ледник — белое море подо льдом, айсберги, тюлени на льдинах, метель
+  { sky: "#cfe4f2", sky2: "#eef6fb", fog: "#e2eef6", deep: "#4f86ad", mid: "#79aecd", shal: "#b6e0f2", sun: "#ffffff", hemi: "#eef6ff", ground: "#9fb4c8", sunI: 2.1,
+    snow: ["#f8fbfe", "#dfeaf4"], deck: [0.5, 0.56, 0.66], trees: 0, fall: 1, bergs: 2, seals: 1, outfit: 0 },
+  // Вулканический остров — тёмный камень, тёплая бирюзовая вода, пар из источников, вулкан на горизонте
+  { sky: "#e2c4ae", sky2: "#f2e0d2", fog: "#dcc6b8", deep: "#173c48", mid: "#236470", shal: "#55c2b4", sun: "#ffe0c0", hemi: "#fbe8dc", ground: "#4f4644", sunI: 2.05,
+    snow: ["#5c5452", "#4a4442"], sand: "#6a605a", deck: [0.55, 0.42, 0.34], trees: 0, fall: 0, steam: 1, volcano: 1, outfit: 1 },
+  // Туманные шхеры — серые скалы-островки в море, густой туман, маяк
+  { sky: "#aeb8c0", sky2: "#cdd4d8", fog: "#c6ced2", deep: "#1f3646", mid: "#2f5064", shal: "#6a92a4", sun: "#eef0f0", hemi: "#e0e6ea", ground: "#6f7a7a", sunI: 1.7,
+    snow: ["#9aa6a0", "#848f8a"], deck: [0.5, 0.48, 0.46], trees: 0, fall: 0, skerries: 1, outfit: 2, fogN: 26, fogF: 66 },
 ];
 
 export const figMat = () => {
@@ -46,7 +58,7 @@ export class World {
   buildSky() {
     const T = this.theme;
     this.scene.background = new THREE.Color(T.sky2);
-    this.scene.fog = new THREE.Fog(T.fog, 38, 80);
+    this.scene.fog = new THREE.Fog(T.fog, T.fogN || 38, T.fogF || 80);
   }
   buildLights() {
     const T = this.theme;
@@ -201,8 +213,21 @@ export class World {
     const T = this.theme;
     add(pineGeo(0, T.trees === 1), pines, true); add(pineGeo(1, T.trees === 1), pines2, true); add(rockGeo(), rocks, true); if (!T.shrubs) add(driftGeo(), drifts, false); add(lampGeo(), lamps, true);
     // особые приметы бухты
-    if (T.cliffs) { const cl = []; for (let i = 0; i < 26; i++) { const sx = i % 2 ? 1 : -1, x = sx > 0 ? xr + 1.7 + R(i, 40) * 9 : xl - 1.7 - R(i, 40) * 9, z = -16 + R(i, 41) * 34; if (z > 21 && z < 23.5) continue; cl.push({ x, z, s: 1.1 + R(i, 42) * 1.3, r: R(i, 43) * 6, y: z < shoreZ(L, x) ? -0.6 : 0 }); } add(BUILD.cliff(), cl, true); }
-    if (T.bergs) { const bg = []; for (let i = 0; i < 40 && bg.length < 9; i++) { const x = xl - 7.5 + R(i, 50) * (xr - xl + 15), z = -30 + R(i, 51) * 16; if (z > shoreZ(L, x) - 3 || !out(x, 0.5) && z > -19) continue; bg.push({ x, z, s: 0.6 + R(i, 52) * 1.0, r: R(i, 53) * 6, y: -0.25 }); } add(BUILD.iceberg(), bg, true); }
+    if (T.cliffs) { const cl = []; for (let i = 0; i < 26 * T.cliffs; i++) { const sx = i % 2 ? 1 : -1, x = sx > 0 ? xr + 1.7 + R(i, 40) * 9 : xl - 1.7 - R(i, 40) * 9, z = -16 + R(i, 41) * 34; if (z > 21 && z < 23.5) continue; cl.push({ x, z, s: 1.1 + R(i, 42) * 1.3, r: R(i, 43) * 6, y: z < shoreZ(L, x) ? -0.6 : 0 }); } add(BUILD.cliff(), cl, true); }
+    if (T.bergs) { const bg = []; for (let i = 0; i < 80 && bg.length < 9 * T.bergs; i++) { const x = xl - 7.5 + R(i, 50) * (xr - xl + 15), z = -30 + R(i, 51) * 16; if (z > shoreZ(L, x) - 3 || !out(x, 0.5) && z > -19) continue; bg.push({ x, z, s: 0.6 + R(i, 52) * 1.0, r: R(i, 53) * 6, y: -0.25 }); } add(BUILD.iceberg(), bg, true); }
+    // тюлени на берегу и на льдинах (Ледник)
+    if (T.seals) { const sl = []; const sg = (() => { const b = new Build(); b.sph(0.5, 1, "#7a828c", { p: [0, 0.22, 0], s: [1.3, 0.55, 0.6] }); b.sph(0.26, 1, "#8a929c", { p: [0.62, 0.38, 0] }); b.ball(0.04, "#1d2228", { p: [0.8, 0.44, 0.1], jit: 0 }); b.ball(0.04, "#1d2228", { p: [0.8, 0.44, -0.1], jit: 0 }); b.cone(0.18, 0.3, 4, "#6a727c", { p: [-0.72, 0.14, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.4] }); return b.geo(); })();
+      for (let i = 0; i < 40 && sl.length < 10; i++) { const x = xl - 6 + R(i, 90) * (xr - xl + 12), z = shoreZ(L, x) - 1.5 - R(i, 91) * 10; if (!out(x, 0.5) && z > -16) continue; sl.push({ x, z, s: 0.9 + R(i, 92) * 0.4, r: R(i, 93) * 6, y: 0.05 }); }
+      for (let i = 0; i < 4; i++) { const x = xl - 2 - i * 1.6, z = shoreZ(L, xl) + 0.8 + i; sl.push({ x, z, s: 1, r: 1.2 + i }); }
+      add(sg, sl, true); }
+    // вулкан на горизонте и пар над горячими источниками
+    if (T.volcano) { const b = new Build(); b.cone(26, 22, 9, "#4a4040", { p: [0, 11, 0], jit: 0.06 }); b.cone(9, 6, 9, "#3a3232", { p: [0, 19.5, 0] }); b.cyl(4.5, 4.5, 0.6, 9, "#ff7a3a", { p: [0, 22.3, 0], jit: 0.1 }); const m = new THREE.Mesh(b.geo(), mat); m.position.set(xr + 8, -2, -62); this.root.add(m); }
+    if (T.steam) { this.steam = []; const vb = new Build(); vb.cyl(0.7, 0.9, 0.25, 9, "#3c3634", { p: [0, 0.1, 0] }); vb.cyl(0.5, 0.5, 0.04, 9, "#7ad8d0", { p: [0, 0.24, 0] }); const vg = vb.geo(); const pm = () => new THREE.MeshLambertMaterial({ color: "#f4f6f8", transparent: true, opacity: 0.5, depthWrite: false });
+      const spots = []; for (let i = 0; i < 60 && spots.length < 9; i++) { const x = xl - 4 + R(i, 95) * (xr - xl + 8), z = -6 + R(i, 96) * 26; if ((!out(x, 1) && z < 19) || z < shoreZ(L, x) + 0.8) continue; spots.push([x, z]); }
+      for (let i = 0; i < 4; i++) { const x = xl + 1 + R(i, 97) * (xr - xl - 2), z = shoreZ(L, x) - 2.5 - R(i, 98) * 5; spots.push([x, z]); }
+      for (const [x, z] of spots) { const v = new THREE.Mesh(vg, mat); v.position.set(x, this.height(x, z) < -0.2 ? -0.1 : this.height(x, z), z); this.root.add(v); for (let k = 0; k < 3; k++) { const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 1), pm()); m.position.set(x + (k - 1) * 0.15, 0.4, z); this.root.add(m); this.steam.push({ m, y: v.position.y + 0.3, s: 0.8 + k * 0.2, ph: k / 3 + R(k, 99) * 0.1 }); } } }
+    // шхеры: каменные островки в море
+    if (T.skerries) { const sk = []; for (let i = 0; i < 80 && sk.length < 26; i++) { const x = xl - 10 + R(i, 100) * (xr - xl + 20), z = shoreZ(L, x) - 4 - R(i, 101) * 26; let near = false; for (const e of L.E) if ((e.k === "spot" || e.k === "pier" || e.k === "dock" || e.k === "goal") && Math.hypot(x - e.x, z - e.z) < 5) near = true; if (near) continue; sk.push({ x, z, s: 1.2 + R(i, 102) * 2.2, r: R(i, 103) * 6, y: -0.35 }); } add(BUILD.cliff(), sk, true); }
     if (T.shrubs) { const sb = []; for (let i = 0; i < 160 && sb.length < 70; i++) { const x = xl - 17.5 + R(i, 60) * (xr - xl + 35), z = -6 + R(i, 61) * 34; const inside = x > M.w[0] - 0.6 && x < M.w[1] + 0.6 && z < 22.3; if (inside || z < shoreZ(L, x) + 1 || Math.abs(z - 20.6) < 2.2) continue; sb.push({ x, z, s: 0.7 + R(i, 62) * 0.8, r: R(i, 63) * 6 }); } add(BUILD.shrub(), sb, true); }
     if (T.traps) { const tp = []; for (let i = 0; i < 30 && tp.length < 6; i++) { const x = M.w[0] + 0.8 + R(i, 70) * (M.w[1] - M.w[0] - 1.6), z = shoreZ(L, x) + 0.6 + R(i, 71) * 0.8; if (nearEnt(x, z, 1.0)) continue; tp.push({ x, z, r: R(i, 72) * 6 }); } add(BUILD.trap(), tp, true); }
     if (T.houses) { const hs = []; const cols = ["#e9dcc4", "#d9e4ea", "#f0d8c0", "#e0e8d0"]; for (let i = 0; i < Math.round(9 + (xr - 14.5) / 4.3); i++) hs.push([-17 + i * 4.3 + R(i, 80) * 0.8, 25.2 + R(i, 81) * 1.4, R(i, 82) * 0.3 - 0.15, cols[i % 4]]); for (const [x, z, r, c] of hs) { const m = new THREE.Mesh(BUILD.house(c), mat); m.position.set(x, 0, z); m.rotation.y = Math.PI + r; m.castShadow = true; m.receiveShadow = true; this.root.add(m); }
@@ -251,6 +276,7 @@ export class World {
       if (e.k === "ads") geo = BUILD.adstand();
       if (e.k === "hut") geo = BUILD.cabin(e.w, e.d, e.slot);
       if (e.k === "map") geo = BUILD.maptable();
+      if (e.k === "jetty") geo = BUILD.jetty();
       if (e.k === "goal") geo = BUILD.lighthouse();
       if (e.k === "dock") { geo = BUILD.dock(); if (e.sg < 0) ry = Math.PI; }
       if (e.k === "pier") { const len = e.pier.z0 - e.pier.z1 + 0.8; geo = BUILD.pier(len); grp.position.set(e.pier.x, 0, (e.pier.z0 + e.pier.z1) / 2); }
@@ -296,9 +322,11 @@ export class World {
   // погода события: буран — туман и сумрак; отлив — вода ниже
   weather(G, dt) {
     const v = G && G.evt, on = (k) => v && v.k === k && v.ph === 2;
-    this.wx += ((on("storm") ? 1 : 0) - this.wx) * Math.min(1, dt * 1.5);
+    this.wx += ((on("storm") || (on("fog") && !(G && G.done >= 0)) ? 1 : on("fog") ? 0.5 : 0) - this.wx) * Math.min(1, dt * 1.5);
+    this.tw = (this.tw || 0) + dt;
+    if (this.steam) for (const p of this.steam) { const u = (this.tw * 0.35 + p.ph) % 1; p.m.position.y = p.y + u * 2.2; p.m.scale.setScalar(p.s * (0.6 + u * 1.2) * (on("geyser") ? 1.5 : 1)); p.m.material.opacity = 0.55 * (1 - u); }
     this.tide += ((on("tide") ? 1 : 0) - this.tide) * Math.min(1, dt * 0.8);
-    const f = this.scene.fog; f.near = 38 - this.wx * 26; f.far = 80 - this.wx * 46;
+    const f = this.scene.fog, fn = this.theme.fogN || 38, ff = this.theme.fogF || 80; const cd = this.camD || 26; f.near = Math.max(fn - this.wx * Math.min(26, fn - 14), cd * 0.72); f.far = Math.max(ff - this.wx * Math.min(46, ff - 40), cd * 1.55, f.near + 22);      // даже в самый густой туман рынок виден: дымка начинается за точкой, куда смотрит камера (на телефоне она дальше)
     this.wu.fogNear.value = f.near; this.wu.fogFar.value = f.far;
     this.hemi.intensity = 1.05 - this.wx * 0.25; this.sun.intensity = this.theme.sunI * (1 - this.wx * 0.45);
     this.water.position.y = -this.tide * 0.16;
