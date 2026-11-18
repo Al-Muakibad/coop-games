@@ -3,7 +3,7 @@
 // никто не стоит «на ходу» дольше 8 с, сторож почти не срабатывает. Запуск из корня: node promysel/tools/events.mjs
 import * as S from "../sim.js";
 import { makeBot } from "../bot.js";
-const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["vs", 0]];
+const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["coop", 4], ["coop", 5], ["coop", 6], ["coop", 7], ["vs", 0]];
 let bad = 0;
 for (const [mode, bay] of runs) {
   const G = S.newGame({ mode, seed: 8, bay }); const L = S.layoutOf(G);

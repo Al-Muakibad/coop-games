@@ -1,7 +1,7 @@
 // Выход из воды: в каждой бухте (и на карте «против», и на старой карте) встаём в каждую точку брода/мостков вдоль берега
 // с шагом 0.5 м и ведём джойстик к суше. Если за 6 с игрок не вышел на сушу — «застрял». Запуск из корня: node promysel/tools/shore.mjs
 import * as S from "../sim.js";
-const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["vs", 0], ["coop", 0, 1]];
+const runs = [["coop", 0], ["coop", 1], ["coop", 2], ["coop", 3], ["coop", 4], ["coop", 5], ["coop", 6], ["coop", 7], ["vs", 0], ["coop", 0, 1]];
 let bad = 0, total = 0;
 for (const [mode, bay, old] of runs) {
   for (const tide of [0, 1]) {
