@@ -2,7 +2,7 @@
 // HUD, события → эффекты и звук, сохранения, кнопка «Назад».
 import * as THREE from "three";
 import * as S from "./sim.js";
-import { ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW, OUTFITS, PET, RIDES, RARE, ROUTES, ISLES, ARCH, DAILY, DAILY_RW } from "./data.js";
+import { XFER, ITEMS, IT, UPG, BAYS, DIFF, VS_GOALS, PERKS, META, EVENTS, anchorsFor, recText, YAW, OUTFITS, PET, RIDES, RARE, ROUTES, ISLES, ARCH, DAILY, DAILY_RW } from "./data.js";
 import { World, THEMES } from "./world.js";
 import { ArchMap, ISLE_POS } from "./map3d.js";
 import { hostRoom, joinRoom, newRoomId, validCode } from "./joinx.js";
@@ -381,7 +381,7 @@ function guestApi() {
       if (d && d.name) partner.name = d.name;
     },
     snap: (g) => { G = g; },
-    events: (list) => onEvents(list, true),
+    events: (list, g) => { if (g && G && g.cid !== G.cid) return; onEvents(list, true); },   // снимок со старого острова — его события уже ни к чему
     peer: (on, p) => partnerConn(on, p),
   };
 }
@@ -551,6 +551,7 @@ function onEvents(list, remote) {
     const isMe = e.a === "p" + me;
     if (remote && isMe && (e.t === "catch" || e.t === "drop" || e.t === "pick" || e.t === "padpay" || (e.t === "cash" && !e.dog) || e.t === "trap")) continue;   // свои — уже показаны
     const en = e.e != null ? Lr.E[e.e] : null;
+    if (e.e != null && !en) continue;   // событие со старого острова пришло уже после переезда
     switch (e.t) {
       case "catch": {
         const sc = view.schools.get(e.e), fx = sc && sc.cx != null ? sc.cx : en.school.x, fz = sc && sc.cz != null ? sc.cz : en.school.z;
@@ -658,6 +659,8 @@ function onEvents(list, remote) {
           run: ["🐟 " + L("Лосось идёт на нерест!"), L("Скоро ход лосося — беги на отмель"), L("Ход лосося: каждый улов вдвое"), L("Ход лосося закончился")],
           tide: ["🌊 " + L("Начинается отлив"), L("Вода уйдёт — на берегу появятся ловушки с крабами"), L("Отлив: отмель шире, ловушки на берегу"), L("Прилив — ловушки ушли под воду")],
           fair: ["🎪 " + L("Ярмарочный день!"), L("Скоро придут важные гости — запасись товаром"), L("Важные гости платят втрое"), L("Ярмарка закончилась")],
+          geyser: ["♨️ " + L("Гейзер просыпается!"), L("Скоро пар — все цеха заработают вдвое быстрее"), L("Гейзер: цеха вдвое быстрее — подноси сырьё"), L("Гейзер утих")],
+          fog: ["🌫 " + L("Наползает туман"), G.done >= 0 ? L("Маяк горит — лодки найдут дорогу") : L("Без маяка лодки теряются: судно опоздает, покупателей меньше"), G.done >= 0 ? L("Туман, но маяк светит") : L("Туман: судно плутает, покупателей меньше"), L("Туман рассеялся")],
         }[e.k];
         if (!txt) break;
         if (e.s === "warn") { banner(txt[0], txt[1], "gold"); play("bell", { vol: 0.7 }); haptic("notify", "warning", true); }
@@ -683,6 +686,18 @@ function onEvents(list, remote) {
       case "dogpick": { const z = en && en.zcash; if (z && camNear(z.x, z.z, 12)) { view.burst(z.x, 0.4, z.z, "gold", 6); play("coin", { vol: vol(z.x, z.z, 0.4), rate: 1.4 }); } break; }
       case "rare": onRare(e); break;
       case "route": { const R = ROUTES[e.k]; banner("⛵ " + L("Шхуна из") + " «" + L(BAYS[R.a].n) + "»", L(R.n) + ": +" + fmt(e.v), "gold"); play("cash2"); haptic("notify", "success"); break; }
+      case "xfer": {
+        const n = (b) => L(BAYS[b].n);
+        if (e.m === "tel") banner("📡 " + L("Телеграф") + ": " + n(e.from) + " → " + n(e.to), "+" + fmt(e.amt) + " · " + L("комиссия") + " " + fmt(e.fee), "gold");
+        else if (e.m === "ship") banner("⛵ " + L("Шхуна вышла") + ": " + n(e.from) + " → " + n(e.to), fmt(e.amt) + " · ~90 " + L("с") + " — " + L("видно на карте"), "gold");
+        else if (e.m === "arrive") { banner(e.lost ? (e.why === "reef" ? "🪨 " + L("Шхуна задела риф") : "⛈ " + L("Шхуна попала в шторм")) : "⛵ " + L("Шхуна пришла"), n(e.to) + ": +" + fmt(e.amt) + (e.lost ? " · " + L("потеряно") + " " + fmt(e.lost) : ""), e.lost ? "" : "gold"); play(e.lost ? "error" : "cash2"); }
+        else if (e.m === "chest") banner("🧰 " + L("Сундук собран у артели"), L("Возьми его и неси к причалу перевозки"), "gold");
+        else if (e.m === "pick") { play("cloth"); if (e.a === "p" + me) toast("🧰 " + L("Неси сундук к причалу перевозки ⛵"), "good", 3); }
+        break;
+      }
+      case "xferup": toast((e.k === "tel" ? "📡 " + L("Телеграф") : e.k === "guard" ? "🛡 " + L("Охрана шхун") : "🗼 " + L("Маяк на маршруте")) + " · " + L("ур.") + e.lv, "good"); play("upgrade"); break;
+      case "gull": if (e.s === "shoo") play("gull1", { vol: 0.5 }); break;
+      case "chestboat": if (role !== "guest") { banner("⛵ " + L("Отплываем с сундуком"), L(BAYS[e.to].n), "gold"); setTimeout(() => sailWithChest(e.to), 900); } break;
       case "sail": if (role === "guest") banner("⛵ " + L("Плывём") + ": " + L(BAYS[e.b].n), L("Хозяин ведёт шхуну"), "gold"); break;
       case "routeon": { const R = ROUTES[e.k]; banner("🧭 " + L("Торговый путь проложен"), L(BAYS[R.a].n) + " → " + L(BAYS[R.b].n), "gold"); play("levelup"); break; }
       case "safe": banner("🔐 " + L("Сейф с автосбором"), L("Выручка сама идёт в кошелёк"), "gold"); play("cash2"); haptic("notify", "success", true); break;
@@ -696,7 +711,9 @@ function onEvents(list, remote) {
   }
 }
 function upgText(u, lv) { const v = UPG[u].v(lv); if (u === "reach") return "+" + v.toFixed(1).replace(".0", "") + " " + L("м"); if (u === "bag" || u === "crew") return v + " " + L("мест"); if (u === "boots" || u === "crewspd") return L("скорость") + " +" + Math.round((v / UPG[u].v(0) - 1) * 100) + "%"; if (u === "net") return L("ловля") + " +" + Math.round((UPG[u].v(0) / v - 1) * 100) + "%"; return ""; }
-function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layoutOf(G).E[e.tg]); return L(e.def.n || e.id); }
+function entName(e) { if (e.k === "upg") return L(UPG[e.def.u].n); if (e.k === "supg") return L("Ускорить") + ": " + entName(S.layoutOf(G).E[e.tg]); return Lname(e.def.n || e.id); }
+// составные названия новых островов («Прилавок: Сёмга», «Рыбак: Сайка → Ледяной погреб») переводим по частям
+function Lname(n) { const t = L(n); if (t !== n || !/[:→]/.test(n)) return t; return n.split(/(: | → )/).map((x) => (x === ": " || x === " → " ? x : L(x.charAt(0).toUpperCase() + x.slice(1)) === x.charAt(0).toUpperCase() + x.slice(1) ? L(x) : L(x.charAt(0).toUpperCase() + x.slice(1)))).join(""); }
 function entDesc(e) {
   if (e.k === "proc") return e.rec.in.map((i) => L(ITEMS[i].n)).join(" + ") + " → " + L(ITEMS[e.rec.out].n);
   if (e.k === "helper") return jobText(e);
@@ -869,8 +886,8 @@ function bookMenu(back) {
 function archOk() { return G && G.mode !== "vs" && (G.v || 1) >= 2 && (role !== "guest" || !!G.ar); }
 /* ---------- архипелаг: 3D-карта ---------- */
 let amap = null, mapOn = false, mapBack = null, mapSt = null, mapT = 0, mapSel = -1, mapPanel = "";
-const ISLE_W = [["❄️", "Снегопад"], ["🌫", "Туман и льдины"], ["☀️", "Солнце"], ["🎏", "Лёгкий бриз"]];
-const ISLE_FISH = ["herring", "salmon", "crab", "cod"];
+const ISLE_W = [["❄️", "Снегопад"], ["🌫", "Туман и льдины"], ["☀️", "Солнце"], ["🎏", "Лёгкий бриз"], ["🌧", "Морось между скал"], ["🌨", "Метель над льдом"], ["♨️", "Пар источников"], ["🌫", "Густой туман"]];
+const ISLE_FISH = ["herring", "salmon", "crab", "cod", "semga", "saika", "redfish", "halibut"];
 function mapState() {
   if (role === "guest") return G.ar || null;
   return S.archSummary(G);
@@ -945,6 +962,7 @@ function setupMapInput() {
   el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
   el.addEventListener("wheel", (e) => { if (amap) amap.zoom(e.deltaY > 0 ? 1.08 : 0.93); e.preventDefault(); }, { passive: false });
   $("am-x").onclick = () => { play("click"); closeMap(true); };
+  $("am-xf").onclick = () => { play("click"); const bk = mapBack; closeMap(false); xferDialog(() => openMap(bk)); };
   $("am-rt").onclick = () => { mapPanel = mapPanel === "routes" ? "" : "routes"; if (mapPanel === "routes") { mapSel = -1; amap.select(-1); if (G && role !== "guest") G.mapSel = -1; } play("select"); drawMapUi(); };
   $("am-sheet").addEventListener("click", mapClick);
 }
@@ -962,6 +980,55 @@ function archTutorial() {
     if ($("tu-m")) $("tu-m").onclick = () => { hideDlg(); openMap(); };
   };
   show(0);
+}
+/* ---------- перевод денег между островами: телеграф, инкассаторская шхуна, сундук своими руками ---------- */
+let xf = { from: -1, to: -1, k: 0.5 };
+function xferDialog(back) {
+  if (!G || G.mode === "vs" || (G.v || 1) < 2) { toast(L("Переводы — между островами архипелага"), "bad"); return; }
+  const st = mapState(); if (!st) return;
+  const known = st.isl.map((I, b) => (I.known || b === st.cur ? b : -1)).filter((b) => b >= 0);
+  if (known.length < 2) { dialog(`<h2>💸 ${L("Перевод денег")}</h2><p>${L("Переводить можно, когда открыт второй остров. Зажги маяк и плыви дальше.")}</p><button class="b ghost" id="xf-x">${L("Понятно")}</button>`); $("xf-x").onclick = () => { hideDlg(); if (back) back(); }; return; }
+  if (!known.includes(xf.from)) xf.from = st.cur;
+  if (!known.includes(xf.to) || xf.to === xf.from) xf.to = known.find((b) => b !== xf.from);
+  const host = role !== "guest", av = st.av[xf.from] || 0, amt = Math.floor(av * xf.k), fee = S.telFee(G), risk = S.xferRisk(G), busy = !!G.cx;
+  const chip = (b, sel, kind) => `<button class="xc ${b === sel ? "on" : ""}" data-${kind}="${b}">${b === st.cur ? "📍 " : ""}${L(BAYS[b].n)}<small>💰 ${fmt(st.av[b] || 0)}</small></button>`;
+  const lhC = S.xferUpCost(G, "lh");
+  const ok = host && amt >= 50;
+  dialog(`<h2>💸 ${L("Перевод денег")}</h2>
+    <p class="xh">${L("Откуда")}</p><div class="xrow">${known.map((b) => chip(b, xf.from, "xf")).join("")}</div>
+    <p class="xh">${L("Куда")}</p><div class="xrow">${known.filter((b) => b !== xf.from).map((b) => chip(b, xf.to, "xt")).join("")}</div>
+    <div class="xamt"><b>💵 ${fmt(amt)}</b><input type="range" id="xf-k" min="0" max="100" value="${Math.round(xf.k * 100)}"><div class="xq">${[25, 50, 100].map((v) => `<button data-q="${v}">${v === 100 ? L("всё") : v + "%"}</button>`).join("")}</div></div>
+    <button class="xm ${ok ? "" : "off"}" id="xf-tel"><span class="ic">📡</span><span class="t"><b>${L("Телеграф")}</b><small>${L("Сразу")} · ${L("комиссия")} ${Math.round(fee * 100)}% · ${L("придёт")} <b>${fmt(Math.round(amt * (1 - fee)))}</b>${st.tel < 3 ? " · " + L("дешевле — прокачка телеграфа в артели") : ""}</small></span></button>
+    <button class="xm ${ok ? "" : "off"}" id="xf-ship"><span class="ic">⛵</span><span class="t"><b>${L("Инкассаторская шхуна")}</b><small>${L("Без комиссии")} · ~90 ${L("с")} · ${L("риск шторма и рифов")} ${Math.round(risk * 100)}% (${L("потеря 20–40%")}) · 🗼 ${st.lh}/3 · 🛡 ${st.guard}/2</small></span></button>
+    ${lhC > 0 && host ? `<button class="xm sm" id="xf-lh"><span class="ic">🗼</span><span class="t"><b>${L("Маяк на маршруте")}</b><small>${L("Риск шхун")} −7% · 💵 ${fmt(lhC)}</small></span></button>` : ""}
+    <button class="xm ${ok && xf.from === st.cur && !busy ? "" : "off"}" id="xf-me"><span class="ic">🧰</span><span class="t"><b>${L("Отвезти самому")}</b><small>${xf.from !== st.cur ? L("Только с острова, где ты сейчас") : busy ? L("Сундук уже собран — неси его к причалу") : L("Без комиссии и риска: сундук у артели → неси к причалу перевозки и плыви. Чайки клюют сундук — напарник отгоняет, одному — остановись, чтобы спугнуть")}</small></span></button>
+    ${!host ? `<p>${L("Переводит хозяин — шхуны и сундук ты видишь у себя")}</p>` : ""}
+    ${st.tx && st.tx.length ? `<p class="xh">⛵ ${L("В пути")}: ${st.tx.map((x) => `${L(BAYS[x[0]].n)} → ${L(BAYS[x[1]].n)} · ${fmt(x[3])} · ${Math.round(x[2] * 100)}%`).join("; ")}</p>` : ""}
+    <button class="b ghost" id="xf-back">${L("Назад")}</button>`);
+  const re = () => xferDialog(back);
+  $("dlgp").querySelectorAll("[data-xf]").forEach((b) => (b.onclick = () => { xf.from = +b.dataset.xf; play("select"); re(); }));
+  $("dlgp").querySelectorAll("[data-xt]").forEach((b) => (b.onclick = () => { xf.to = +b.dataset.xt; play("select"); re(); }));
+  $("dlgp").querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => { xf.k = +b.dataset.q / 100; play("select"); re(); }));
+  $("xf-k").oninput = (e) => { xf.k = +e.target.value / 100; const a = Math.floor(av * xf.k); $("dlgp").querySelector(".xamt b").textContent = "💵 " + fmt(a); };
+  $("xf-k").onchange = () => re();
+  const done = (okk, msg) => { if (okk) { play("cash2"); onEvents(G.ev.splice(-1), false); save(true); hideDlg(); if (msg) msg(); } else { play("error"); toast(L("Не получилось — проверь сумму"), "bad"); } };
+  const A = () => Math.floor((st.av[xf.from] || 0) * xf.k);
+  $("xf-tel").onclick = () => { if (!ok) return; done(S.telegraph(G, xf.from, xf.to, A())); };
+  $("xf-ship").onclick = () => { if (!ok) return; done(S.sendSchooner(G, xf.from, xf.to, A())); };
+  if ($("xf-lh")) $("xf-lh").onclick = () => { if (S.buyXferUp(G, "lh")) { play("upgrade"); re(); } else { play("error"); toast(L("Не хватает денег"), "bad"); } };
+  $("xf-me").onclick = () => { if (!ok || xf.from !== st.cur || busy) return; done(S.orderChest(G, xf.to, A()), () => { const h = S.layoutOf(G).E[S.layoutOf(G).hire[0]]; cam.focus = { x: h.x, z: h.z + 1, t: 2 }; }); };
+  $("xf-back").onclick = () => { hideDlg(); if (back) back(); };
+}
+// сундук у причала перевозки — плывём с ним
+function sailWithChest(to) {
+  if (role === "guest" || !G.cx) return;
+  const amt = Math.floor(G.cx.amt), pk = Math.floor(G.cx.pk || 0);
+  for (const p of G.pl) p.st = p.st.filter((it) => it !== IT.chest);
+  G.cx = null; G.gl = [];
+  if (hs) hs.events([{ t: "sail", b: to }]);
+  sailIsle(to);
+  G.money[0] += amt;
+  setTimeout(() => banner("🧰 " + L("Сундук доставлен") + ": +" + fmt(amt), pk > 0 ? L("Чайки утащили") + " " + fmt(pk) : L("Ни одной монеты не пропало"), "gold"), 1200);
 }
 function sailIsle(b, lap) {
   const N = S.sailTo(G, b, lap != null ? { lap } : {});
@@ -1076,14 +1143,19 @@ function updAuto(dt) {
   for (const e of Lr.E) if ((G.mode !== "vs" || e.team === team) && S.stationAuto(G, e)) autoSet.add(e.i);
   autoInfoC = G.mode !== "vs" ? S.autoInfo(G, team) : { n: 0, ok: 0 }; view.autoSet = autoSet;
 }
-let mapZone = -1, mapDw = 0;
+let mapZone = -1, mapDw = 0, jetZone = -1, jetDw = 0;
 function updHire() {
   if (!G || !started) return;
   // стол с картой: подошёл — открылась карта (снова — когда отойдёшь и вернёшься)
+  // сундук для перевода: подошёл с пустыми руками — взял
+  if (G.cx && G.cx.s === 0) { const lo = myLoc(), pl = G.pl[me]; if (!pl.st.length && Math.hypot(lo.x - G.cx.x, lo.z - G.cx.z) < 1.3) doOp(["x", S.layoutOf(G).hire[0]]); }
+  // причал перевозки: постоял — окно перевода (с сундуком в руках — отплываем, это решает симуляция)
+  if (!mapOn && $("dlg").classList.contains("hidden") && !(G.pl[me].st || []).includes(IT.chest)) { const ji = G.mode !== "vs" && (G.v || 1) >= 2 ? S.atJetty(G, me, myLoc()) : -1;
+    if (ji < 0) { jetZone = -1; jetDw = 0; } else if (jetZone !== ji) { jetDw = (joy.on && Math.hypot(joy.x, joy.y) > 0.2) || (myLoc().mv || 0) > 0.2 ? 0 : jetDw + 0.1; if (jetDw >= 0.5) { jetZone = ji; jetDw = 0; xferDialog(); } } }
   // открывается, только если постоять у стола (на бегу мимо — нет)
   if (!mapOn && $("dlg").classList.contains("hidden")) { const mi = archOk() ? S.atMap(G, me, myLoc()) : -1;
     if (mi < 0) { mapZone = -1; mapDw = 0; } else if (mapZone !== mi) { mapDw = joy.on && Math.hypot(joy.x, joy.y) > 0.2 ? 0 : mapDw + 0.1; if (mapDw >= 0.5) { mapZone = mi; mapDw = 0; openMap(); } } }
-  const busy = G.winner >= 0 || !$("dlg").classList.contains("hidden");
+  const busy = G.winner >= 0 || mapOn || (G.pl[me].st || []).includes(IT.chest) || !$("dlg").classList.contains("hidden");
   const hi = busy ? -1 : S.atHire(G, me, myLoc()), ai = busy || hi >= 0 ? -1 : S.atAds(G, me, myLoc()), ui = busy || hi >= 0 || ai >= 0 ? -1 : S.atHut(G, me, myLoc());
   const at = hi >= 0 ? hi : ai >= 0 ? ai : ui, kind = hi >= 0 ? "hire" : ai >= 0 ? "ads" : ui >= 0 ? "hut" : "";
   if (at < 0) { hireGone = -1; hireDw = 0; if (hireOpen >= 0) { hireOpen = -1; boardKind = ""; $("hire").classList.add("hidden"); } return; }
@@ -1104,7 +1176,8 @@ function updHire() {
   const per = (v) => (v * 60).toFixed(v * 60 < 10 ? 1 : 0).replace(".0", "");
   const mgr = G.mode === "vs" ? "" : Lr.E.filter((e) => S.canMgr(G, e.i) && hired.some((h) => h.from === e.i)).slice(0, 3).map((e) => { const c = S.mgrCost(G, e.i); return `<button class="hc up ${money >= c ? "ok" : ""}" data-g="${e.i}"><div class="por"><img src="${ICONURL.helper}"><img class="it" src="${ICONURL[ITEMS[e.rec.out].id] || ""}"></div><div class="tx"><b>${L("Управляющий")}: ${esc(entName(e))}</b><span>${L("Встаёт у цеха: сырьё подвозит тележкой сам, цех работает быстрее")}: <b class="ba">${per(S.stationRate(G, e))}&nbsp;→&nbsp;${per(S.stationRate(G, e, true))} ${L("шт/мин")} (+${Math.round((S.MGR_K - 1) * 100)}%)</b></span></div>${priceTag(c)}</button>`; }).join("");
   const safe = "";
-  const html = `${avail.map(card).join("")}${safe}${mgr}${crew}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
+  const xfu = G.mode === "vs" || (G.v || 1) < 2 ? "" : [["tel", "📡", L("Телеграф"), (lv) => L("комиссия перевода") + ` ${Math.round(S.telFee(G) * 100)}%&nbsp;→&nbsp;${Math.round(XFER.tel[Math.min(3, lv + 1)] * 100)}%`], ["guard", "🛡", L("Охрана шхун"), () => L("риск шхуны") + ` ${Math.round(S.xferRisk(G) * 100)}%&nbsp;→&nbsp;${Math.round(Math.max(0.05, S.xferRisk(G) - XFER.riskGuard) * 100)}%`]].map(([k, ic, n, d]) => { const c = S.xferUpCost(G, k); if (c < 0) return ""; const lv = (G.arch && G.arch[k]) || 0; return `<button class="hc up ${money >= c ? "ok" : ""}" data-xu="${k}"><div class="por"><span class="em">${ic}</span></div><div class="tx"><b>${n} · ${L("ур.")}${lv}&nbsp;→&nbsp;${lv + 1}</b><span>${L("Перевод денег между островами")}: <b class="ba">${d(lv)}</b></span></div>${priceTag(c)}</button>`; }).join("");
+  const html = `${avail.map(card).join("")}${safe}${mgr}${crew}${xfu}${lockHtml}${hired.length ? `<div class="hired">${L("Уже работают")}: ${hired.map((e) => `<img src="${ICONURL[roleItem(e)] || ""}" title="${esc(entName(e))}">`).join("")}</div>` : ""}${!avail.length && !crew && !locked.length ? `<p>${L("Все помощники наняты")}</p>` : ""}`;
   if (html !== hireKey) { hireKey = html; $("hirel").innerHTML = html; }
 }
 function doOp(op) {
@@ -1144,8 +1217,8 @@ function updAds() {
 const WHY = { angry: "Очередь злится — покупатели уходят, репутация падает", empty: "На прилавке пусто, а очередь ждёт", ads: "Мало рекламы — поставь вывеску", rep: "Плохая репутация — обслуживай быстрее" };
 function hireClick(ev) {
   const tb = ev.target.closest("[data-tab]"); if (tb) { hutTab = +tb.dataset.tab; play("select"); hireKey = ""; updHire(); return; }
-  const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad],[data-y]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
-  const op = b.dataset.y ? ["y", hireOpen, b.dataset.y] : b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
+  const b = ev.target.closest("[data-h],[data-u],[data-g],[data-s],[data-ad],[data-y],[data-xu]"); if (!b || hireOpen < 0 || !G || b.disabled) return;
+  const op = b.dataset.xu ? ["xu", hireOpen, b.dataset.xu] : b.dataset.y ? ["y", hireOpen, b.dataset.y] : b.dataset.ad ? ["ad", hireOpen, b.dataset.ad] : b.dataset.g ? ["g", hireOpen, +b.dataset.g] : b.dataset.s ? ["s", hireOpen] : b.dataset.h != null ? ["h", hireOpen, +b.dataset.h] : ["u", hireOpen, b.dataset.u];
   if (!doOp(op)) { play("error", { vol: 0.5 }); haptic("notify", "warning"); toast(L("Не хватает денег"), "bad", 1.8); return; }
   hireKey = ""; updHire();
 }
@@ -1189,7 +1262,7 @@ function updHud(force) {
   const bs = G.mode !== "vs" ? S.bigStage(G) : null;
   chip($("big"), !!bs, bs ? `<span class="ic">🚢</span><img src="${ICONURL[ITEMS[bs.it].id]}"><b>${bs.got}/${bs.need}</b><span class="dots">${Array.from({ length: bs.of }, (_, k) => `<i class="${k < bs.s ? "on" : ""}"></i>`).join("")}</span>${exp ? `<span class="full">${L(bs.n)}: ${L(ITEMS[bs.it].n)}</span>` : ""}` : "", {});
   const ev = G.evt;
-  chip($("evc"), !!(ev && ev.ph > 0), ev && ev.ph > 0 ? `<span class="ic">${{ storm: "🌨", run: "🐟", tide: "🌊", fair: "🎪" }[ev.k] || "⏱"}</span><b>${ev.ph === 1 ? "→ " : ""}${Math.ceil(Math.max(0, ev.t))}${L("с")}</b>${exp ? `<span class="full">${L(EVENTS[ev.k].n)}${ev.ph === 1 ? " — " + L("скоро") : ""}</span>` : ""}` : "", { warn: ev && ev.ph === 1, on: ev && ev.ph === 2 });
+  chip($("evc"), !!(ev && ev.ph > 0), ev && ev.ph > 0 ? `<span class="ic">${{ storm: "🌨", run: "🐟", tide: "🌊", fair: "🎪", geyser: "♨️", fog: "🌫" }[ev.k] || "⏱"}</span><b>${ev.ph === 1 ? "→ " : ""}${Math.ceil(Math.max(0, ev.t))}${L("с")}</b>${exp ? `<span class="full">${L(EVENTS[ev.k].n)}${ev.ph === 1 ? " — " + L("скоро") : ""}</span>` : ""}` : "", { warn: ev && ev.ph === 1, on: ev && ev.ph === 2 });
   // против
   const ve = $("vs");
   if (G.mode === "vs") {
@@ -1225,6 +1298,13 @@ function computeHint() {
     if (p.st.includes(con.it)) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Неси") + " «" + L(ITEMS[con.it].n) + "» " + L("к доске заказов"), t: be.zin }; }
     const np0 = S.nextPad(G, team), afford = np0 >= 0 && G.money[team] >= S.padCost(G, np0) - G.e[np0].p;
     if (!G.cdone && !p.st.length && !afford) { guideForce = true; return { ic: ITEMS[con.it].id, tx: L("Заказ") + ": " + L(ITEMS[con.it].n) + " ×" + (con.n - con.got) + " — " + L("собери и неси к доске"), t: be.zin }; }
+  }
+  // сундук для перевода
+  if (G.cx && G.mode !== "vs") {
+    const c = G.cx, Lj = S.layoutOf(G), jt = Lj.jetties && Lj.jetties.length ? Lj.E[Lj.jetties[0]] : null;
+    if (c.s === 0 && !p.st.length) { guideForce = true; return { ic: "chest", tx: "🧰 " + L("Сундук ждёт у артели — возьми его"), t: { x: c.x, z: c.z } }; }
+    if (c.s === 1 && c.pi === me && jt) { guideForce = true; const peck = (G.gl || []).some((g) => g.s === 1); return { ic: "chest", tx: peck ? "🐦 " + L(G.pl.length > 1 ? "Чайка клюёт сундук! Напарник, отгони её — или остановись" : "Чайка клюёт сундук! Остановись — спугнёшь") : "🧰 " + L("Неси сундук к причалу перевозки") + " → " + L(BAYS[c.to].n), t: jt.zin }; }
+    if (c.s === 1 && c.pi !== me) { const cp = G.pl[c.pi]; if (cp) { guideForce = true; return { ic: "chest", tx: "🐦 " + L("Иди рядом с напарником — чайки не тронут сундук"), t: { x: cp.x, z: cp.z } }; } }
   }
   const bst = G.mode !== "vs" ? S.bigStage(G) : null;
   if (bst && bi != null && G.e[bi].o && p.st.includes(bst.it)) { guideForce = true; return { ic: ITEMS[bst.it].id, tx: "🚢 " + L("Неси") + " «" + L(ITEMS[bst.it].n) + "» " + L("к доске заказов"), t: Lr.E[bi].zin }; }
@@ -1496,7 +1576,7 @@ function loop(now) {
     mapT += dt; if (mapT > 0.5) { mapT = 0; const st = mapState(); if (st) { mapSt = st; amap.setState(st, BAYS.map((B) => L(B.n))); drawMapUi(); } }
     amap.update(dt); if (quality === 0 && !loop.forced && now - (loop.lastR || 0) < 31) return; loop.lastR = now; amap.render(); return;
   }
-  world.update(dt, g);
+  world.camD = cam.dist; world.update(dt, g);
   view.update(g, dt, ctx);
   placeCamera(dt);
   if (started && G) { drawFloats(dt); drawOverlay(); } else view.guide(null);
@@ -1527,7 +1607,7 @@ window.__pm = {
   get G() { return G; }, get role() { return role; }, get me() { return me; }, get started() { return started; }, get room() { return room; }, get hs() { return hs; }, get gs() { return gs; }, get partner() { return partner; }, get view() { return view; },
   S, cam, renderer, project, camera, scene, get world() { return world; },
   solo: () => { soloMenu(); return true; }, coopBot: (bay, o) => { start("local", S.newGame(Object.assign({ mode: "coop", seed: 77, meta: prof.meta, diff: 1, bay: bay || 0 }, o || {})), 0, { bot: 1 }); return true; },
-  sail: (b) => sailIsle(b), map: () => openMap(), mapPick: (b) => mapPick(b), get amap() { return amap; }, THREE, get ISLE_POS() { return amap ? amap.P : ISLE_POS; }, closeMap: () => closeMap(false),
+  sail: (b) => sailIsle(b), xfer: () => xferDialog(), map: () => openMap(), mapPick: (b) => mapPick(b), get amap() { return amap; }, THREE, get ISLE_POS() { return amap ? amap.P : ISLE_POS; }, closeMap: () => closeMap(false),
   bayDone: () => bayDone(), zoom: (k) => { cam.zk = k; }, fleet: () => fleetMenu(), get prof() { return prof; }, doOp,
   vsBot: (goal) => { start("local", S.newGame({ mode: "vs", seed: 77, goal: goal || "light" }), 0, { bot: 1 }); return true; },
   get hint() { return { tx: $("hint").innerText, t: hintTarget }; }, get hireOpen() { return hireOpen; }, get mapOn() { return mapOn; },

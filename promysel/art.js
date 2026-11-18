@@ -164,9 +164,32 @@ export const ITEM_GEO = {
     b.box(0.02, 0.18, 0.3, "#a0702f", { p: [0, 0.3, 0], jit: 0 }); return b.geo(); },
   cash: () => { const b = new Build(); b.box(0.42, 0.1, 0.22, PAL.cash, { p: [0, 0.05, 0], jit: 0.04 }); b.box(0.43, 0.02, 0.23, PAL.cash2, { p: [0, 0.1, 0], jit: 0 }); b.box(0.08, 0.104, 0.225, "#f4f0d8", { p: [0, 0.05, 0], jit: 0 }); return b.geo(); },
 };
+// новые товары (раунд 10): модель по виду g и цвету из ITEMS — рыба, ломти, копчёное, банка, жестянка, ящик, бочка, пирог, тарелка…
+import { ITEMS as IT10 } from "./data.js";
+const shade = (hex, k) => { const c = new THREE.Color(hex); c.multiplyScalar(k); return "#" + c.getHexString(); };
+const GEN = {
+  fish: (c) => { const b = new Build(); fishB(b, c, shade(c, 1.35), shade(c, 0.7), 0.7, 0.23, 0.115); return b.geo(); },
+  flat: (c) => { const b = new Build(); b.sph(0.5, 1, c, { p: [0, 0.07, 0], s: [0.62, 0.1, 0.42] }); b.sph(0.5, 1, "#f2ece0", { p: [0, 0.04, 0], s: [0.56, 0.06, 0.38] }); b.cone(0.12, 0.2, 3, shade(c, 0.7), { p: [-0.36, 0.07, 0], r: [0, 0, Math.PI / 2], s: [1, 1, 0.3] }); b.ball(0.025, "#1d2228", { p: [0.18, 0.13, 0.06], jit: 0 }); b.ball(0.025, "#1d2228", { p: [0.2, 0.13, -0.03], jit: 0 }); return b.geo(); },
+  slab: (c) => { const b = new Build(); b.box(0.44, 0.1, 0.28, c, { p: [0, 0.05, 0] }); for (let i = -1; i <= 1; i++) b.box(0.03, 0.105, 0.29, shade(c, 1.2), { p: [i * 0.12, 0.052, 0], r: [0, 0.35, 0], jit: 0 }); b.box(0.46, 0.03, 0.3, shade(c, 0.75), { p: [0, 0.01, 0] }); return b.geo(); },
+  smoke: (c) => { const b = new Build(); fishB(b, c, shade(c, 1.3), shade(c, 0.6), 0.62, 0.21, 0.105); b.box(0.02, 0.24, 0.02, PAL.rope, { p: [-0.2, 0.22, 0], jit: 0 }); return b.geo(); },
+  jar: (c) => { const b = new Build(); b.cyl(0.12, 0.12, 0.2, 10, "#e8eef2", { p: [0, 0.1, 0] }); b.cyl(0.115, 0.115, 0.14, 10, c, { p: [0, 0.09, 0] }); b.cyl(0.125, 0.125, 0.05, 10, "#d7b04a", { p: [0, 0.22, 0] }); return b.geo(); },
+  tin: (c) => { const b = new Build(); b.cyl(0.14, 0.14, 0.11, 12, "#d0d6dc", { p: [0, 0.055, 0] }); b.cyl(0.143, 0.143, 0.06, 12, c, { p: [0, 0.055, 0] }); b.cyl(0.12, 0.12, 0.02, 12, "#b8bec4", { p: [0, 0.115, 0], jit: 0 }); return b.geo(); },
+  gift: (c) => { const b = new Build({ round: true }); b.box(0.36, 0.2, 0.28, c, { p: [0, 0.1, 0] }); b.box(0.05, 0.205, 0.285, "#ffd34d", { p: [0, 0.1, 0], jit: 0 }); b.box(0.365, 0.205, 0.05, "#ffd34d", { p: [0, 0.1, 0], jit: 0 }); b.ball(0.05, "#ffd34d", { p: [0, 0.22, 0], s: [1.4, 0.6, 1], jit: 0 }); return b.geo(); },
+  box: (c) => { const b = new Build({ round: true }); b.box(0.5, 0.3, 0.38, c, { p: [0, 0.15, 0] }); for (const y of [0.05, 0.25]) b.box(0.52, 0.04, 0.4, shade(c, 0.7), { p: [0, y, 0], jit: 0 }); return b.geo(); },
+  barrel: (c) => { const b = new Build(); b.cyl(0.13, 0.15, 0.28, 10, c, { p: [0, 0.14, 0] }); for (const y of [0.04, 0.24]) b.cyl(0.155, 0.155, 0.03, 10, "#3a3a42", { p: [0, y, 0], jit: 0 }); return b.geo(); },
+  pie: (c) => { const b = new Build(); b.cyl(0.22, 0.24, 0.1, 12, shade(c, 0.85), { p: [0, 0.05, 0] }); b.sph(0.5, 1, c, { p: [0, 0.1, 0], s: [0.44, 0.1, 0.44] }); for (let i = 0; i < 3; i++) b.box(0.2, 0.02, 0.03, shade(c, 0.7), { p: [0, 0.155, (i - 1) * 0.08], jit: 0 }); return b.geo(); },
+  plate: (c) => { const b = new Build(); b.cyl(0.26, 0.24, 0.035, 14, "#f4f1ea", { p: [0, 0.02, 0], jit: 0.02 }); for (let i = 0; i < 5; i++) b.sph(0.5, 0, i % 2 ? c : shade(c, 0.75), { p: [Math.cos(i * 1.3) * 0.12, 0.06, Math.sin(i * 1.3) * 0.12], s: [0.12, 0.06, 0.09] }); return b.geo(); },
+  urchin: (c) => { const b = new Build(); b.sph(0.14, 1, c, { p: [0, 0.12, 0] }); for (let i = 0; i < 10; i++) { const a = i * 0.63, y = 0.12 + Math.sin(i * 1.7) * 0.08; b.cyl(0.006, 0.012, 0.18, 3, shade(c, 0.8), { p: [Math.cos(a) * 0.12, y, Math.sin(a) * 0.12], r: [Math.sin(a), 0, Math.cos(a)], jit: 0 }); } return b.geo(); },
+  weed: (c) => { const b = new Build(); for (let i = 0; i < 5; i++) b.box(0.5, 0.04, 0.1, i % 2 ? c : shade(c, 1.2), { p: [0, 0.03 + i * 0.035, (i - 2) * 0.03], r: [0, (i - 2) * 0.12, 0], jit: 0.08 }); return b.geo(); },
+  steam: (c) => { const b = new Build(); b.cyl(0.12, 0.14, 0.12, 9, "#6a6a72", { p: [0, 0.06, 0] }); for (let i = 0; i < 3; i++) b.sph(0.1 - i * 0.015, 1, c, { p: [(i - 1) * 0.05, 0.18 + i * 0.09, 0], jit: 0.02 }); return b.geo(); },
+  chest: (c) => { const b = new Build({ round: true }); b.box(0.56, 0.32, 0.4, c, { p: [0, 0.16, 0] }); b.box(0.58, 0.12, 0.42, "#7a4a2a", { p: [0, 0.36, 0] }); for (const sx of [-1, 1]) b.box(0.05, 0.46, 0.43, "#d7b04a", { p: [sx * 0.2, 0.22, 0], jit: 0 }); b.box(0.1, 0.12, 0.05, "#ffd34d", { p: [0, 0.27, 0.22], jit: 0 }); b.box(0.3, 0.06, 0.2, "#7ed957", { p: [0, 0.43, 0], jit: 0.1 }); return b.geo(); },
+  basket: (c) => { const b = new Build(); b.cyl(0.2, 0.16, 0.2, 10, c, { p: [0, 0.1, 0] }); b.cyl(0.205, 0.205, 0.03, 10, shade(c, 0.7), { p: [0, 0.19, 0], jit: 0 }); b.sph(0.5, 1, "#e0a050", { p: [-0.06, 0.22, 0], s: [0.18, 0.08, 0.18] }); fishB(b, "#b8742f", "#e0b070", "#7a4a1a", 0.3, 0.08, 0.2); return b.geo(); },
+};
+for (const it of IT10) if (it.g && !ITEM_GEO[it.id]) ITEM_GEO[it.id] = () => GEN[it.g](it.c);
 export const ITEM_H = { herring: 0.2, fillet: 0.13, log: 0.22, smoked: 0.21, salmon: 0.25, steak: 0.14, caviar: 0.26, can: 0.2, ice: 0.3, crate: 0.36, cash: 0.1,
   salted: 0.28, crab: 0.17, crabc: 0.14, mussel: 0.16, cod: 0.24, stockfish: 0.12, seaweed: 0.19, oil: 0.38, pie: 0.17, soup: 0.18, gift: 0.22, platter: 0.08, liver: 0.13,
   salt: 0.16, lox: 0.09, keg: 0.3, dmussel: 0.1, pate: 0.14, smcod: 0.21, klip: 0.13, basket: 0.32 };
+for (const it of IT10) if (it.g && ITEM_H[it.id] == null) ITEM_H[it.id] = it.h;
 
 // рыба для косяка в воде (лёгкая)
 export function schoolFishGeo(kind) {
@@ -331,6 +354,11 @@ export const BUILD = {
   trap: () => { const b = new Build({ round: true }); b.box(0.7, 0.4, 0.5, "#a06a3b", { p: [0, 0.2, 0], jit: 0.05 }); for (let i = 0; i < 3; i++) b.box(0.72, 0.03, 0.52, PAL.rope, { p: [0, 0.08 + i * 0.13, 0], jit: 0 }); b.cyl(0.1, 0.1, 0.12, 8, "#ff7a3a", { p: [0.45, 0.06, 0.3] }); return b.geo(); },
   flags: (len) => { const b = new Build(); const cols = ["#c9433a", "#f2c14e", "#3aa0c8", "#7ed957", "#f4f1ea"]; for (const sx of [-1, 1]) b.cyl(0.05, 0.06, 3.2, 6, PAL.wood2, { p: [sx * len / 2, 1.6, 0] }); const n = Math.round(len / 0.45);
     for (let i = 0; i < n; i++) { const x = -len / 2 + (i + 0.5) * len / n, sag = 2.9 - Math.sin((i + 0.5) / n * Math.PI) * 0.5; b.cone(0.16, 0.32, 3, cols[i % 5], { p: [x, sag - 0.16, 0], r: [Math.PI, 0, 0], s: [1, 1, 0.2], jit: 0 }); } return b.geo(); },
+  // гейзер: каменная чаша с горячей водой и паром (пар — частицы в мире)
+  geyser: (w, d) => { const b = new Build({ round: true, ao: true }); b.cyl(w * 0.5, w * 0.55, 0.45, 12, "#5a524e", { p: [0, 0.22, 0], s: [1, 1, d / w], jit: 0.08 }); b.cyl(w * 0.36, w * 0.36, 0.08, 12, "#7ad8d0", { p: [0, 0.44, 0], s: [1, 1, d / w], jit: 0.04 }); for (let i = 0; i < 6; i++) { const a = i * 1.05; b.sph(0.22, 0, "#6a6260", { p: [Math.cos(a) * w * 0.48, 0.35, Math.sin(a) * d * 0.48] }); } b.sph(0.32, 1, "#f2f6f8", { p: [0, 1.1, 0], s: [1, 1.4, 1], jit: 0.04 }); b.sph(0.24, 1, "#ffffff", { p: [0.1, 1.7, 0], jit: 0.04 }); return b.geo(); },
+  // причал перевозки: мостки в воду, лодка и флажок — сюда несут сундук
+  jetty: () => { const b = new Build({ round: true, ao: true }); b.box(1.4, 0.14, 3.6, PAL.plank, { p: [0, 0.22, -1.6] }); for (const z of [-3.2, -1.8, -0.4]) for (const sx of [-1, 1]) b.cyl(0.08, 0.09, 1.0, 6, PAL.wood2, { p: [sx * 0.6, -0.2, z] });
+    b.box(0.8, 0.3, 1.9, "#b9573f", { p: [1.2, 0.05, -2.6] }); b.box(0.84, 0.05, 1.95, "#e9e4d8", { p: [1.2, 0.22, -2.6] }); b.cyl(0.05, 0.06, 2.2, 6, PAL.wood2, { p: [-0.55, 1.1, 0.2] }); b.box(0.05, 0.4, 0.6, "#ffd34d", { p: [-0.55, 1.95, 0.5], jit: 0 }); return b.geo(); },
   // стол с картой архипелага и указатель с флажком — здесь открывается карта
   maptable: () => { const b = new Build({ round: true, ao: true }); b.box(1.5, 0.1, 0.9, PAL.woodL, { p: [0, 0.82, 0] }); for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.box(0.1, 0.8, 0.1, PAL.wood2, { p: [sx * 0.62, 0.4, sz * 0.34] });
     b.box(1.3, 0.02, 0.75, "#f2e6c4", { p: [0, 0.88, 0], jit: 0.02 }); b.box(0.5, 0.025, 0.3, "#5aa0c8", { p: [-0.2, 0.9, 0.05], jit: 0.05 }); b.cyl(0.13, 0.15, 0.03, 8, "#9ab86a", { p: [0.35, 0.905, -0.1] }); b.cyl(0.1, 0.12, 0.03, 8, "#e9eef4", { p: [-0.35, 0.905, -0.15] });

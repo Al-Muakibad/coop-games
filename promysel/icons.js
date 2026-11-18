@@ -74,10 +74,10 @@ function drawFlat() {
   [c, x] = cv(); out(x); x.fillStyle = "#f2c14e"; x.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 22 : 50; x.lineTo(64 + Math.cos(a) * r, 66 + Math.sin(a) * r); } x.closePath(); x.fill(); x.stroke(); ICON.star = c;
 }
 
-/* ---------- атлас пузырей: 8×16 клеток по 128 px ---------- */
+/* ---------- атлас пузырей: 8×20 клеток по 128 px ---------- */
 export const BUB = {};       // имя → номер клетки
 export function bubbleAtlas() {
-  const c = document.createElement("canvas"); c.width = 1024; c.height = 2048; const x = c.getContext("2d");
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 2560; const x = c.getContext("2d");
   let n = 0;
   const cell = (name, draw) => { const cx = (n % 8) * 128, cy = Math.floor(n / 8) * 128; x.save(); x.translate(cx, cy); draw(x); x.restore(); BUB[name] = n++; };
   const bubble = (x, fill, stroke) => { x.fillStyle = fill; x.strokeStyle = stroke; x.lineWidth = 5; x.beginPath(); x.moveTo(30, 12); x.arcTo(116, 12, 116, 96, 22); x.arcTo(116, 96, 12, 96, 22); x.lineTo(76, 96); x.lineTo(64, 120); x.lineTo(52, 96); x.arcTo(12, 96, 12, 12, 22); x.arcTo(12, 12, 116, 12, 22); x.closePath(); x.fill(); x.stroke(); };

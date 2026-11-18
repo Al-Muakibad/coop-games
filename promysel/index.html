@@ -152,12 +152,17 @@
   .upl.ok { background: rgba(60,140,50,.92); }
   .rcode { background: rgba(255,211,77,.12); border: 1px dashed rgba(255,211,77,.5); border-radius: 14px; padding: 8px; margin: 6px 0; } .rcode small { display: block; font-weight: 800; opacity: .8; font-size: 12px; } .rcode b { font-family: "Rubik", monospace; font-size: 30px; letter-spacing: 6px; color: var(--gold); }
   .rnet { font-size: 13px !important; margin: 4px 0 8px !important; } .codein { width: 100%; box-sizing: border-box; font: 900 28px "Rubik", monospace; letter-spacing: 8px; text-align: center; text-transform: uppercase; padding: 10px; border-radius: 14px; border: 2px solid rgba(255,255,255,.25); background: rgba(0,0,0,.25); color: #fff; margin: 6px 0 10px; } .codein.bad { border-color: #ff6b57; }
+  .xh { margin: 8px 0 4px !important; font-weight: 800; text-align: left; } .xrow { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+  .xc { flex: 0 0 auto; border: 0; border-radius: 12px; padding: 7px 10px; background: rgba(190,230,255,.1); color: #fff; font: inherit; font-weight: 800; font-size: 13px; text-align: left; } .xc small { display: block; font-size: 11px; opacity: .8; } .xc.on { background: #ffd34d; color: #3a2614; }
+  .xamt { margin: 10px 0 6px; } .xamt b { font-family: "Rubik"; font-size: 24px; color: var(--gold); } .xamt input { width: 100%; margin: 6px 0; accent-color: #ffd34d; } .xq { display: flex; gap: 6px; } .xq button { flex: 1; border: 0; border-radius: 10px; padding: 7px; background: rgba(255,255,255,.12); color: #fff; font: inherit; font-weight: 900; }
+  .xm { display: flex; gap: 10px; align-items: center; width: 100%; border: 0; border-radius: 14px; padding: 10px 12px; margin: 6px 0; background: linear-gradient(180deg, #2f6f8f, #1f4f6a); color: #fff; font: inherit; text-align: left; } .xm .ic { font-size: 26px; } .xm .t { flex: 1; } .xm b { display: block; font-size: 15px; } .xm small { display: block; font-size: 12px; opacity: .9; line-height: 1.3; } .xm small b { display: inline; font-size: 12px; color: var(--gold); }
+  .xm.off { opacity: .45; } .xm.sm { background: rgba(255,255,255,.08); padding: 7px 12px; }
   /* 3D-карта архипелага */
   #amap { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
   #am-touch { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
   .am-top { position: absolute; left: 0; right: 0; top: calc(8px + var(--sat, 0px)); display: flex; align-items: center; gap: 8px; padding: 0 12px; pointer-events: none; }
-  .am-top b { flex: 1; font-family: "Rubik", sans-serif; font-size: 22px; color: #fff; text-shadow: 0 2px 0 rgba(20,40,60,.5), 0 0 12px rgba(20,40,60,.4); }
-  .am-top button { pointer-events: auto; border: 0; border-radius: 14px; padding: 9px 13px; font: inherit; font-weight: 900; font-size: 14px; background: rgba(20,40,60,.72); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.25); }
+  .am-top b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "Rubik", sans-serif; font-size: 19px; color: #fff; text-shadow: 0 2px 0 rgba(20,40,60,.5), 0 0 12px rgba(20,40,60,.4); }
+  .am-top button { pointer-events: auto; white-space: nowrap; flex: 0 0 auto; border: 0; border-radius: 14px; padding: 8px 10px; font: inherit; font-weight: 900; font-size: 14px; background: rgba(20,40,60,.72); color: #fff; box-shadow: 0 3px 0 rgba(0,0,0,.25); }
   .am-tip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(26px + var(--sab, 0px)); background: rgba(20,40,60,.72); color: #fff; padding: 8px 16px; border-radius: 16px; font-weight: 800; font-size: 14px; animation: amPulse 2s ease-in-out infinite; }
   @keyframes amPulse { 50% { transform: translateX(-50%) scale(1.05); } }
   #am-sheet { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--sab, 0px)); width: min(94vw, 420px); pointer-events: auto; display: flex; flex-direction: column; gap: 8px; }
@@ -266,7 +271,7 @@
 <div class="hud hidden" id="hint"></div>
 <div class="hud" id="tip"></div>
 <div class="hidden" id="amap"><div id="am-touch"></div>
-  <div class="am-top"><b>🗺 <span data-l>Архипелаг</span></b><button id="am-rt">🧭 <span data-l>Пути</span></button><button id="am-x">✕</button></div>
+  <div class="am-top"><b>🗺 <span data-l>Архипелаг</span></b><button id="am-xf">💸 <span data-l>Перевод</span></button><button id="am-rt">🧭 <span data-l>Пути</span></button><button id="am-x">✕</button></div>
   <div class="am-tip" id="am-tip"><span data-l>Нажми на остров</span></div>
   <div id="am-sheet"></div></div>
 <div class="hud hidden" id="hire"><button class="hx" aria-label="close">✕</button><div class="grip"></div><div class="hh"><b>АРТЕЛЬ</b><small>нанимай помощников и улучшай их</small></div><div id="hirel"></div></div>

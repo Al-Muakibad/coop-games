@@ -7,7 +7,7 @@ import * as S from "./sim.js";
 const R = (v) => Math.round(v * 100) / 100, R1 = (v) => Math.round(v * 10) / 10;
 const st2s = (st) => String.fromCharCode(...st.map((i) => 97 + i));
 const s2st = (s) => { const a = []; for (let i = 0; i < s.length; i++) a.push(s.charCodeAt(i) - 97); return a; };
-const MAJOR = { sail: 1, rare: 1, route: 1, routeon: 1, cos: 1, ad: 1, mgr: 1, safe: 1, auto: 1, open: 1, upg: 1, goal: 1, contract: 1, ship: 1, switch: 1, angry: 1, big: 1, bayev: 1, deco: 1 };
+const MAJOR = { xfer: 1, xferup: 1, chestboat: 1, gull: 1, sail: 1, rare: 1, route: 1, routeon: 1, cos: 1, ad: 1, mgr: 1, safe: 1, auto: 1, open: 1, upg: 1, goal: 1, contract: 1, ship: 1, switch: 1, angry: 1, big: 1, bayev: 1, deco: 1 };
 
 export function encode(G) {
   return {
@@ -16,7 +16,7 @@ export function encode(G) {
     pl: G.pl.map((p) => [R(p.x), R(p.z), R(p.dir), p.mv ? 1 : 0, st2s(p.st), p.team, p.g || null, p.dg ? [R(p.dg.x), R(p.dg.z), R(p.dg.dir), p.dg.mv, p.dg.s] : 0, p.nc || 0, p.nk || 0]),
     hp: G.hp.map((h) => [h.e, R(h.x), R(h.z), R(h.dir), h.mv ? 1 : 0, h.s, h.tg, st2s(h.st), R(h.tm)]),
     cu: G.cu.map((c) => [c.id, R1(c.x), R1(c.z), c.mv ? R1(c.dir) : null, c.s, c.w, c.n, c.g, c.st, c.mood, c.sk, c.mv ? 1 : 0, 0, 0, c.vip || 0]),      // стоящим направление не шлём (гость оставляет прежнее), терпение гостю не нужно: меньше меняется между снимками
-    nb: G.nbuy || 0, ads: G.ads || null, rep: G.rep || null, mgr: G.mgr || null, safe: G.safe || 0, fl: R(G.flow || 0), idl: Math.round(G.idle || 0), an: G.autoN || 0, ang: R(G.ang || 0), big: G.big, bn: G.bigN || 0, bs: G.bigS || 0, dc: G.deco || 0, evt: G.evt ? { k: G.evt.k, ph: G.evt.ph, t: R(G.evt.t), n: G.evt.n } : null, tr: G.traps || [], con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd, nr: G.nrare || 0, ar: S.archSummary(G),
+    nb: G.nbuy || 0, ads: G.ads || null, rep: G.rep || null, mgr: G.mgr || null, safe: G.safe || 0, fl: R(G.flow || 0), idl: Math.round(G.idle || 0), an: G.autoN || 0, ang: R(G.ang || 0), big: G.big, bn: G.bigN || 0, bs: G.bigS || 0, dc: G.deco || 0, evt: G.evt ? { k: G.evt.k, ph: G.evt.ph, t: R(G.evt.t), n: G.evt.n } : null, tr: G.traps || [], con: G.con, conT: R(G.conT), done: G.done, winner: G.winner, stars: G.stars, cdone: G.cdone, cfail: G.cfail, served: G.served, lost: G.lost, paused: G.paused || 0, tEnd: G.tEnd, nr: G.nrare || 0, ar: S.archSummary(G), cx: G.cx ? { amt: Math.round(G.cx.amt), to: G.cx.to, s: G.cx.s, pi: G.cx.pi, x: R(G.cx.x), z: R(G.cx.z) } : null, gl: (G.gl || []).map((g) => [R(g.x), R(g.z), g.s]),
   };
 }
 // head — постоянные поля (режим, бухта, сложность…), их шлём в «go»
@@ -30,7 +30,7 @@ export function decode(h, s, prev) {
   G.hp = s.hp.map((a) => ({ e: a[0], x: a[1], z: a[2], dir: a[3], mv: a[4], s: a[5], tg: a[6], st: s2st(a[7]), tm: a[8], team: S.layout(h.mode, h.bay, h.v).E[a[0]].team, xt: 0 }));
   const pd = prev && prev.cu ? new Map(prev.cu.map((c) => [c.id, c.dir])) : null;
   G.cu = s.cu.map((a) => ({ id: a[0], x: a[1], z: a[2], dir: a[3] != null ? a[3] : (pd && pd.get(a[0])) || 0, s: a[4], w: a[5], n: a[6], g: a[7], st: a[8], mood: a[9], sk: a[10], mv: a[11], pat: a[12], pm: a[13], vip: a[14] || 0 }));
-  G.nbuy = s.nb || 0; G.ads = s.ads || null; G.rep = s.rep || null; G.mgr = s.mgr || null; G.safe = s.safe || 0; G.flow = s.fl || 0; G.idle = s.idl || 0; G.autoN = s.an || 0; G.ang = s.ang || 0; G.big = s.big || null; G.bigN = s.bn || 0; G.bigS = s.bs || 0; G.deco = s.dc || 0; G.evt = s.evt || null; G.traps = s.tr || []; G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd; G.nrare = s.nr || 0; G.gst = 1; G.ar = s.ar || null;
+  G.nbuy = s.nb || 0; G.ads = s.ads || null; G.rep = s.rep || null; G.mgr = s.mgr || null; G.safe = s.safe || 0; G.flow = s.fl || 0; G.idle = s.idl || 0; G.autoN = s.an || 0; G.ang = s.ang || 0; G.big = s.big || null; G.bigN = s.bn || 0; G.bigS = s.bs || 0; G.deco = s.dc || 0; G.evt = s.evt || null; G.traps = s.tr || []; G.con = s.con; G.conT = s.conT; G.done = s.done; G.winner = s.winner; G.stars = s.stars; G.cdone = s.cdone; G.cfail = s.cfail; G.served = s.served; G.lost = s.lost; G.paused = s.paused; G.tEnd = s.tEnd; G.nrare = s.nr || 0; G.gst = 1; G.ar = s.ar || null; G.cx = s.cx || null; G.gl = (s.gl || []).map((a) => ({ x: a[0], z: a[1], s: a[2] }));
   G.ev = G.ev || [];
   if (!G.rate) G.rate = 0; if (!G.rateAcc) G.rateAcc = 0;
   return G;
@@ -113,7 +113,7 @@ function zoneOk(G, pi, op) {
   const L = S.layoutOf(G), p = G.pl[pi];
   if (op[0] === "t") { const tr = G.traps && G.traps[op[1]]; return !!tr && Math.hypot(p.x - tr.x, p.z - tr.z) < 2.6; }
   const e = L.E[op[1]]; if (!e) return false;
-  const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" || op[0] === "a" || op[0] === "ad" || op[0] === "g" || op[0] === "s" || op[0] === "y" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
+  const z = op[0] === "c" || op[0] === "d" || op[0] === "h" || op[0] === "u" || op[0] === "a" || op[0] === "ad" || op[0] === "g" || op[0] === "s" || op[0] === "y" || op[0] === "xu" || op[0] === "x" ? e.zin : op[0] === "p" ? e.zout : op[0] === "m" ? e.zpad : op[0] === "k" ? e.zcash : null;
   if (!z) return false;
   return Math.hypot(p.x - z.x, p.z - z.z) < z.r + 1.6 + (op[0] === "k" ? S.cashReach(G, pi) : 0);
 }
@@ -146,7 +146,7 @@ export class GuestSync {
       this.pt0 = 0;
       if (loc) { const p = this.G.pl[api.gi()]; if (p) { p.x = loc.x; p.z = loc.z; p.dir = loc.dir; p.mv = loc.mv; } }
       this.replay();
-      if (d.ev && api.events) api.events(d.ev);
+      if (d.ev && api.events) api.events(d.ev, this.G);
       api.snap && api.snap(this.G);
     });
     room.on("ev", (e) => api.events && api.events([e]));
