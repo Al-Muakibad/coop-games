@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Снайпер: прятки</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
 <script src="../shared/i18n.js"></script>
 <script src="en.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
@@ -88,6 +89,7 @@
 </style>
 </head>
 <body>
+<canvas id="gl" class="full" style="pointer-events:none"></canvas>
 <canvas id="game" class="full"></canvas>
 
 <div id="hud" class="hidden">
@@ -162,6 +164,15 @@
 <script src="../shared/net.js"></script>
 <script src="../shared/stats.js"></script>
 <script src="../shared/feedback.js"></script>
-<script src="game.js"></script>
+<script>
+  // 3D (three.js) грузится модулем; если не вышло за 6 с или нет WebGL — игра стартует со старой 2D-картинкой
+  window.__loadGame = function () { if (window.__gameLoaded) return; window.__gameLoaded = true; var s = document.createElement("script"); s.src = "game.js?v=3d1"; document.body.appendChild(s); };
+  setTimeout(window.__loadGame, 6000);
+</script>
+<script type="module">
+  try { const m = await import("./r3d.js?v=3d1"); window.R3D = m.createR3D(document.getElementById("gl")); }
+  catch (e) { console.warn("3D недоступно", e); document.getElementById("gl").style.display = "none"; }
+  window.__loadGame();
+</script>
 </body>
 </html>

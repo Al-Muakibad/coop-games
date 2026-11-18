@@ -83,6 +83,7 @@
 
   // ---------- экран ----------
   const canvas = $("game"), ctx = canvas.getContext("2d");
+  let R3D = window.R3D || null;            // 3D-отрисовка (r3d.js); без WebGL — старая 2D
   let W = 0, H = 0, DPR = 1, S = 1, OX = 0, OY = 0;
   function resize() {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -92,6 +93,7 @@
     S = Math.min(W / WW, (H - top - bottom) / (y1 - y0));
     OX = (W - WW * S) / 2; OY = top + ((H - top - bottom) - (y1 - y0) * S) / 2 - y0 * S;
     layerDirty = true;
+    if (R3D) R3D.setSize(W, H, DPR);
   }
   window.addEventListener("resize", resize);
 
@@ -357,7 +359,8 @@
     ctx.closePath();
   }
 
-  function render(dt, t) {
+  function render(dt, t) { if (R3D) { try { return render3d(dt, t); } catch (e) { console.error(e); R3D = null; $("gl") && ($("gl").style.display = "none"); layerDirty = true; } } render2d(dt, t); }
+  function render2d(dt, t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#0b1226"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (!map) return;
@@ -399,6 +402,91 @@
     ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.font = "bold 10px sans-serif"; ctx.textAlign = "left";
     ctx.fillText(`${Math.round(320 + (aim.y - 150) * 2)} м`, cx + 12, cy - 8);
     ctx.restore();
+  }
+
+  // ---------- 3D-отрисовка ----------
+  let layer3dDirty = true;
+  function scopeOverlay(cx, cy) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const Rr = Math.min(W * 0.48, H * 0.36);
+    ctx.fillStyle = "#04060c"; ctx.beginPath(); ctx.rect(0, 0, W, H); octagon(cx, cy, Rr, true); ctx.fill("evenodd");
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 14; octagon(cx, cy, Rr + 6); ctx.stroke();
+    const vg = ctx.createRadialGradient(cx, cy, Rr * 0.55, cx, cy, Rr); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.55)");
+    ctx.save(); octagon(cx, cy, Rr); ctx.clip(); ctx.fillStyle = vg; ctx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1.4; ctx.beginPath();
+    ctx.moveTo(cx - Rr, cy); ctx.lineTo(cx - 10, cy); ctx.moveTo(cx + 10, cy); ctx.lineTo(cx + Rr, cy);
+    ctx.moveTo(cx, cy - Rr); ctx.lineTo(cx, cy - 10); ctx.moveTo(cx, cy + 10); ctx.lineTo(cx, cy + Rr); ctx.stroke();
+    ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx - Rr, cy); ctx.lineTo(cx - Rr * 0.5, cy); ctx.moveTo(cx + Rr * 0.5, cy); ctx.lineTo(cx + Rr, cy);
+    ctx.moveTo(cx, cy + Rr * 0.5); ctx.lineTo(cx, cy + Rr); ctx.stroke();
+    ctx.lineWidth = 1.2; for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(cx - 5, cy + k * 18); ctx.lineTo(cx + 5, cy + k * 18); ctx.stroke(); }
+    ctx.fillStyle = "#e5484d"; ctx.beginPath(); ctx.arc(cx, cy, 2.6, 0, 7); ctx.fill();
+    const gl = ctx.createLinearGradient(cx - Rr, cy - Rr, cx, cy); gl.addColorStop(0, "rgba(180,220,255,.16)"); gl.addColorStop(1, "rgba(180,220,255,0)");
+    ctx.fillStyle = gl; ctx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    ctx.fillStyle = "rgba(255,255,255,.75)"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`${Math.round(320 + (aim.y - 150) * 2)} м`, cx + 12, cy - 8);
+    ctx.restore();
+  }
+  function fx3d(dt) {
+    fx = fx.filter((f) => (f.t += dt) < f.life);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    for (const f of fx) {
+      const k = f.t / f.life, p = R3D.project(f.x, f.kind === "txt" ? f.y - k * 16 : f.y, 5);
+      const q = R3D.project(f.x + 10, f.y, 5), u = Math.max(0.6, Math.hypot(q.x - p.x, q.y - p.y) / 10);
+      if (f.kind === "dust") {
+        ctx.fillStyle = `rgba(225,195,150,${1 - k})`;
+        for (let i = 0; i < 8; i++) { const a = i * 0.8 + f.seed; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * k * 15 * u, p.y + Math.sin(a) * k * 11 * u, (2.5 + k * 3.5) * u, 0, 7); ctx.fill(); }
+      } else if (f.kind === "flash") {
+        ctx.fillStyle = `rgba(255,240,180,${1 - k})`; ctx.beginPath(); ctx.arc(p.x, p.y, (4 + k * 10) * u, 0, 7); ctx.fill();
+      } else {
+        ctx.globalAlpha = 1 - k; const fs = Math.max(16, Math.min(46, (12 + k * 10) * u));
+        ctx.font = `900 ${fs}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.lineWidth = 4; ctx.strokeStyle = "#000"; ctx.strokeText(f.text, p.x, p.y); ctx.fillStyle = f.color || "#fff"; ctx.fillText(f.text, p.x, p.y);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  function render3d(dt, t) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!map) return;
+    const dirty = layerDirty; layerDirty = false;
+    const inRound = R && (phase === "prep" || phase === "live" || phase === "over");
+    const o = { map, dirtyAtlas: dirty, t, dt, R: inRound ? R : null, hider: inRound ? hiderPos() : null, hiderColor: iHide() ? "#3b82f6" : "#ef4444", live: phase === "live" };
+    const sniping = R && !R.iHide && (phase === "live" || phase === "prep" || (phase === "over" && !R.reveal));
+    let scope = null, label = null;
+    if (!sniping) {
+      if (!R) Object.assign(o, { view: "front", sc: S, ox: OX, oy: OY, camOff: [70 + Math.sin(t * 0.22) * 70, 110], D: 560 });
+      else if (R.iHide && phase !== "over") {
+        const hx = pos.x; camX += (Math.max(70, Math.min(WW - 70, hx)) - camX) * Math.min(1, dt * 5);
+        shake = Math.max(0, shake - dt * 3);
+        const st = coverState(pos);
+        const col = st.hidden && !st.peek.length ? "#22c55e" : st.hidden ? "#ffd34d" : "#ef4444";
+        label = { col, text: st.hidden && !st.peek.length ? "🛡 Укрыт" : st.hidden ? "👁 Видно в окно" : "⚠ На виду" };
+        Object.assign(o, { view: "hider", camX, shake, ring: col });
+      } else {
+        const sc = S * 1.75, half = W / 2 / sc, fx0 = o.hider ? o.hider.x : WW / 2;
+        camX += (Math.max(half, Math.min(WW - half, fx0)) - camX) * Math.min(1, dt * 6); if (WW < half * 2) camX = WW / 2;
+        Object.assign(o, { view: "front", sc, ox: W / 2 - camX * sc, oy: H * 0.66 - G * sc, camOff: [45, 70], D: 620, reveal: phase === "over" && R.reveal, ring: phase === "over" && R.reveal ? "#ffd34d" : null });
+      }
+    } else if (phase === "prep") o.view = "dark";
+    else {
+      const Z = 2.3 + 0.35 * me.up.zoom, sc = S * Z, cx = W / 2, cy = H * 0.47;
+      const sway = phase === "live" ? Math.sin(t * 1.3) * 0.6 : 0;
+      kick = Math.max(0, kick - dt * 4);
+      Object.assign(o, { view: "front", scope: true, sc, ox: cx - (aim.x + sway) * sc, oy: cy - (aim.y - kick * 10) * sc, camOff: [0, 0], D: 1200 });
+      scope = [cx, cy];
+    }
+    R3D.draw(o);
+    if (o.view === "dark") {
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = "rgba(255,255,255,.08)"; octagon(W / 2, H / 2, Math.min(W, H) * 0.42); ctx.fill();
+      return;
+    }
+    fx3d(dt);
+    if (label && o.hider) {
+      const p = R3D.project(pos.x, G - (pos.st ? 52 : 78));
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.font = "900 15px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 4; ctx.strokeStyle = "#000"; ctx.strokeText(label.text, p.x, p.y); ctx.fillStyle = label.col; ctx.fillText(label.text, p.x, p.y);
+    }
+    if (scope) scopeOverlay(scope[0], scope[1]);
   }
 
   // ---------- UI ----------
@@ -681,6 +769,7 @@
   }
   function onShotAtMe(d) {                       // в меня стреляли
     if (!R || !R.iHide || R.ended) return;
+    if (R3D) R3D.muzzle();
     impact(d, false);
     // компенсация задержки: проверяем и где я сейчас, и где я был в тот момент, который снайпер видел у себя на экране
     let res = hitTest(pos, d.x, d.y);
