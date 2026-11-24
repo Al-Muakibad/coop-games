@@ -270,7 +270,7 @@ export function createR3D(glCanvas) {
   const world = new THREE.Group(); scene.add(world);             // всё, что зависит от карты
   let built = null, theme = -1, atlas = null, atlasTex = null, atlasMats = [], coverMeshes = [];
   let soldier = makeSoldier("#ef4444"); scene.add(soldier);
-  const xrScene = new THREE.Scene(), xrHemi = new THREE.HemisphereLight(), xrSun = new THREE.DirectionalLight(); xrScene.add(xrHemi, xrSun, xrSun.target);
+  const xrScene = new THREE.Scene(), xrMat = new THREE.MeshBasicMaterial({ color: "#ffd34d", transparent: true, opacity: 0.55, depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false });
   loadHero((h) => { h.visible = soldier.visible; scene.remove(soldier); soldier = h; scene.add(h); });
   const ringMat = new THREE.MeshBasicMaterial({ color: "#22c55e", transparent: true, opacity: 0.85, depthWrite: false });
   const ring = new THREE.Mesh(new THREE.RingGeometry(13, 17, 32), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.6; scene.add(ring);
@@ -477,13 +477,12 @@ export function createR3D(glCanvas) {
       scene.fog.near = (o.D || DS) + 250; scene.fog.far = (o.D || DS) + 5200;
     }
     sky.position.copy(active.position);
-    if (xr && soldier.visible) {                            // человечек — вторым проходом поверх стен, без каши из прозрачностей
-      scene.remove(soldier); renderer.render(scene, active);
-      xrHemi.color.copy(hemi.color); xrHemi.groundColor.copy(hemi.groundColor); xrHemi.intensity = hemi.intensity;
-      xrSun.color.copy(sun.color); xrSun.intensity = sun.intensity; xrSun.position.copy(sun.position); xrSun.target.position.copy(sun.target.position);
-      xrScene.add(soldier); const ac = renderer.autoClear; renderer.autoClear = false; renderer.clearDepth(); renderer.render(xrScene, active); renderer.autoClear = ac;
-      xrScene.remove(soldier); scene.add(soldier);
-    } else renderer.render(scene, active);
+    renderer.render(scene, active);
+    if (xr && soldier.visible) {                            // разбор раунда: то, что спрятано за стеной, — жёлтым силуэтом поверх (видно, что он ЗА укрытием)
+      scene.remove(soldier); xrScene.add(soldier); xrScene.overrideMaterial = xrMat;
+      const ac = renderer.autoClear; renderer.autoClear = false; renderer.render(xrScene, active); renderer.autoClear = ac;
+      xrScene.overrideMaterial = null; xrScene.remove(soldier); scene.add(soldier);
+    }
   }
 
   return { draw, project, setSize, muzzle() { muzzleT = 0.18; }, glintScreen() { glint.getWorldPosition(tmp); tmp.project(active); return { x: (tmp.x + 1) / 2 * W, y: (1 - tmp.y) / 2 * H, behind: tmp.z > 1 }; }, get ZH() { return ZH; } };

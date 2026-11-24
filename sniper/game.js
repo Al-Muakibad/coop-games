@@ -4,7 +4,7 @@
   const T = window.TG;
   const $ = (id) => document.getElementById(id);
   const WW = 360, WH = 300, G = 232;
-  const ROUNDS = 6, PREP = 3, DUR = 20, BASE_MAG = 3, HEAD = 50, BODY = 25, SPEED = 72;
+  const ROUNDS = 6, PREP = 3, DUR = 20, BASE_MAG = 5, HEAD = 50, BODY = 25, SPEED = 72;
   const UP = {
     mag: { name: "Обойма", ic: "🔫", desc: "+1 патрон в раунде снайпера" },
     zoom: { name: "Прицел", ic: "🔭", desc: "Сильнее увеличение" },
@@ -757,6 +757,7 @@
     T.haptic("impact", "heavy"); Snd.shot(); kick = 1;
     hud();
     if (mode === "bot") {                       // бот прячется у нас локально — проверяем по его настоящей позиции
+      impactBotSide(d);
       const res = hitTest(bot.pos, d.x, d.y), dmg = res ? (res === "head" ? HEAD : BODY) : 0;
       setTimeout(() => onHitRes({ id: d.id, res, dmg, dist: Math.hypot(d.x - bot.pos.x, d.y - (G - 35)) }), 120);
     }
@@ -765,9 +766,10 @@
       if (isHost()) setTimeout(() => hostEndRound("ammo", n), 1600); else send("out", { n });
     }
   }
+  function impactBotSide(d) { setTimeout(() => { if (R && !R.iHide) bot.onShot(d); }, 60); }
   function impact(d, byMe) {                     // дырка, пыль, звук — у обоих
     const c = map.covers.find((c) => d.x >= c.x && d.x <= c.x + c.w && d.y >= G - c.h && d.y <= G && !inOpening(c, d.x, d.y));
-    if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 4 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); if (byMe) setTimeout(() => Snd.thud(), 90); }
+    if (c) { c.open.push({ t: "c", x: d.x, y: d.y, r: 5.5 }); layerDirty = true; fx.push({ kind: "dust", x: d.x, y: d.y, t: 0, life: 0.6, seed: Math.random() * 6 }); if (byMe) setTimeout(() => Snd.thud(), 90); }
     fx.push({ kind: "flash", x: d.x, y: d.y, t: 0, life: 0.25 });
     if (!byMe) Snd.far();
   }
@@ -891,53 +893,90 @@
 
   // ---------- бот ----------
   const bot = {
-    anim: null, pos: { x: 180, st: 0, dir: 1, walk: 0 }, target: null, aim: { x: 180, y: 190 }, seenAt: -1, nextShot: 0, wait: 0, lastSeen: null,
+    pos: { x: 180, st: 0, dir: 1, walk: 0 }, target: null, aim: { x: 180, y: 190 }, seenAt: -1, nextShot: 0, wait: 0, lastSeen: null,
+    reloc: false, coinT: 0, probe: null, nextProbe: 0, lostAt: -1,
     beginRound() {
       this.target = null; this.wait = 0; this.seenAt = -1; this.lastSeen = null; this.nextShot = 0;
+      this.reloc = false; this.coinT = now + 4; this.probe = null; this.nextProbe = now + PREP + 2.5 + Math.random() * 1.5; this.lostAt = -1;
       if (R.iHide) { this.aim = { x: WW * Math.random(), y: 190 }; }
-      else { this.pos = startPos(); }
+      else { this.pos = startPos(); this.target = this.hideSpot(); }
     },
-    hideSpot() {
-      for (let i = 0; i < 200; i++) {
+    hideSpot(avoidX) {                        // укрытие без дыр напротив тела; подальше от прицела и от места, где стреляли
+      let best = null, bestS = -1e9;
+      for (let i = 0; i < 160; i++) {
         const c = map.covers[Math.floor(Math.random() * map.covers.length)];
-        const p = { x: c.x + 12 + Math.random() * (c.w - 24), st: c.h < 72 || Math.random() < 0.35 ? 1 : 0 };
-        const s = coverState(p); if (s.hidden && !s.peek.length) return p;
+        if (c.w < 30) continue;
+        const p = { x: c.x + 15 + Math.random() * Math.max(0, c.w - 30), st: c.h < 72 || Math.random() < 0.5 ? 1 : 0 };
+        const st = coverState(p); if (!st.hidden || st.peek.length) continue;
+        const sc = Math.abs(p.x - aim.x) * 0.6 - Math.abs(p.x - this.pos.x) * 0.35 + (avoidX != null ? Math.min(120, Math.abs(p.x - avoidX)) : 0) + Math.random() * 40;
+        if (sc > bestS) { bestS = sc; best = p; }
       }
-      return { x: this.pos.x, st: 1 };
+      return best || { x: this.pos.x, st: 1 };
+    },
+    onShot(d) {                               // игрок выстрелил по острову бота
+      const p = this.pos, dist = Math.abs(d.x - p.x);
+      if (coverState(p).peek.length) this.reloc = true;                 // пробило дыру прямо напротив
+      else if (dist < 35 && Math.random() < 0.3) { this.reloc = true; this.avoid = d.x; }   // пуля рядом — иногда нервы сдают
+    },
+    // где снайпер-бот ищет: последнее место, где видел, или укрытия, где можно спрятаться
+    pickProbe() {
+      const fit = map.covers.filter((c) => c.w >= 30);
+      let c, x;
+      if (this.lastSeen && now - this.lostAt < 7) {
+        const lx = this.lastSeen.x;
+        c = fit.slice().sort((a, b) => Math.abs(a.x + a.w / 2 - lx) - Math.abs(b.x + b.w / 2 - lx))[Math.random() < 0.75 ? 0 : 1] || fit[0];
+        x = Math.max(c.x + 8, Math.min(c.x + c.w - 8, lx + (Math.random() - 0.5) * 30));
+      } else {
+        const w = fit.map((c) => c.w * (c.open.length < 6 ? 1.2 : 0.7)); let r = Math.random() * w.reduce((a, b) => a + b, 0);
+        c = fit[0]; for (let i = 0; i < fit.length; i++) { r -= w[i]; if (r <= 0) { c = fit[i]; break; } }
+        x = c.x + 10 + Math.random() * Math.max(0, c.w - 20);
+      }
+      const tall = c.h >= 72 && Math.random() < 0.5;
+      return { x, y: tall ? G - 44 - Math.random() * 8 : G - 18 - Math.random() * 10 };
     },
     update(dt) {
       if (!R || phase !== "live") return;
-      if (!R.iHide) {                        // бот прячется
+      if (!R.iHide) {                        // бот прячется: сел — сидит; уходит, только если укрытие пробили или пуля рядом
         const p = this.pos;
         if (!this.target) {
           const free = R.pickups.map((c, i) => ({ c, i })).filter((o) => !o.c.taken);
-          const aimFar = Math.abs(remoteAimOf().x - p.x) > 90;
-          if (free.length && aimFar && Math.random() < 0.5) { const o = free[Math.floor(Math.random() * free.length)]; this.target = { x: o.c.x, st: 0, coin: true }; }
-          else this.target = this.hideSpot();
-          this.wait = 1 + Math.random() * 3;
+          if (this.reloc) { this.target = this.hideSpot(this.avoid); this.reloc = false; this.avoid = null; }
+          else if (free.length && now > this.coinT) {
+            this.coinT = now + 3 + Math.random() * 3;
+            const o = free.sort((a, b) => Math.abs(a.c.x - p.x) - Math.abs(b.c.x - p.x))[0];
+            if (Math.abs(aim.x - o.c.x) > 110 && Math.abs(o.c.x - p.x) < 140 && Math.random() < 0.35) this.target = { x: o.c.x, st: 0, coin: true };
+          }
+          if (!this.target && !coverState(p).hidden) this.target = this.hideSpot();
+        } else if (this.reloc && !this.target.coin) { this.target = this.hideSpot(this.avoid); this.reloc = false; this.avoid = null; }
+        if (this.target) {
+          const dx = this.target.x - p.x, sp = SPEED * dt;
+          if (Math.abs(dx) > 1) { p.st = 0; p.x += Math.sign(dx) * Math.min(sp, Math.abs(dx)); p.dir = Math.sign(dx); p.walk += dt * 12; }
+          else { p.st = this.target.st; p.walk = 0; if (this.target.coin) this.target = this.hideSpot(); else this.target = null; }
         }
-        const dx = this.target.x - p.x, sp = SPEED * (p.st ? 0.5 : 1) * dt;
-        if (Math.abs(dx) > 1) { p.st = 0; p.x += Math.sign(dx) * Math.min(sp, Math.abs(dx)); p.dir = Math.sign(dx); p.walk += dt * 12; }
-        else { p.st = this.target.st; p.walk = 0; this.wait -= dt; if (this.wait <= 0 || this.target.coin) this.target = null; }
-        R.pickups.forEach((c, i) => { if (!c.taken && Math.abs(c.x - p.x) < 12) { c.taken = true; } });
-        emit("pos", { x: p.x, st: p.st, dir: p.dir, m: Math.abs(dx) > 1 });
-      } else {                               // бот стреляет
+        R.pickups.forEach((c) => { if (!c.taken && Math.abs(c.x - p.x) < 12) c.taken = true; });
+        const moving = !!this.target && Math.abs(this.target.x - p.x) > 1;
+        emit("pos", { x: p.x, st: p.st, dir: p.dir, m: moving });
+      } else {                               // бот-снайпер: видит — стреляет; не видит — прощупывает укрытия выстрелами
         const a = this.aim, vis = visible(pos);
-        if (vis) { if (this.seenAt < 0) this.seenAt = now; this.lastSeen = { x: pos.x, y: G - (pos.st ? 30 : 50) }; } else this.seenAt = -1;
+        if (vis) { if (this.seenAt < 0) this.seenAt = now; this.lastSeen = { x: pos.x, y: G - (pos.st ? 25 : 45) }; this.probe = null; }
+        else { if (this.seenAt >= 0) { this.lostAt = now; this.nextProbe = Math.min(this.nextProbe, now + 0.9 + Math.random() * 0.6); } this.seenAt = -1; }
         let tx, ty;
         const vx = (pos.x - (this.px == null ? pos.x : this.px)) / Math.max(dt, 0.001); this.px = pos.x;
-        if (vis && now - this.seenAt > 0.45) { const b = bodyRect(pos); tx = pos.x + vx * 0.18; ty = b.y + (this.headAim ? 8 : 26); }
+        const left = R.endAt - now, reserve = left > 6 ? 1 : 0;
+        if (vis && now - this.seenAt > 0.4) { const b = bodyRect(pos); tx = pos.x + vx * 0.18; ty = b.y + (this.headAim ? 8 : b.h * 0.45); }
+        else if (!vis && R.bullets > reserve && now > this.nextProbe - 1.2) { if (!this.probe) this.probe = this.pickProbe(); tx = this.probe.x; ty = this.probe.y; }
         else if (this.lastSeen) { tx = this.lastSeen.x + Math.sin(now * 1.7) * 30; ty = this.lastSeen.y; }
         else { tx = WW / 2 + Math.sin(now * 0.6) * 150; ty = 185 + Math.sin(now * 1.1) * 15; }
-        const k = Math.min(1, dt * (vis ? 7 : 1.5));
+        const k = Math.min(1, dt * (vis ? 7 : 2.5));
         a.x += (tx - a.x) * k; a.y += (ty - a.y) * k;
         if (R.bullets <= 0 && !R.botOut) { R.botOut = true; const n = R.n; setTimeout(() => hostEndRound("ammo", n), 1600); }
         if (now > this.nextShot && R.bullets > 0) {
           const b = bodyRect(pos), onTarget = a.x > b.x - 3 && a.x < b.x + b.w + 3 && a.y > b.y && a.y < G;
-          const wild = !vis && this.lastSeen && Math.random() < 0.006;
-          if ((vis && onTarget && now - this.seenAt > 0.7) || wild) {
-            R.bullets--; this.nextShot = now + 1.1; this.headAim = Math.random() < 0.3;
-            const x = a.x + (Math.random() - 0.5) * 10, y = a.y + (Math.random() - 0.5) * 8;
+          const probeReady = !vis && this.probe && now > this.nextProbe && Math.hypot(a.x - this.probe.x, a.y - this.probe.y) < 4 && R.bullets > reserve;
+          if ((vis && onTarget && now - this.seenAt > 0.6) || probeReady) {
+            R.bullets--; this.nextShot = now + 0.9; this.headAim = Math.random() < 0.3;
+            if (probeReady) { this.probe = null; this.nextProbe = now + 2.2 + Math.random() * 1.8; }
+            const x = a.x + (Math.random() - 0.5) * (vis ? 10 : 4), y = a.y + (Math.random() - 0.5) * (vis ? 8 : 4);
             emit("shot", { id: 0, x, y });
           }
         }
@@ -1054,7 +1093,7 @@
 
   window.__game = {
     get phase() { return phase; }, get R() { return R; }, get match() { return match; }, get pos() { return pos; }, get aim() { return aim; },
-    get remote() { return remote; }, get map() { return map; }, get wallet() { return wallet; }, get roomId() { return room && room.id; }, get mode() { return mode; }, get rating() { return rating; }, keys, fire, coverState,
+    get remote() { return remote; }, get bot() { return bot; }, get map() { return map; }, get wallet() { return wallet; }, get roomId() { return room && room.id; }, get mode() { return mode; }, get rating() { return rating; }, keys, fire, coverState,
     aimAt(x, y) { aim.x = x; aim.y = y; }, setPos(x, st) { pos.x = x; pos.st = st; }, startBot, createRoom
   };
 })();
