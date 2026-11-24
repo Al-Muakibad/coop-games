@@ -4,13 +4,22 @@
 // человечка ложится на экран ровно как старая 2D-картинка — значит прицел и попадания совпадают.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import * as SU from "three/addons/utils/SkeletonUtils.js";
 
 const G = 232, WW = 360, HM = 112, AR = 4;          // HM — высота атласа укрытий в мировых единицах
 const ZH = -15;                                    // плоскость человечка
 const DS = 1200;                                   // расстояние до снайпера
 const THEMES = [
   { sky: ["#3f8fe0", "#cfe9ff"], fog: "#d6ecff", sea: "#1d78c2", seaDeep: "#0f4f8f", sand: "#e3bd7a", sandDark: "#c39a5a", sun: "#fff3dc", sunI: 2.6, hemi: 1.05, sunPos: [-260, 420, 520], brickH: 22 },
-  { sky: ["#4a2f7e", "#ffb184"], fog: "#f5b08f", sea: "#3c4f98", seaDeep: "#262f66", sand: "#d8a06a", sandDark: "#a8703e", sun: "#ffc8a0", sunI: 3.2, hemi: 1.15, sunPos: [-520, 190, 420], brickH: 8 }
+  { sky: ["#4a2f7e", "#ffb184"], fog: "#f5b08f", sea: "#3c4f98", seaDeep: "#262f66", sand: "#d8a06a", sandDark: "#a8703e", sun: "#ffc8a0", sunI: 3.2, hemi: 1.15, sunPos: [-520, 190, 420], brickH: 8 },
+  // ночь: луна, темно, прожектор снайпера шарит по острову
+  { sky: ["#03061a", "#16234a"], fog: "#0b1430", sea: "#0a2846", seaDeep: "#030b18", sand: "#a39a86", sandDark: "#5f5848", sun: "#a9bcff", sunI: 0.5, hemi: 0.42, sunPos: [300, 520, 640], brickH: 18, night: true },
+  // снег: белая земля, следы держатся весь раунд, падает снег
+  { sky: ["#86aed6", "#eef4fb"], fog: "#e9f0f8", sea: "#36688f", seaDeep: "#1b3c58", sand: "#f2f5f9", sandDark: "#b9c6d4", sun: "#ffffff", sunI: 2.1, hemi: 1.25, sunPos: [-320, 360, 480], brickH: 12, snow: true },
+  // руины: серый камень, обломки колонн, без пальм
+  { sky: ["#6f92b4", "#ddd6c6"], fog: "#d3ccbd", sea: "#2f6c8f", seaDeep: "#1b4560", sand: "#bcae94", sandDark: "#857860", sun: "#fff1d6", sunI: 2.4, hemi: 1.0, sunPos: [-380, 330, 520], brickH: 30, stone: true },
+  // туман: полосы тумана ползут между укрытиями и снайпером
+  { sky: ["#8794a2", "#cdd5dc"], fog: "#c6ced6", sea: "#46606f", seaDeep: "#2b3e4a", sand: "#c9b58e", sandDark: "#97855f", sun: "#eef3ff", sunI: 1.25, hemi: 1.3, sunPos: [-200, 420, 520], brickH: 20, mist: true }
 ];
 
 function rng(seed) {
@@ -60,12 +69,13 @@ function drawAtlas(g, map, TH) {
   for (const c of map.covers) {
     const y = G - c.h, r = rng(c.seed);
     if (c.kind === "wall") {
-      g.fillStyle = "#7a5640"; g.fillRect(c.x, y, c.w, c.h);
-      const bh = 8.5, bw = 17;
+      const stone = !!TH.stone;
+      g.fillStyle = stone ? "#6f6a62" : "#7a5640"; g.fillRect(c.x, y, c.w, c.h);
+      const bh = stone ? 11 : 8.5, bw = stone ? 23 : 17;
       for (let row = 0, yy = y + 1; yy < G; yy += bh, row++) for (let xx = c.x - (row % 2 ? bw / 2 : 0); xx < c.x + c.w; xx += bw) {
         const x0 = Math.max(c.x + 0.7, xx + 0.7), x1 = Math.min(c.x + c.w - 0.7, xx + bw - 0.7); if (x1 <= x0) continue;
         const l = 40 + r() * 13, h = TH.brickH + r() * 8;
-        g.fillStyle = hsl(h, 36 + r() * 12, l); g.fillRect(x0, yy + 0.7, x1 - x0, Math.min(bh - 1.4, G - yy - 0.7));
+        g.fillStyle = stone ? hsl(35 + r() * 10, 5 + r() * 6, 52 + r() * 14) : hsl(h, 36 + r() * 12, l); g.fillRect(x0, yy + 0.7, x1 - x0, Math.min(bh - 1.4, G - yy - 0.7));
         g.fillStyle = "rgba(255,255,255,.10)"; g.fillRect(x0, yy + 0.7, x1 - x0, 1.1);
         g.fillStyle = "rgba(0,0,0,.12)"; g.fillRect(x0, yy + bh - 2.2, x1 - x0, 1.1);
         if (r() < 0.12) { g.fillStyle = "rgba(0,0,0,.18)"; g.fillRect(x0 + r() * 8, yy + 2, 2 + r() * 3, 1.2); }
@@ -73,7 +83,8 @@ function drawAtlas(g, map, TH) {
       // грязь у земли и потёки
       const gr = g.createLinearGradient(0, G - 22, 0, G); gr.addColorStop(0, "rgba(90,60,30,0)"); gr.addColorStop(1, "rgba(90,60,30,.45)");
       g.fillStyle = gr; g.fillRect(c.x, G - 22, c.w, 22);
-      const vines = 1 + Math.floor(r() * 3);
+      if (TH.snow) { g.fillStyle = "rgba(255,255,255,.9)"; g.fillRect(c.x, y, c.w, 3); for (let k = 0; k < c.w; k += 6) { g.beginPath(); g.ellipse(c.x + k + 3, y + 3, 3, 1.2 + r() * 2.2, 0, 0, 7); g.fill(); } }
+      const vines = TH.snow || TH.stone ? Math.floor(r() * 1.6) : 1 + Math.floor(r() * 3);
       for (let v = 0; v < vines; v++) {
         let vx = c.x + 8 + r() * (c.w - 16), vy = y + 1; const len = 20 + r() * (c.h * 0.6), pts = [];
         g.strokeStyle = "#35602a"; g.lineWidth = 1.3; g.beginPath(); g.moveTo(vx, vy);
@@ -82,7 +93,7 @@ function drawAtlas(g, map, TH) {
       }
     } else if (c.kind === "sand") {
       g.fillStyle = "#8c7444"; g.fillRect(c.x, y, c.w, c.h);
-      for (let row = 0; row < 4; row++) for (let k = -1; k < c.w / 18 + 1; k++) {
+      for (let row = 0; row < Math.ceil(c.h / 11); row++) for (let k = -1; k < c.w / 18 + 1; k++) {
         const bx = c.x + k * 18 + (row % 2 ? 9 : 0), by = G - 11 - row * 11;
         const x0 = Math.max(c.x, bx), x1 = Math.min(c.x + c.w, bx + 18.5); if (x1 <= x0) continue;
         const gr = g.createLinearGradient(0, by, 0, by + 11); const L = 62 + r() * 8;
@@ -90,6 +101,11 @@ function drawAtlas(g, map, TH) {
         g.fillStyle = gr; g.beginPath(); g.roundRect(x0, by, x1 - x0, 11, 4.5); g.fill();
         g.strokeStyle = "rgba(90,70,35,.6)"; g.lineWidth = 0.6; g.beginPath(); g.moveTo(x0 + 3, by + 5.5); g.lineTo(x1 - 3, by + 5.5); g.stroke();
       }
+    } else if (c.kind === "crate" && c.broken) {       // разбитый ящик — куча досок
+      for (let k = 0; k < 6; k++) { g.save(); g.translate(c.x + 6 + r() * (c.w - 12), G - 4 - r() * (c.h - 6)); g.rotate((r() - 0.5) * 0.9); g.fillStyle = hsl(30, 45, 38 + r() * 12); g.fillRect(-13, -2.5, 26, 5); g.restore(); }
+    } else if (c.kind === "barrel" && c.broken) {      // пробитая бочка — смята, течёт
+      g.fillStyle = "#2a4a30"; g.beginPath(); g.ellipse(c.x + c.w / 2, G - c.h / 2, c.w / 2, c.h / 2, 0, 0, 7); g.fill();
+      g.fillStyle = "rgba(20,20,20,.6)"; g.fillRect(c.x + 4, G - c.h * 0.6, c.w - 8, 2);
     } else if (c.kind === "crate") {
       for (let k = 0; k < 5; k++) { g.fillStyle = hsl(30, 50, 44 + (k % 2) * 6 + r() * 4); g.fillRect(c.x, y + k * c.h / 5, c.w, c.h / 5); g.fillStyle = "rgba(60,30,10,.45)"; g.fillRect(c.x, y + k * c.h / 5, c.w, 0.8); }
       g.strokeStyle = "#6b4520"; g.lineWidth = 5; g.strokeRect(c.x + 2.5, y + 2.5, c.w - 5, c.h - 5);
@@ -109,9 +125,10 @@ function drawAtlas(g, map, TH) {
   }
   // дырки: окна и пробоины — вырезаем, по краю тёмный ободок
   g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
-  for (const c of map.covers) for (const o of c.open) { g.beginPath(); if (o.t === "r") g.rect(o.x, o.y, o.w, o.h); else g.arc(o.x, o.y, o.r, 0, 7); g.fill(); }
+  for (const c of map.covers) for (const o of c.open) { g.beginPath(); if (o.t === "r" && o.chunk) { const r = rng(Math.round(o.x * 7 + o.y)); g.moveTo(o.x, o.y + (r() - 0.5) * 3); for (let k = 1; k <= 6; k++) g.lineTo(o.x + o.w * k / 6, o.y + (r() - 0.5) * 3); for (let k = 6; k >= 0; k--) g.lineTo(o.x + o.w * k / 6, o.y + o.h + (r() - 0.5) * 3); g.closePath(); } else if (o.t === "r") g.rect(o.x, o.y, o.w, o.h); else g.arc(o.x, o.y, o.r, 0, 7); g.fill(); }
   g.globalCompositeOperation = "source-atop";
   for (const c of map.covers) for (const o of c.open) {
+    if (o.chunk) continue;
     if (o.t === "r") { g.strokeStyle = "rgba(25,12,4,.85)"; g.lineWidth = 2.4; g.strokeRect(o.x - 1.2, o.y - 1.2, o.w + 2.4, o.h + 2.4);
       g.fillStyle = "#6b4a2a"; g.fillRect(o.x - 3, o.y + o.h + 1, o.w + 6, 2.6); }
     else { g.strokeStyle = "rgba(25,12,4,.85)"; g.lineWidth = 2; g.beginPath(); g.arc(o.x, o.y, o.r + 0.9, 0, 7); g.stroke();
@@ -171,12 +188,16 @@ function poseSoldier(s, p, dt) {
 // анимации: Idle / Walk / Crouch_Idle / Crouch_Fwd. Размер подогнан под хитбоксы игры (стоя 66, сидя ≤42)
 const HERO_SCALE = 36;
 const HC = { skin: "#e2a982", glove: "#2a2622", boot: "#231f1b", sole: "#111", pants: "#5b6142", belt: "#3a2f22", joint: "#3b3b36" };
-export function loadHero(onReady) {
+let heroTpl = null, heroWait = null;
+function loadHeroTpl(cb) {
+  if (heroTpl) return cb(heroTpl);
+  if (heroWait) { heroWait.push(cb); return; }
+  heroWait = [cb];
   new GLTFLoader().load("models/hero.glb?v=2", (g) => {
-    const root = new THREE.Group(), model = g.scene; root.add(model); model.scale.setScalar(HERO_SCALE);
+    const model = g.scene; model.scale.setScalar(HERO_SCALE);
     const B = {}; model.traverse((b) => { if (b.isBone) B[b.name] = b; });
-    const teamSlots = [];                                  // вершины рубашки: перекрашиваем под цвет игрока
     const C = (h) => new THREE.Color(h);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
     model.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true; o.frustumCulled = false;
@@ -193,8 +214,8 @@ export function loadHero(onReady) {
         const cc = C(c); col[i * 3] = cc.r; col[i * 3 + 1] = cc.g; col[i * 3 + 2] = cc.b;
       }
       o.geometry.setAttribute("color", new THREE.BufferAttribute(col, 3));
-      teamSlots.push({ attr: o.geometry.attributes.color, idx: team, joint: isJoint });
-      o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.FrontSide });
+      o.geometry.userData.team = team; o.geometry.userData.joint = isJoint;
+      o.material = mat;
     });
     // каска и ботинки — отдельные меши на костях
     model.updateMatrixWorld(true);
@@ -211,18 +232,28 @@ export function loadHero(onReady) {
       const boot = new THREE.Mesh(new THREE.BoxGeometry(0.115 * S, 0.095 * S, 0.25 * S), bootMat); boot.castShadow = true;
       attach(f, boot, new THREE.Vector3(fp.x, 0.047 * S, fp.z + 0.05 * S));
     }
-    const mixer = new THREE.AnimationMixer(model);
-    const act = (n) => { const a = mixer.clipAction(g.animations.find((c) => c.name === n)); a.play(); a.setEffectiveWeight(0); return a; };
-    const A = { idle: act("Idle_Loop"), walk: act("Walk_Loop"), cidle: act("Crouch_Idle_Loop"), cfwd: act("Crouch_Fwd_Loop") };
-    A.idle.setEffectiveWeight(1); A.walk.timeScale = 1.25; A.cfwd.timeScale = 1.15;
-    const u = { hero: true, mixer, A, B, teamSlots, cr: 0, mv: 0, rot: 0, sq: 1, col: null };
-    u.setColor = (hex) => {
-      const c = C(hex), v = c.clone().multiplyScalar(0.45);
-      for (const t of u.teamSlots) { const arr = t.attr.array; for (const i of t.idx) { const k = t.joint ? v : c; arr[i * 3] = k.r; arr[i * 3 + 1] = k.g; arr[i * 3 + 2] = k.b; } t.attr.needsUpdate = true; }
-    };
-    root.userData = u; onReady(root);
+    heroTpl = g;
+    const w = heroWait; heroWait = null; w.forEach((f) => f(heroTpl));
   }, undefined, () => {});
 }
+function createHero() {
+  const g = heroTpl, model = SU.clone(g.scene), root = new THREE.Group(); root.add(model);
+  const B = {}; model.traverse((b) => { if (b.isBone) B[b.name] = b; });
+  const slots = [];
+  model.traverse((o) => { if (o.isSkinnedMesh) { o.geometry = o.geometry.clone(); slots.push({ attr: o.geometry.attributes.color, idx: o.geometry.userData.team, joint: o.geometry.userData.joint }); } });
+  const mixer = new THREE.AnimationMixer(model);
+  const act = (n) => { const a = mixer.clipAction(g.animations.find((c) => c.name === n)); a.play(); a.setEffectiveWeight(0); return a; };
+  const A = { idle: act("Idle_Loop"), walk: act("Walk_Loop"), cidle: act("Crouch_Idle_Loop"), cfwd: act("Crouch_Fwd_Loop") };
+  A.idle.setEffectiveWeight(1); A.walk.timeScale = 1.25; A.cfwd.timeScale = 1.15;
+  mixer.setTime(Math.random() * 2);
+  const u = { hero: true, mixer, A, B, cr: 0, mv: 0, rot: 0, sq: 1, col: null };
+  u.setColor = (hex) => {
+    const c = new THREE.Color(hex), v = c.clone().multiplyScalar(0.45);
+    for (const t of slots) { const arr = t.attr.array; for (const i of t.idx) { const k = t.joint ? v : c; arr[i * 3] = k.r; arr[i * 3 + 1] = k.g; arr[i * 3 + 2] = k.b; } t.attr.needsUpdate = true; }
+  };
+  root.userData = u; return root;
+}
+export function loadHero(onReady) { loadHeroTpl(() => onReady(createHero())); }
 export function poseHero(s, p, dt) {
   const u = s.userData, A = u.A, B = u.B;
   const moving = !!p.moving;
@@ -231,6 +262,7 @@ export function poseHero(s, p, dt) {
   const c = u.cr, m = u.mv;
   A.idle.setEffectiveWeight((1 - c) * (1 - m)); A.walk.setEffectiveWeight((1 - c) * m);
   A.cidle.setEffectiveWeight(c * (1 - m)); A.cfwd.setEffectiveWeight(c * m);
+  A.walk.timeScale = p.dash ? 2.2 : 1.25;
   u.mixer.update(dt);
   if (B.root) { B.root.position.x = 0; B.root.position.z = 0; }      // без root motion — двигает игра
   if (B.pelvis) { B.pelvis.position.x *= 0.3; }
@@ -240,6 +272,11 @@ export function poseHero(s, p, dt) {
   // сидя чуть сжимаем по ширине, чтобы колени и локти не вылезали за край укрытия
   u.sq += ((c > 0.5 && !moving ? 0.86 : 1) - u.sq) * Math.min(1, dt * 10); s.children[0].scale.x = HERO_SCALE * u.sq;
 }
+
+const softTex = () => canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.5, "rgba(255,255,255,.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+const puffTex = () => canvasTex(128, 128, (g) => {            // клочковатое облачко для дыма и тумана
+  for (let i = 0; i < 26; i++) { const x = 30 + Math.random() * 68, y = 30 + Math.random() * 68, r = 14 + Math.random() * 22; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "rgba(255,255,255,.55)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+});
 
 export function createR3D(glCanvas) {
   const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, powerPreference: "high-performance" });
@@ -258,6 +295,9 @@ export function createR3D(glCanvas) {
   Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 140, bottom: -140, near: 50, far: 2000 });
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
   scene.add(sun); scene.add(sun.target); sun.target.position.set(WW / 2, 0, 0);
+  // прожектор снайпера (ночь) и осветительная ракета — всегда в сцене, чтобы не пересобирать шейдеры
+  const spot = new THREE.SpotLight("#fff6dc", 0, 0, 0.05, 0.45, 0); spot.shadow.mapSize.set(512, 512); spot.shadow.bias = -0.0008; spot.shadow.camera.near = 600; spot.shadow.camera.far = 1700; scene.add(spot); scene.add(spot.target);
+  const flareL = new THREE.PointLight("#ffe7b8", 0, 0, 0); scene.add(flareL);
 
   // небо
   const skyGeo = new THREE.SphereGeometry(6000, 32, 16);
@@ -267,11 +307,23 @@ export function createR3D(glCanvas) {
     fragmentShader: "uniform vec3 top; uniform vec3 bot; varying vec3 vP; void main(){ float k = smoothstep(-0.02, 0.45, vP.y); gl_FragColor = vec4(mix(bot, top, k), 1.); }" });
   const sky = new THREE.Mesh(skyGeo, skyMat); scene.add(sky);
 
-  const world = new THREE.Group(); scene.add(world);             // всё, что зависит от карты
-  let built = null, theme = -1, atlas = null, atlasTex = null, atlasMats = [], coverMeshes = [];
-  let soldier = makeSoldier("#ef4444"); scene.add(soldier);
-  const xrScene = new THREE.Scene(), xrMat = new THREE.MeshBasicMaterial({ color: "#ffd34d", transparent: true, opacity: 0.55, depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false });
-  loadHero((h) => { h.visible = soldier.visible; scene.remove(soldier); soldier = h; scene.add(h); });
+  const world = new THREE.Group(); scene.add(world);             // окружение карты
+  const coverG = new THREE.Group(); scene.add(coverG);           // укрытия (пересобираются при разрушении)
+  let built = null, builtRev = -1, theme = -1, atlas = null, atlasTex = null, TH = THEMES[0];
+  let palms = [], snowPts = null, moon = null, stars = null;
+
+  // бойцы: по id. Пока модель не загрузилась — кубические
+  const soldiers = new Map();
+  function soldierFor(id) {
+    let s = soldiers.get(id);
+    if (!s) { s = { obj: heroTpl ? createHero() : makeSoldier("#ef4444"), col: null }; scene.add(s.obj); soldiers.set(id, s); }
+    else if (!s.obj.userData.hero && heroTpl) { scene.remove(s.obj); s.obj = createHero(); s.col = null; scene.add(s.obj); }
+    return s;
+  }
+  loadHeroTpl(() => {});
+  const xrScene = new THREE.Scene();
+  const xrMat = new THREE.MeshBasicMaterial({ color: "#ffd34d", transparent: true, opacity: 0.55, depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false });
+  const heatMat = new THREE.MeshBasicMaterial({ color: "#ff6a00", transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, fog: false });
   const ringMat = new THREE.MeshBasicMaterial({ color: "#22c55e", transparent: true, opacity: 0.85, depthWrite: false });
   const ring = new THREE.Mesh(new THREE.RingGeometry(13, 17, 32), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.6; scene.add(ring);
   // деньги
@@ -282,33 +334,131 @@ export function createR3D(glCanvas) {
   const island = new THREE.Group(); scene.add(island);
   const glintMat = new THREE.SpriteMaterial({ map: canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.25, "rgba(255,240,200,.8)"); gr.addColorStop(1, "rgba(255,240,200,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); g.fillStyle = "rgba(255,255,255,.9)"; g.fillRect(0, 31, 64, 2); g.fillRect(31, 0, 2, 64); }), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
   const glint = new THREE.Sprite(glintMat); glint.scale.set(60, 60, 1); island.add(glint);
-  let muzzleT = 0;
-  // пена и вода
+  let muzzleT = 0, islandX = 180;
   let sea = null, foam = [];
 
-  function buildWorld(map) {
-    while (world.children.length) { const o = world.children.pop(); o.traverse((m) => { if (m.geometry) m.geometry.dispose(); }); }
-    island.clear(); island.add(glint); coverMeshes = []; atlasMats = []; foam = [];
-    const TH = THEMES[map.theme || 0]; theme = map.theme || 0;
+  // ---------- эффекты: пулы объектов ----------
+  const SOFT = softTex(), PUFF = puffTex();
+  const pool = (n, make) => { const a = []; for (let i = 0; i < n; i++) { const o = make(i); o.visible = false; scene.add(o); a.push(o); } return a; };
+  const dustP = pool(70, () => new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: "#d9bf8c", transparent: true, depthWrite: false })));
+  const smokeP = pool(64, () => new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF, color: "#d6d8da", transparent: true, depthWrite: false })));
+  const mistP = pool(14, () => new THREE.Sprite(new THREE.SpriteMaterial({ map: PUFF, color: "#e3e8ee", transparent: true, depthWrite: false })));
+  const debrisP = pool(40, () => { const m = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 3), new THREE.MeshStandardMaterial({ color: "#8a5a3c", roughness: 1 })); m.castShadow = true; return m; });
+  const printGeo = new THREE.SphereGeometry(1, 8, 4), printP = pool(110, () => new THREE.Mesh(printGeo, new THREE.MeshStandardMaterial({ color: "#000", transparent: true, roughness: 1, depthWrite: false })));
+  const wingGeo = new THREE.PlaneGeometry(7, 2.4); wingGeo.translate(3.5, 0, 0);
+  const birdP = pool(14, () => {
+    const b = new THREE.Group(), m = new THREE.MeshStandardMaterial({ color: "#2b2b2b", side: THREE.DoubleSide, roughness: 1 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), m); body.scale.set(3.6, 2.2, 2.2); b.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), m); head.position.set(3.4, 1.4, 0); b.add(head);
+    const w1 = new THREE.Mesh(wingGeo, m), w2 = new THREE.Mesh(wingGeo, m); w1.rotation.y = Math.PI / 2; w2.rotation.y = -Math.PI / 2; b.add(w1, w2);
+    b.userData = { w1, w2 }; return b;
+  });
+  const decoyP = pool(4, () => {
+    const g = new THREE.Group(), olive = new THREE.MeshStandardMaterial({ color: "#4f5a35", roughness: 0.7 });
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 1, 6), new THREE.MeshStandardMaterial({ color: "#7a5a36" })); stick.position.y = -0.5; g.add(stick);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), olive); dome.scale.set(1, 0.9, 1.08); g.add(dome);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.6, 0.8, 16), olive); brim.position.y = -0.7; g.add(brim);
+    g.traverse((m) => { if (m.isMesh) m.castShadow = true; }); g.userData = { stick }; return g;
+  });
+  const flareS = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: "#fff2c8", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); flareS.visible = false; scene.add(flareS);
+  const beamMat = new THREE.MeshBasicMaterial({ color: "#fff4cc", transparent: true, opacity: 0.035, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 24, 1, true), beamMat); beam.visible = false; scene.add(beam);
+
+  function disposeGroup(gr) { while (gr.children.length) { const o = gr.children.pop(); o.traverse((m) => { if (m.geometry) m.geometry.dispose(); }); } }
+
+  function buildEnv(map) {
+    disposeGroup(world);
+    island.clear(); island.add(glint); foam = []; palms = [];
+    TH = THEMES[map.theme || 0]; theme = map.theme || 0;
     hemi.color.set(TH.sky[1]); hemi.groundColor.set(TH.sandDark); hemi.intensity = TH.hemi;
     sun.color.set(TH.sun); sun.intensity = TH.sunI; sun.position.set(WW / 2 + TH.sunPos[0], TH.sunPos[1], TH.sunPos[2]);
     skyMat.uniforms.top.value.set(TH.sky[0]); skyMat.uniforms.bot.value.set(TH.sky[1]);
     scene.fog.color.set(TH.fog);
+    renderer.toneMappingExposure = TH.night ? 1.35 : 1.15;
+    spot.castShadow = !!TH.night;
 
-    // атлас
-    atlas = document.createElement("canvas"); atlas.width = WW * AR; atlas.height = HM * AR;
-    drawAtlas(atlas.getContext("2d"), map, TH);
-    atlasTex = new THREE.CanvasTexture(atlas); atlasTex.colorSpace = THREE.SRGBColorSpace; atlasTex.anisotropy = 8;
-    atlasTex.generateMipmaps = false; atlasTex.minFilter = THREE.LinearFilter;
-    const atlasMat = () => { const m = new THREE.MeshStandardMaterial({ map: atlasTex, alphaTest: 0.5, roughness: 0.92 }); atlasMats.push(m); return m; };
+    // земля
+    const sandTex = noiseTile(TH.sand, TH.snow ? "rgba(150,170,200,.35)" : "rgba(120,80,40,.45)", 5000); sandTex.repeat.set(30, 30);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 1400), new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.set(WW / 2, 0, -650); ground.receiveShadow = true; world.add(ground);
+    const wet = new THREE.Mesh(new THREE.PlaneGeometry(2400, 30), new THREE.MeshStandardMaterial({ color: TH.sandDark, roughness: 0.5, transparent: true, opacity: 0.8 }));
+    wet.rotation.x = -Math.PI / 2; wet.position.set(WW / 2, 0.15, 48); world.add(wet);
+    sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 6000, 1, 1), new THREE.MeshPhongMaterial({ color: TH.sea, specular: "#ffffff", shininess: 90, emissive: TH.seaDeep, emissiveIntensity: 0.25 }));
+    sea.rotation.x = -Math.PI / 2; sea.position.set(WW / 2, -0.8, 3050); world.add(sea);
+    const foamMat = new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.6, depthWrite: false });
+    for (let k = 0; k < 3; k++) { const f = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2.2), foamMat.clone()); f.rotation.x = -Math.PI / 2; f.position.set(WW / 2, 0.3, 64 + k * 9); f.userData.k = k; world.add(f); foam.push(f); }
 
-    const sideBrick = new THREE.MeshStandardMaterial({ map: brickTile(TH.brickH), roughness: 0.95 });
+    const r = rng(map.seed + 7);
+    const hedgeMat = new THREE.MeshStandardMaterial({ color: "#5d4632", roughness: 0.6, metalness: 0.5 });
+    for (let i = 0; i < 4; i++) {
+      const h = new THREE.Group(); const bg = new THREE.BoxGeometry(2.6, 26, 2.6);
+      [[0, 0, 0.8], [0, Math.PI / 2, 0.8], [Math.PI / 2, 0, 0]].forEach(([ax, ay, az]) => { const b = new THREE.Mesh(bg, hedgeMat); b.rotation.set(ax, ay, az); b.castShadow = true; h.add(b); });
+      h.position.set(i < 2 ? -30 - r() * 60 : WW + 30 + r() * 60, 9, 18 + r() * 22); h.rotation.y = r() * 3; world.add(h);
+    }
+    const duneMat = new THREE.MeshStandardMaterial({ color: TH.sand, roughness: 1 });
+    for (let i = 0; i < 9; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), duneMat); d.scale.set(160 + r() * 220, 40 + r() * 70, 90 + r() * 80); d.position.set(-500 + i * 170 + r() * 60, -10, -380 - r() * 420); d.receiveShadow = true; world.add(d); }
+    const trunkMat = new THREE.MeshStandardMaterial({ color: "#8a6a45", roughness: 1 }), leafMat = new THREE.MeshStandardMaterial({ color: TH.night ? "#2a5a2a" : "#3f8a3a", roughness: 0.8, side: THREE.DoubleSide });
+    const leafGeo = new THREE.PlaneGeometry(9, 46, 1, 6); { const p = leafGeo.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) + 23; p.setZ(i, -(y * y) / 70); p.setX(i, p.getX(i) * (1 - Math.abs(y - 20) / 30)); } leafGeo.translate(0, 23, 0); leafGeo.computeVertexNormals(); }
+    if (TH.snow) {                                            // ёлки
+      const pine = new THREE.MeshStandardMaterial({ color: "#2f5a3f", roughness: 1 }), snowM = new THREE.MeshStandardMaterial({ color: "#f4f8fc", roughness: 1 });
+      for (let i = 0; i < 10; i++) { const t = new THREE.Group(), sc = 0.8 + r() * 0.7; for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(30 - k * 6, 34, 9), k % 2 ? snowM : pine); c.position.y = 22 + k * 20; c.castShadow = true; t.add(c); } const tr = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 16, 6), trunkMat); tr.position.y = 8; t.add(tr); t.scale.setScalar(sc); t.position.set(-260 + r() * 880, 0, -420 - r() * 300); world.add(t); }
+    } else if (!TH.stone) {
+      for (let i = 0; i < 7; i++) {
+        const palm = new THREE.Group(), top = new THREE.Group(); let px = 0, py = 0; const lean = (r() - 0.5) * 0.5;
+        for (let s2 = 0; s2 < 8; s2++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(3.2 - s2 * 0.2, 3.6 - s2 * 0.2, 13, 8), trunkMat); seg.position.set(px, py + 6.5, 0); seg.rotation.z = -lean * 0.6; seg.castShadow = true; palm.add(seg); px += lean * 4 * (s2 / 4); py += 12.5; }
+        top.position.set(px, py, 0); palm.add(top);
+        for (let l = 0; l < 8; l++) { const leaf = new THREE.Mesh(leafGeo, leafMat); leaf.rotation.set(-0.9 - r() * 0.3, l * Math.PI / 4 + r() * 0.3, 0, "YXZ"); leaf.castShadow = true; top.add(leaf); }
+        palm.position.set(-260 + r() * 880, 0, -420 - r() * 300); palm.scale.setScalar(0.9 + r() * 0.5); world.add(palm); palms.push({ top, ph: r() * 6 });
+      }
+    }
+    const stoneMat = new THREE.MeshStandardMaterial({ color: TH.stone ? "#9c968c" : "#b49a78", roughness: 1 });
+    const ncol = TH.stone ? 12 : 4;
+    for (let i = 0; i < ncol; i++) { const hgt = TH.stone ? 20 + r() * 90 : 30 + r() * 50; const col = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, hgt, 10), stoneMat); col.position.set(-160 + r() * 680, hgt / 2, -150 - r() * 260); col.rotation.z = (r() - 0.5) * 0.3; col.castShadow = true; world.add(col); }
+    if (TH.stone) for (let i = 0; i < 16; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(8 + r() * 16, 5 + r() * 9, 8 + r() * 12), stoneMat); b.position.set(-160 + r() * 680, 3, -60 - r() * 300); b.rotation.set(r(), r() * 3, r()); b.castShadow = true; world.add(b); }
+    // облака
+    if (!TH.night) {
+      const cloudMat = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 1, emissive: "#ffffff", emissiveIntensity: 0.35, fog: false });
+      for (let i = 0; i < 9; i++) { const cl = new THREE.Group(); for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), cloudMat); b.scale.set(60 + r() * 50, 20 + r() * 14, 40); b.position.set(k * 50, r() * 12, r() * 20); cl.add(b); } cl.position.set(-1200 + r() * 2800, 520 + r() * 380, (r() < 0.5 ? -1 : 1) * (1500 + r() * 2200)); world.add(cl); }
+    }
+    // ночь: луна и звёзды
+    if (moon) { scene.remove(moon); moon = null; } if (stars) { scene.remove(stars); stars = null; }
+    if (TH.night) {
+      moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: "#eef2ff", fog: false, depthWrite: false })); moon.scale.set(520, 520, 1); moon.position.set(WW / 2 + 1600, 1900, -4200); scene.add(moon);
+      const sp = []; for (let i = 0; i < 500; i++) { const th = r() * Math.PI * 2, ph = 0.08 + r() * 1.3; sp.push(Math.cos(th) * Math.cos(ph) * 5500, Math.sin(ph) * 5500, Math.sin(th) * Math.cos(ph) * 5500); }
+      const sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
+      stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: "#ffffff", size: 2, sizeAttenuation: false, fog: false })); scene.add(stars);
+    }
+    // снегопад
+    if (snowPts) { scene.remove(snowPts); snowPts = null; }
+    if (TH.snow) {
+      const n = 900, arr = new Float32Array(n * 3); for (let i = 0; i < n; i++) { arr[i * 3] = -200 + r() * 760; arr[i * 3 + 1] = r() * 300; arr[i * 3 + 2] = -160 + r() * 340; }
+      const sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+      snowPts = new THREE.Points(sg, new THREE.PointsMaterial({ color: "#ffffff", size: 2.2, map: SOFT, transparent: true, depthWrite: false })); scene.add(snowPts);
+    }
+
+    // остров снайпера (виден прячущемуся)
+    const ix = 40 + map.deco * 280; islandX = ix;
+    const isl = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12), new THREE.MeshStandardMaterial({ color: TH.sand, roughness: 1 }));
+    isl.scale.set(150, 14, 70); isl.position.set(ix, -6, DS); island.add(isl);
+    for (const dx of [-80, -55, 40, 70]) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 16 + Math.abs(dx) * 0.2, 14), new THREE.MeshStandardMaterial({ color: "#8a5a3c" })); b.position.set(ix + dx, 10, DS - 20); island.add(b); }
+    if (!TH.snow && !TH.stone) for (let i = 0; i < 2; i++) { const pm = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3, 70, 6), trunkMat); t.position.y = 35; pm.add(t); for (let l = 0; l < 7; l++) { const leaf = new THREE.Mesh(leafGeo, leafMat); leaf.position.y = 70; leaf.rotation.set(-1, l * 0.9, 0, "YXZ"); pm.add(leaf); } pm.position.set(ix + (i ? 105 : -110), 0, DS + 10); island.add(pm); }
+    const sn = new THREE.Mesh(new THREE.BoxGeometry(30, 7, 9), new THREE.MeshStandardMaterial({ color: "#2b2b2b" })); sn.position.set(ix - 6, 10, DS - 34); island.add(sn);
+    glint.position.set(ix - 6, 16, DS - 42);
+    spot.position.set(ix - 6, 46, DS - 40);
+    built = map; builtRev = -1;
+  }
+
+  function buildCovers(map) {
+    disposeGroup(coverG);
+    if (!atlas) { atlas = document.createElement("canvas"); atlas.width = WW * AR; atlas.height = HM * AR; atlasTex = new THREE.CanvasTexture(atlas); atlasTex.colorSpace = THREE.SRGBColorSpace; atlasTex.anisotropy = 8; atlasTex.generateMipmaps = false; atlasTex.minFilter = THREE.LinearFilter; }
+    drawAtlas(atlas.getContext("2d"), map, TH); atlasTex.needsUpdate = true;
+    const atlasMat = new THREE.MeshStandardMaterial({ map: atlasTex, alphaTest: 0.5, roughness: 0.92 });
+    const sideBrick = new THREE.MeshStandardMaterial({ map: TH.stone ? noiseTile("#8d877d", "rgba(40,40,40,.5)", 3000) : brickTile(TH.brickH), roughness: 0.95 });
     const sideWood = new THREE.MeshStandardMaterial({ map: woodTile(), roughness: 0.85 });
     const sideBag = new THREE.MeshStandardMaterial({ map: noiseTile("#c9b27e", "rgba(90,70,35,.5)"), roughness: 1 });
-    const capMat = new THREE.MeshStandardMaterial({ color: "#8a6247", roughness: 0.9 });
+    const capMat = new THREE.MeshStandardMaterial({ color: TH.snow ? "#f4f8fc" : TH.stone ? "#8c867c" : "#8a6247", roughness: 0.9 });
+    const snowCap = new THREE.MeshStandardMaterial({ color: "#f6f9fc", roughness: 1 });
     const metal = new THREE.MeshStandardMaterial({ color: "#2f5a38", roughness: 0.45, metalness: 0.4 });
-
-    // плоские UV лицевых граней: u = x/WW, v = Y/HM (по мировым координатам)
     const planarUV = (geo, mesh, pick, clamp) => {
       const pos = geo.attributes.position, uv = geo.attributes.uv, v = new THREE.Vector3();
       mesh.updateMatrixWorld(true);
@@ -321,97 +471,55 @@ export function createR3D(glCanvas) {
       uv.needsUpdate = true;
     };
     const faceRange = (geo, gi) => { const gr = geo.groups[gi], idx = geo.index; const set = new Set(); for (let k = gr.start; k < gr.start + gr.count; k++) set.add(idx.getX(k)); return (i) => set.has(i); };
-    const repeatBox = (geo, sx, sy, sz, s) => {      // для боковых плиток — повтор по размеру
-      const uv = geo.attributes.uv; for (let gi = 0; gi < 4; gi++) { const f = faceRange(geo, gi), g = geo.groups[gi];
-        for (let i = 0; i < uv.count; i++) if (f(i)) { const sc = gi < 2 ? [sz, sy] : [sx, sz]; uv.setXY(i, uv.getX(i) * sc[0] / s, uv.getY(i) * sc[1] / s); } }
+    const repeatBox = (geo, sx, sy, sz, sz2) => {
+      const uv = geo.attributes.uv; for (let gi = 0; gi < 4; gi++) { const f = faceRange(geo, gi);
+        for (let i = 0; i < uv.count; i++) if (f(i)) { const sc = gi < 2 ? [sz, sy] : [sx, sz]; uv.setXY(i, uv.getX(i) * sc[0] / sz2, uv.getY(i) * sc[1] / sz2); } }
       uv.needsUpdate = true;
     };
-
     for (const c of map.covers) {
       const depth = c.kind === "wall" ? 9 : c.kind === "crate" ? 13 : c.kind === "sand" ? 15 : 13;
       let mesh;
       if (c.kind === "barrel") {
         const geo = new THREE.CylinderGeometry(c.w / 2, c.w / 2, c.h, 28, 1);
-        mesh = new THREE.Mesh(geo, [atlasMat(), metal, metal]);
+        mesh = new THREE.Mesh(geo, [atlasMat, metal, metal]);
         mesh.scale.z = depth / c.w; mesh.position.set(c.x + c.w / 2, c.h / 2, 0);
         planarUV(geo, mesh, faceRange(geo, 0), [c.x + 0.3, c.x + c.w - 0.3, 0.3, c.h - 0.3]);
-        const ringG = new THREE.TorusGeometry(c.w / 2 + 0.3, 0.9, 6, 28);
-        for (const yy of [c.h * 0.27, c.h * 0.73]) { const t = new THREE.Mesh(ringG, metal); t.rotation.x = Math.PI / 2; t.scale.set(1, depth / c.w, 1); t.position.set(c.x + c.w / 2, yy, 0); t.castShadow = true; world.add(t); }
+        if (!c.broken) { const ringG = new THREE.TorusGeometry(c.w / 2 + 0.3, 0.9, 6, 28);
+          for (const yy of [c.h * 0.27, c.h * 0.73]) { const t = new THREE.Mesh(ringG, metal); t.rotation.x = Math.PI / 2; t.scale.set(1, depth / c.w, 1); t.position.set(c.x + c.w / 2, yy, 0); t.castShadow = true; coverG.add(t); } }
       } else {
         const geo = new THREE.BoxGeometry(c.w, c.h, depth);
         const side = c.kind === "wall" ? sideBrick : c.kind === "crate" ? sideWood : sideBag;
         const top = c.kind === "wall" ? capMat : side;
-        mesh = new THREE.Mesh(geo, [side, side, top, top, atlasMat(), atlasMat()]);
+        mesh = new THREE.Mesh(geo, [side, side, top, top, atlasMat, atlasMat]);
         mesh.position.set(c.x + c.w / 2, c.h / 2, 0);
         repeatBox(geo, c.w, c.h, depth, c.kind === "wall" ? 34 : 40);
         const front = faceRange(geo, 4), back = faceRange(geo, 5);
         planarUV(geo, mesh, (i) => front(i) || back(i));
         if (c.kind === "wall") {
-          const cap = new THREE.Mesh(new THREE.BoxGeometry(c.w + 6, 5, depth + 5), capMat); cap.position.set(c.x + c.w / 2, c.h + 2.5, 0); cap.castShadow = cap.receiveShadow = true; world.add(cap);
-          for (const o of c.open) if (o.t === "r") {     // подоконник
+          const cap = new THREE.Mesh(new THREE.BoxGeometry(c.w + 6, 5, depth + 5), capMat); cap.position.set(c.x + c.w / 2, c.h + 2.5, 0); cap.castShadow = cap.receiveShadow = true; coverG.add(cap);
+          for (const o of c.open) if (o.t === "r" && !o.chunk) {
             const sill = new THREE.Mesh(new THREE.BoxGeometry(o.w + 6, 2.4, depth + 6), new THREE.MeshStandardMaterial({ color: "#6b4a2a", roughness: 0.8 }));
-            sill.position.set(o.x + o.w / 2, G - (o.y + o.h) - 1.2, 0); sill.castShadow = true; world.add(sill);
+            sill.position.set(o.x + o.w / 2, G - (o.y + o.h) - 1.2, 0); sill.castShadow = true; coverG.add(sill);
+          }
+          if (c.crumbled) {                                  // обломки у подножия осыпавшейся стены
+            const rr = rng(c.seed + c.crumbled * 13);
+            for (let k = 0; k < c.crumbled * 4; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(5 + rr() * 6, 3 + rr() * 4, 4 + rr() * 5), sideBrick); b.position.set(c.x + rr() * c.w, 2, (rr() < 0.5 ? -1 : 1) * (7 + rr() * 9)); b.rotation.set(rr(), rr() * 3, rr()); b.castShadow = true; coverG.add(b); }
           }
         }
-        if (c.kind === "sand") {                     // верхний ряд мешков — объёмный
+        if (c.kind === "sand" && !c.broken) {
           const bagG = new THREE.SphereGeometry(1, 14, 8), r = rng(c.seed + 9);
-          for (let k = 0; k < c.w / 18; k++) { const b = new THREE.Mesh(bagG, sideBag); b.scale.set(9.6, 4.2, depth / 2 + 0.5); b.position.set(c.x + 9 + k * 18, c.h - 1.5, (r() - 0.5) * 1.5); b.rotation.z = (r() - 0.5) * 0.15; b.castShadow = true; world.add(b); }
+          for (let k = 0; k < c.w / 18; k++) { const b = new THREE.Mesh(bagG, sideBag); b.scale.set(9.6, 4.2, depth / 2 + 0.5); b.position.set(c.x + 9 + k * 18, c.h - 1.5, (r() - 0.5) * 1.5); b.rotation.z = (r() - 0.5) * 0.15; b.castShadow = true; coverG.add(b); }
+        }
+        if (c.broken && c.kind === "crate") {
+          const rr = rng(c.seed + 5);
+          for (let k = 0; k < 7; k++) { const b = new THREE.Mesh(new THREE.BoxGeometry(22 + rr() * 8, 2, 5), sideWood); b.position.set(c.x + rr() * c.w, 1 + rr() * 3, (rr() - 0.5) * 26); b.rotation.set(rr() * 0.3, rr() * 3, rr() * 0.3); b.castShadow = true; coverG.add(b); }
         }
       }
-      mesh.castShadow = mesh.receiveShadow = true; world.add(mesh); coverMeshes.push(mesh);
-      // тень-«контакт» на земле
+      if (TH.snow && c.kind !== "wall") { const sc = new THREE.Mesh(new THREE.BoxGeometry(c.w + 1, 2.4, depth + 1), snowCap); sc.position.set(c.x + c.w / 2, c.h + 1.2, 0); sc.castShadow = true; coverG.add(sc); }
+      mesh.castShadow = mesh.receiveShadow = true; coverG.add(mesh);
     }
-
-    // земля
-    const sandTex = noiseTile(TH.sand, "rgba(120,80,40,.45)", 5000); sandTex.repeat.set(30, 30);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 1400), new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2; ground.position.set(WW / 2, 0, -650); ground.receiveShadow = true; world.add(ground);
-    const wet = new THREE.Mesh(new THREE.PlaneGeometry(2400, 30), new THREE.MeshStandardMaterial({ color: TH.sandDark, roughness: 0.5, transparent: true, opacity: 0.8 }));
-    wet.rotation.x = -Math.PI / 2; wet.position.set(WW / 2, 0.15, 48); world.add(wet);
-    sea = new THREE.Mesh(new THREE.PlaneGeometry(9000, 6000, 1, 1), new THREE.MeshPhongMaterial({ color: TH.sea, specular: "#ffffff", shininess: 90, emissive: TH.seaDeep, emissiveIntensity: 0.25 }));
-    sea.rotation.x = -Math.PI / 2; sea.position.set(WW / 2, -0.8, 3050); world.add(sea);
-    const foamMat = new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.6, depthWrite: false });
-    for (let k = 0; k < 3; k++) { const f = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2.2), foamMat.clone()); f.rotation.x = -Math.PI / 2; f.position.set(WW / 2, 0.3, 64 + k * 9); f.userData.k = k; world.add(f); foam.push(f); }
-
-    const r = rng(map.seed + 7);
-    // ежи на пляже
-    const hedgeMat = new THREE.MeshStandardMaterial({ color: "#5d4632", roughness: 0.6, metalness: 0.5 });
-    for (let i = 0; i < 4; i++) {
-      const h = new THREE.Group(); const bg = new THREE.BoxGeometry(2.6, 26, 2.6);
-      [[0, 0, 0.8], [0, Math.PI / 2, 0.8], [Math.PI / 2, 0, 0]].forEach(([ax, ay, az]) => { const b = new THREE.Mesh(bg, hedgeMat); b.rotation.set(ax, ay, az); b.castShadow = true; h.add(b); });
-      h.position.set(i < 2 ? -30 - r() * 60 : WW + 30 + r() * 60, 9, 18 + r() * 22); h.rotation.y = r() * 3; world.add(h);
-    }
-    // дюны, пальмы, руины позади
-    const duneMat = new THREE.MeshStandardMaterial({ color: TH.sand, roughness: 1 });
-    for (let i = 0; i < 9; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), duneMat); d.scale.set(160 + r() * 220, 40 + r() * 70, 90 + r() * 80); d.position.set(-500 + i * 170 + r() * 60, -10, -380 - r() * 420); d.receiveShadow = true; world.add(d); }
-    const trunkMat = new THREE.MeshStandardMaterial({ color: "#8a6a45", roughness: 1 }), leafMat = new THREE.MeshStandardMaterial({ color: "#3f8a3a", roughness: 0.8, side: THREE.DoubleSide });
-    const leafGeo = new THREE.PlaneGeometry(9, 46, 1, 6); { const p = leafGeo.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) + 23; p.setZ(i, -(y * y) / 70); p.setX(i, p.getX(i) * (1 - Math.abs(y - 20) / 30)); } leafGeo.translate(0, 23, 0); leafGeo.computeVertexNormals(); }
-    for (let i = 0; i < 7; i++) {
-      const palm = new THREE.Group(); let px = 0, py = 0; const lean = (r() - 0.5) * 0.5;
-      for (let s = 0; s < 8; s++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(3.2 - s * 0.2, 3.6 - s * 0.2, 13, 8), trunkMat); seg.position.set(px, py + 6.5, 0); seg.rotation.z = -lean * 0.6; seg.castShadow = true; palm.add(seg); px += lean * 4 * (s / 4); py += 12.5; }
-      for (let l = 0; l < 8; l++) { const leaf = new THREE.Mesh(leafGeo, leafMat); leaf.position.set(px, py, 0); leaf.rotation.set(-0.9 - r() * 0.3, l * Math.PI / 4 + r() * 0.3, 0, "YXZ"); leaf.castShadow = true; palm.add(leaf); }
-      const side = i % 2 ? 1 : -1;
-      palm.position.set(-260 + r() * 880, 0, -420 - r() * 300); palm.scale.setScalar(0.9 + r() * 0.5); world.add(palm);
-      void side;
-    }
-    const stoneMat = new THREE.MeshStandardMaterial({ color: "#b49a78", roughness: 1 });
-    for (let i = 0; i < 4; i++) { const col = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, 30 + r() * 50, 10), stoneMat); col.position.set(-120 + r() * 600, 15, -160 - r() * 160); col.rotation.z = (r() - 0.5) * 0.3; col.castShadow = true; world.add(col); }
-    // облака
-    const cloudMat = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 1, emissive: "#ffffff", emissiveIntensity: 0.35, fog: false });
-    for (let i = 0; i < 9; i++) { const cl = new THREE.Group(); for (let k = 0; k < 4; k++) { const b = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), cloudMat); b.scale.set(60 + r() * 50, 20 + r() * 14, 40); b.position.set(k * 50, r() * 12, r() * 20); cl.add(b); } cl.position.set(-1200 + r() * 2800, 520 + r() * 380, (r() < 0.5 ? -1 : 1) * (1500 + r() * 2200)); world.add(cl); }
-
-    // остров снайпера (виден прячущемуся)
-    const ix = 40 + map.deco * 280;
-    const isl = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 12), new THREE.MeshStandardMaterial({ color: TH.sand, roughness: 1 }));
-    isl.scale.set(150, 14, 70); isl.position.set(ix, -6, DS); island.add(isl);
-    for (const dx of [-80, -55, 40, 70]) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 16 + Math.abs(dx) * 0.2, 14), new THREE.MeshStandardMaterial({ color: "#8a5a3c" })); b.position.set(ix + dx, 10, DS - 20); island.add(b); }
-    for (let i = 0; i < 2; i++) { const pm = new THREE.Group(); const t = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3, 70, 6), trunkMat); t.position.y = 35; pm.add(t); for (let l = 0; l < 7; l++) { const leaf = new THREE.Mesh(leafGeo, leafMat); leaf.position.y = 70; leaf.rotation.set(-1, l * 0.9, 0, "YXZ"); pm.add(leaf); } pm.position.set(ix + (i ? 105 : -110), 0, DS + 10); island.add(pm); }
-    const sn = new THREE.Mesh(new THREE.BoxGeometry(30, 7, 9), new THREE.MeshStandardMaterial({ color: "#2b2b2b" })); sn.position.set(ix - 6, 10, DS - 34); island.add(sn);
-    glint.position.set(ix - 6, 16, DS - 42);
-    built = map;
+    builtRev = map.rev || 0;
   }
-
-  function redrawAtlas(map) { if (!atlas) return; drawAtlas(atlas.getContext("2d"), map, THEMES[theme]); atlasTex.needsUpdate = true; }
 
   function syncCash(R, t) {
     const list = R ? R.pickups : null;
@@ -438,51 +546,123 @@ export function createR3D(glCanvas) {
   const tmp = new THREE.Vector3();
   function project(x, y, z) { tmp.set(x, G - y, z == null ? ZH : z).project(active); return { x: (tmp.x + 1) / 2 * W, y: (1 - tmp.y) / 2 * H, behind: tmp.z > 1 }; }
 
-  // o: { map, dirtyAtlas, view: "front"|"hider"|"dark", sc, ox, oy, camOff:[dx,dy], D, hider:{x,st,dir,walk}|null, hiderColor, R, t, dt, camX, shake, ring:"#hex"|null, reveal, live }
+  // ---------- эффекты из состояния игры ----------
+  function drawFx(o, t) {
+    const F = o.fx || {};
+    // пыль из-под ног
+    let k = 0;
+    for (const d of F.dust || []) { if (k >= dustP.length) break; const s = dustP[k++], a = (t - d.t0) / d.life; if (a < 0 || a > 1) { s.visible = false; continue; }
+      s.visible = true; s.position.set(d.x + d.vx * a * d.life, 3 + a * d.rise, ZH + d.z); const sz = d.size * (0.5 + a * 1.4); s.scale.set(sz, sz, 1); s.material.opacity = (1 - a) * 0.75; s.material.color.set(TH.snow ? "#ffffff" : TH.night ? "#8c8576" : "#d9bf8c"); }
+    for (; k < dustP.length; k++) dustP[k].visible = false;
+    // обломки стен
+    k = 0;
+    for (const d of F.debris || []) { if (k >= debrisP.length) break; const m = debrisP[k++], a = t - d.t0; if (a < 0 || a > 2.2) { m.visible = false; continue; }
+      m.visible = true; const y = Math.max(1.5, d.y + d.vy * a - 160 * a * a); m.position.set(d.x + d.vx * a, y, d.z + d.vz * a); m.rotation.set(a * d.sp, a * d.sp * 0.7, 0); m.material.color.set(d.col || "#8a5a3c"); }
+    for (; k < debrisP.length; k++) debrisP[k].visible = false;
+    // дым
+    k = 0;
+    for (const sm of F.smokes || []) { const age = t - sm.t0, life = sm.life || 7; if (age < 0 || age > life) continue; const rr = rng(sm.seed || 1);
+      const grow = Math.min(1, age / 0.8), fade = age > life - 1.5 ? (life - age) / 1.5 : 1;
+      for (let i = 0; i < 16 && k < smokeP.length; i++) { const s = smokeP[k++]; s.visible = true; const ox = (rr() - 0.5) * 80, oy = 6 + rr() * 60, oz = -6 + rr() * 34;
+        s.position.set(sm.x + ox * grow + Math.sin(t * 0.6 + i) * 4 + (o.wind || 0) * age * 3, oy * grow + 4, ZH + oz); const sz = (34 + rr() * 30) * (0.4 + grow * 0.6); s.scale.set(sz, sz, 1); s.material.opacity = 0.92 * fade; s.material.color.set(TH.night ? "#5d626c" : "#d6d8da"); s.material.rotation = i + t * 0.1; } }
+    for (; k < smokeP.length; k++) smokeP[k].visible = false;
+    // полосы тумана
+    k = 0;
+    for (const m of F.mist || []) { if (k >= mistP.length) break; const s = mistP[k++]; s.visible = true; s.position.set(m.x, m.y || 40, m.z || 34); s.scale.set(m.w, m.h || 120, 1); s.material.opacity = m.a; }
+    for (; k < mistP.length; k++) mistP[k].visible = false;
+    // следы
+    k = 0;
+    const glow = F.flare && t - F.flare.t0 < 6;
+    for (const p of F.prints || []) { if (k >= printP.length) break; const age = t - p.t0, life = p.life || 7; if (age > life && !glow) continue; const m = printP[k++];
+      m.visible = true; m.position.set(p.x, 0.35, ZH + p.side * 3.2); m.scale.set(3.2, TH.snow ? 1.2 : 0.8, 2); m.rotation.y = 0;
+      m.material.color.set(glow ? "#ff8a3d" : TH.snow ? "#7f95ad" : "#6e5330"); m.material.opacity = glow ? 0.95 : Math.max(0, 1 - age / life) * (TH.snow ? 0.9 : 0.7); }
+    for (; k < printP.length; k++) printP[k].visible = false;
+    // птицы
+    k = 0;
+    for (const b of F.birds || []) { if (k >= birdP.length) break; const g = birdP[k++]; g.visible = true; const u = g.userData;
+      if (b.t0 == null || t < b.t0) { g.position.set(b.x, b.y + 2.5, b.z || 0); g.rotation.set(0, b.dir > 0 ? 0 : Math.PI, 0); const fl = Math.sin(t * 2 + b.x) > 0.96 ? 0.6 : 0.05; u.w1.rotation.x = fl; u.w2.rotation.x = -fl; }
+      else { const a = t - b.t0; if (a > 4) { g.visible = false; continue; } g.position.set(b.x + b.dir * a * 70, b.y + 2.5 + a * 55 + a * a * 8, (b.z || 0) - a * 40); g.rotation.set(0, b.dir > 0 ? 0 : Math.PI, -0.3); const fl = Math.sin(t * 28 + b.x) * 0.9; u.w1.rotation.x = fl; u.w2.rotation.x = -fl; } }
+    for (; k < birdP.length; k++) birdP[k].visible = false;
+    // приманки
+    k = 0;
+    for (const d of F.decoys || []) { if (k >= decoyP.length) break; const age = t - d.t0; if (age < 0 || age > (d.life || 9)) continue; const g = decoyP[k++]; g.visible = true;
+      const up = Math.min(1, age / 0.5), fall = d.hit ? Math.min(1, (t - d.hit) / 0.5) : 0;
+      const top = (G - d.top) * up; g.position.set(d.x + fall * 10, Math.max(4, top - fall * top), ZH + 1); g.rotation.z = -fall * 1.6;
+      g.userData.stick.scale.y = Math.max(1, top); g.userData.stick.position.y = -Math.max(1, top) / 2; }
+    for (; k < decoyP.length; k++) decoyP[k].visible = false;
+    // осветительная ракета
+    if (F.flare && t - F.flare.t0 < 6) { const a = t - F.flare.t0, fl = 0.85 + Math.sin(t * 31) * 0.15; flareS.visible = true; const y = 320 - a * 28; flareS.position.set(F.flare.x || WW / 2, y, -30); flareS.scale.set(70 * fl, 70 * fl, 1);
+      flareL.position.copy(flareS.position); flareL.intensity = (TH.night ? 3.2 : 1.2) * fl * Math.min(1, a * 3) * Math.min(1, (6 - a) / 1.2); }
+    else { flareS.visible = false; flareL.intensity = 0; }
+    // снег
+    if (snowPts) { const p = snowPts.geometry.attributes.position, arr = p.array, dt = o.dt || 0.016; for (let i = 0; i < arr.length; i += 3) { arr[i + 1] -= dt * (16 + (i % 7)); arr[i] += dt * ((o.wind || 0) * 14 + Math.sin(t + i) * 3); if (arr[i + 1] < 0) { arr[i + 1] = 300; } if (arr[i] > 560) arr[i] -= 760; if (arr[i] < -200) arr[i] += 760; } p.needsUpdate = true; }
+    // пальмы на ветру
+    for (const pm of palms) { pm.top.rotation.z = Math.sin(t * 1.3 + pm.ph) * (0.03 + Math.abs(o.wind || 0) * 0.07) - (o.wind || 0) * 0.12; }
+  }
+
+  // o: { map, dirtyAtlas, view: "front"|"hider"|"dark", sc, ox, oy, camOff:[dx,dy], D, hiders:[{id,x,st,dir,moving,color,ring}], R, t, dt, camX, shake,
+  //      reveal, thermal, live, wind, spot:{x,y}|null, fx:{dust,debris,smokes,mist,prints,birds,decoys,flare} }
   function draw(o) {
     if (!o.map) return;
-    if (o.map !== built || (o.map.theme || 0) !== theme) buildWorld(o.map);
-    else if (o.dirtyAtlas) redrawAtlas(o.map);
+    if (o.map !== built || (o.map.theme || 0) !== theme) buildEnv(o.map);
+    if ((o.map.rev || 0) !== builtRev) buildCovers(o.map);
+    else if (o.dirtyAtlas && atlas) { drawAtlas(atlas.getContext("2d"), o.map, TH); atlasTex.needsUpdate = true; }
     const t = o.t, dt = o.dt;
-    // вода
     foam.forEach((f) => { const k = f.userData.k; f.position.z = 60 + k * 9 + Math.sin(t * 0.9 + k * 1.7) * 5; f.material.opacity = 0.35 + 0.3 * Math.sin(t * 0.9 + k * 1.7 + 1); });
-    // человечек
-    if (o.hider) { soldier.visible = true; soldier.position.set(o.hider.x, 0, ZH);
-      const col = o.hiderColor || "#ef4444", u = soldier.userData;
-      if (u.hero) { poseHero(soldier, o.hider, dt); if (u.col !== col) { u.col = col; u.setColor(col); } }
-      else { poseSoldier(soldier, o.hider, dt); if (u.col !== col) { u.col = col; u.chest.material.color.set(col); u.arms.forEach((a) => a.children[0].material.color.set(col)); } } }
-    else soldier.visible = false;
-    ring.visible = !!(o.ring && o.hider); if (ring.visible) { ring.position.set(o.hider.x, 0.6, ZH); ringMat.color.set(o.ring); ringMat.opacity = 0.6 + 0.3 * Math.sin(t * 6); }
+    // бойцы
+    const list = o.hiders || [], seen = new Set();
+    ring.visible = false;
+    for (const h of list) {
+      const s = soldierFor(h.id); seen.add(h.id); const obj = s.obj, u = obj.userData;
+      obj.visible = true; obj.position.set(h.x, 0, ZH);
+      if (u.hero) poseHero(obj, h, dt); else poseSoldier(obj, h, dt);
+      const col = h.color || "#ef4444";
+      if (s.col !== col) { s.col = col; if (u.hero) u.setColor(col); else { u.chest.material.color.set(col); u.arms.forEach((a) => a.children[0].material.color.set(col)); } }
+      if (h.ring) { ring.visible = true; ring.position.set(h.x, 0.6, ZH); ringMat.color.set(h.ring); ringMat.opacity = 0.6 + 0.3 * Math.sin(t * 6); }
+    }
+    for (const [id, s] of soldiers) if (!seen.has(id)) s.obj.visible = false;
     syncCash(o.R, t);
-    const xr = !!o.reveal;                                  // разбор раунда: человечка видно сквозь стены
-    // остров и блик
+    drawFx(o, t);
+    // остров, блик, прожектор
     island.visible = o.view === "hider" || o.view === "front" && !o.scope;
     glint.visible = !!o.live && o.view === "hider" && Math.sin(t * 5) > 0.55;
     if (muzzleT > 0) { muzzleT -= dt; glint.visible = true; glint.scale.setScalar(140); } else glint.scale.setScalar(70);
+    if (TH.night && o.spot) {
+      spot.intensity = 9; spot.target.position.set(o.spot.x, G - o.spot.y, ZH); spot.target.updateMatrixWorld();
+      const from = spot.position, to = spot.target.position, len = from.distanceTo(to);
+      beam.visible = o.view === "hider"; beam.scale.set(len * Math.tan(spot.angle), len, len * Math.tan(spot.angle));
+      beam.position.copy(from).add(to).multiplyScalar(0.5); beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), tmp.copy(to).sub(from).normalize());
+    } else { spot.intensity = 0; beam.visible = false; }
 
     if (o.view === "dark") { renderer.setClearColor("#05080f"); renderer.clear(); return; }
     if (o.view === "hider") {
       const sx = (Math.random() - 0.5) * o.shake * 10, sy = (Math.random() - 0.5) * o.shake * 10;
-      const aspect = W / H, fit = Math.max(1, 0.62 / aspect);   // узкий экран — отъезжаем назад
+      const aspect = W / H, fit = Math.max(1, 0.62 / aspect);
       cam.fov = 52; cam.updateProjectionMatrix();
       cam.position.set(o.camX + sx, 120 * fit + sy, ZH - 230 * fit);
       cam.lookAt(o.camX, 26, ZH + 70);
       active = cam;
-      scene.fog.near = 900; scene.fog.far = 5200;
+      scene.fog.near = TH.mist ? 260 : 900; scene.fog.far = TH.mist ? 1500 : 5200;
     } else {
       const off = o.camOff || [0, 0];
-      const cx = (W / 2 - o.ox) / o.sc;                       // центр экрана в мире
+      const cx = (W / 2 - o.ox) / o.sc;
       const camY = Math.max(22, G - (H * 0.5 - o.oy) / o.sc + off[1]);
       active = frontCam(o.sc, o.ox, o.oy, cx + off[0], camY, o.D || DS);
-      scene.fog.near = (o.D || DS) + 250; scene.fog.far = (o.D || DS) + 5200;
+      const D = o.D || DS;
+      scene.fog.near = TH.mist ? D - 200 : D + 250; scene.fog.far = TH.mist ? D + 1400 : D + 5200;
     }
     sky.position.copy(active.position);
+    if (moon) moon.visible = true;
     renderer.render(scene, active);
-    if (xr && soldier.visible) {                            // разбор раунда: то, что спрятано за стеной, — жёлтым силуэтом поверх (видно, что он ЗА укрытием)
-      scene.remove(soldier); xrScene.add(soldier); xrScene.overrideMaterial = xrMat;
+    const shown = list.map((h) => soldiers.get(h.id)).filter((s) => s && s.obj.visible).map((s) => s.obj);
+    const pass = (mat) => {
+      if (!shown.length) return;
+      shown.forEach((obj) => { scene.remove(obj); xrScene.add(obj); }); xrScene.overrideMaterial = mat;
       const ac = renderer.autoClear; renderer.autoClear = false; renderer.render(xrScene, active); renderer.autoClear = ac;
-      xrScene.overrideMaterial = null; xrScene.remove(soldier); scene.add(soldier);
-    }
+      xrScene.overrideMaterial = null; shown.forEach((obj) => { xrScene.remove(obj); scene.add(obj); });
+    };
+    if (o.thermal) pass(heatMat);                     // тепловизор: всех видно сквозь стены
+    else if (o.reveal) pass(xrMat);                   // разбор раунда: спрятанное за стеной — жёлтым силуэтом
   }
 
   return { draw, project, setSize, muzzle() { muzzleT = 0.18; }, glintScreen() { glint.getWorldPosition(tmp); tmp.project(active); return { x: (tmp.x + 1) / 2 * W, y: (1 - tmp.y) / 2 * H, behind: tmp.z > 1 }; }, get ZH() { return ZH; } };

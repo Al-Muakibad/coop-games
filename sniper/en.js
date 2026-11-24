@@ -45,3 +45,23 @@ window.I18N && I18N.add({
   "Я": "M", "Т": "Y", " м": " m",
   "Го в снайперский батл 1 на 1 🎯 Я уже в комнате — жми и заходи!": "1v1 sniper battle 🎯 I'm in the room — tap to join!"
 });
+
+window.I18N && I18N.add({
+  "👥 Компания (3–4 игрока)": "👥 Party (3–4 players)", "Один снайпер против всех — по очереди. Пустые места займут боты": "One sniper vs everyone, taking turns. Bots fill empty seats",
+  "Компания": "Party", "Ты в комнате": "You're in the room", "Тебя позвали в компанию": "You've been invited to a party",
+  "Один снайпер, остальные прячутся на одном острове. Снайпером побывает каждый. Попал — очки, выжил — очки.": "One sniper, everyone else hides on the same island. Everyone gets a turn as the sniper. Hit — points, survive — points.",
+  "на пустые места": "for empty seats", "Можно позвать ещё друзей — до 4 игроков": "You can invite more friends — up to 4 players", "Комната заполнена": "Room is full",
+  "▶ Начать": "▶ Start", "📨 Позвать друзей": "📨 Invite friends", "Ждём, пока хозяин начнёт": "Waiting for the host to start", "Ищем хозяина комнаты": "Looking for the room host",
+  "ТЫ ПРЯЧЕШЬСЯ": "YOU HIDE", "ТЫ СНАЙПЕР": "YOU'RE THE SNIPER", "Снайпер:": "Sniper:", "Найди всех": "Find everyone", "Прячься и собирай ⭐": "Hide and collect ⭐",
+  "Ты выбит — смотри": "You're out — watch", "Ты лучший в компании!": "You're the best in the party!", "-е место": " place", "🔁 Ещё раз": "🔁 Again", "👀 Ждать новую игру": "👀 Wait for a new game",
+  "Хозяин комнаты вышел": "The room host left", "Игра уже идёт или в комнате 4 игрока.": "The game has started or the room has 4 players.",
+  "Пустынный": "Desert", "Закатный": "Sunset", "Ночной": "Night", "Снежный": "Snowy", "Руины": "Ruins", "Туманный": "Foggy", "ветер": "wind",
+  "Приманка торчит — теперь уходи!": "Decoy is up — now move!", "Дымовая шашка!": "Smoke grenade!", "Тепловизор": "Thermal", "Ракета: видны все следы": "Flare: all tracks visible",
+  "Снайпер купился на приманку!": "The sniper fell for the decoy!", "Это была приманка!": "That was a decoy!",
+  "Снайпер запустил ракету — твои следы видны!": "The sniper fired a flare — your tracks are visible!", "Снайпер запустил ракету — следы видны!": "The sniper fired a flare — tracks are visible!",
+  "Тепловизор! Снайпер видит тебя сквозь стены": "Thermal! The sniper sees you through walls", "Тепловизор! Снайпер видит всех сквозь стены": "Thermal! The sniper sees everyone through walls",
+  "Стену пробило насквозь!": "The wall is blown through!", "Выбил кусок стены!": "Knocked a chunk out of the wall!", "Ящик разлетелся!": "The crate shattered!", "Бочку разворотило!": "The barrel burst!", "Мешки рассыпались!": "The sandbags spilled!",
+  "Укрыт": "Covered", "Видно в дыру": "Visible through a hole", "На виду": "Exposed", "В дыму": "In smoke", "В тумане": "In fog", "Прицел на тебе!": "Scope on you!",
+  "Ранен! Осталась одна ❤": "Wounded! One ❤ left", "Тебя нашли 💀 Смотри, как ищут остальных": "You were found 💀 Watch the others", "выбит": "is out",
+  "У снайпера кончились патроны": "The sniper ran out of ammo", "Снайпер нашёл всех": "The sniper found everyone", "Снайпер вышел": "The sniper left", "Выжили:": "Survived:", "Ты выжил! +3 ⭐": "You survived! +3 ⭐"
+});
