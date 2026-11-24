@@ -127,7 +127,7 @@
   }
 
   // ---------- геометрия ----------
-  const bodyRect = (p) => { const h = p.st ? 46 : 70; return { x: p.x - 11, y: G - h, w: 22, h }; };
+  const bodyRect = (p) => { const h = p.st ? 42 : 70, hw = p.st ? 14 : 12; return { x: p.x - hw, y: G - h, w: hw * 2, h }; };
   function inOpening(c, x, y) {
     return c.open.some((o) => o.t === "r" ? x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h
       : (x - o.x) ** 2 + (y - o.y) ** 2 <= o.r * o.r);
@@ -432,7 +432,11 @@
     for (const f of fx) {
       const k = f.t / f.life, p = R3D.project(f.x, f.kind === "txt" ? f.y - k * 16 : f.y, 5);
       const q = R3D.project(f.x + 10, f.y, 5), u = Math.max(0.6, Math.hypot(q.x - p.x, q.y - p.y) / 10);
-      if (f.kind === "dust") {
+      if (f.kind === "tracer") {
+        const g0 = R3D.glintScreen(); if (g0.behind) continue;
+        const grd = ctx.createLinearGradient(g0.x, g0.y, p.x, p.y); grd.addColorStop(0, "rgba(255,230,160,0)"); grd.addColorStop(1, `rgba(255,240,190,${0.9 * (1 - k)})`);
+        ctx.strokeStyle = grd; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(g0.x + (p.x - g0.x) * k * 0.6, g0.y + (p.y - g0.y) * k * 0.6); ctx.lineTo(p.x, p.y); ctx.stroke();
+      } else if (f.kind === "dust") {
         ctx.fillStyle = `rgba(225,195,150,${1 - k})`;
         for (let i = 0; i < 8; i++) { const a = i * 0.8 + f.seed; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * k * 15 * u, p.y + Math.sin(a) * k * 11 * u, (2.5 + k * 3.5) * u, 0, 7); ctx.fill(); }
       } else if (f.kind === "flash") {
@@ -738,9 +742,9 @@
       if (Math.abs(dx) <= 11 && y >= G - 55 && y <= G - 27) return "body";
       if (Math.abs(dx) <= 8 && y >= G - 30 && y <= G) return "body";
     } else {
-      if (dx * dx + (y - (G - 37)) ** 2 <= 9.5 * 9.5) return "head";
-      if (Math.abs(dx) <= 11 && y >= G - 36 && y <= G - 14) return "body";
-      if (Math.abs(dx) <= 12 && y >= G - 16 && y <= G) return "body";
+      if (dx * dx + (y - (G - 33)) ** 2 <= 9.5 * 9.5) return "head";
+      if (Math.abs(dx) <= 13 && y >= G - 28 && y <= G - 12) return "body";
+      if (Math.abs(dx) <= 14 && y >= G - 14 && y <= G) return "body";
     }
     return null;
   }
@@ -769,7 +773,7 @@
   }
   function onShotAtMe(d) {                       // в меня стреляли
     if (!R || !R.iHide || R.ended) return;
-    if (R3D) R3D.muzzle();
+    if (R3D) { R3D.muzzle(); fx.push({ kind: "tracer", x: d.x, y: d.y, t: 0, life: 0.22 }); }
     impact(d, false);
     // компенсация задержки: проверяем и где я сейчас, и где я был в тот момент, который снайпер видел у себя на экране
     let res = hitTest(pos, d.x, d.y);
@@ -971,7 +975,8 @@
       $("timer").textContent = phase === "prep" ? DUR : left; $("timer").classList.toggle("warn", phase === "live" && left <= 5);
       if (R.iHide) {
         const sp = SPEED * (1 + 0.12 * me.up.speed) * (pos.st ? 0.5 : 1) * dt;
-        const mv = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
+        const mv = ((keys.r ? 1 : 0) - (keys.l ? 1 : 0)) * (R3D ? -1 : 1);   // в 3D камера за спиной смотрит к морю: экранное «вправо» — это −x мира
+        pos.moving = !!mv;
         if (mv) { pos.x = Math.max(10, Math.min(WW - 10, pos.x + mv * sp)); pos.dir = mv; pos.walk += dt * (pos.st ? 6 : 12); } else pos.walk = 0;
         if (phase === "live") R.pickups.forEach((c, i) => {
           if (!c.taken && Math.abs(c.x - pos.x) < 12) { c.taken = true; match.earned += 5; match.picks++; send("pick", { i }); Snd.coin(); fx.push({ kind: "txt", text: "+5 🪙", color: "#7CFC9A", x: c.x, y: G - 30, t: 0, life: 1 }); T.haptic("impact", "light"); hud(); }

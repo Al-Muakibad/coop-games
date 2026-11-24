@@ -167,70 +167,78 @@ function poseSoldier(s, p, dt) {
 }
 
 
-// ---------- персонаж: модель Quaternius (CC0), анимации Idle/Walk + присед из позы SitDown ----------
-const HERO_COL = { Skin: "#e9b48f", Helmet: "#56633b", Black: "#1f1f1f", Grey: "#8d8766", Face: "#ffffff" };
-const HERO_SCALE = 23;
+// ---------- персонаж: манекен Quaternius Universal Animation Library (CC0) + своя покраска и каска ----------
+// анимации: Idle / Walk / Crouch_Idle / Crouch_Fwd. Размер подогнан под хитбоксы игры (стоя 66, сидя ≤42)
+const HERO_SCALE = 36;
+const HC = { skin: "#e2a982", glove: "#2a2622", boot: "#231f1b", sole: "#111", pants: "#5b6142", belt: "#3a2f22", joint: "#3b3b36" };
 export function loadHero(onReady) {
-  new GLTFLoader().load("models/soldier.glb?v=1", (g) => {
+  new GLTFLoader().load("models/hero.glb?v=2", (g) => {
     const root = new THREE.Group(), model = g.scene; root.add(model); model.scale.setScalar(HERO_SCALE);
-    let main = null, vest = null;
+    const B = {}; model.traverse((b) => { if (b.isBone) B[b.name] = b; });
+    const teamSlots = [];                                  // вершины рубашки: перекрашиваем под цвет игрока
+    const C = (h) => new THREE.Color(h);
     model.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true; o.frustumCulled = false;
-      // лицо — кожа, перчатки и ботинки — тёмные (в модели это один материал Skin): красим по вершинам
-      const pos = o.geometry.attributes.position, sk = o.geometry.attributes.skinIndex, col = new Float32Array(pos.count * 3);
-      for (let i = 0; i < pos.count; i++) { const head = pos.getY(i) > 1.95 && Math.abs(pos.getX(i)) < 0.6; const v = head ? 1 : 0.13; col[i * 3] = v; col[i * 3 + 1] = head ? 1 : 0.125; col[i * 3 + 2] = head ? 1 : 0.11; }
+      const isJoint = (o.material.name || "").includes("Joint");
+      const pos = o.geometry.attributes.position, col = new Float32Array(pos.count * 3), team = [];
+      for (let i = 0; i < pos.count; i++) {
+        const x = Math.abs(pos.getX(i)), y = pos.getY(i); let c = null;
+        if (y < 0.035) c = HC.sole; else if (y < 0.16) c = HC.boot;
+        else if (x > 0.66) c = HC.glove;
+        else if (y > 1.52 && x < 0.13) c = HC.skin;
+        else if (y < 0.9) c = isJoint ? HC.joint : HC.pants;
+        else if (y < 0.99 && x < 0.25) c = HC.belt;
+        else { team.push(i); c = "#ffffff"; }
+        const cc = C(c); col[i * 3] = cc.r; col[i * 3 + 1] = cc.g; col[i * 3 + 2] = cc.b;
+      }
       o.geometry.setAttribute("color", new THREE.BufferAttribute(col, 3));
-      const ms = [].concat(o.material).map((m) => { m = m.clone(); if (HERO_COL[m.name]) m.color.set(HERO_COL[m.name]); if (m.name === "Skin") m.vertexColors = true; if (m.name === "Main") main = m; if (m.name === "Black") vest = m; m.roughness = 0.78; m.metalness = 0; return m; });
-      o.material = ms.length === 1 ? ms[0] : ms;
+      teamSlots.push({ attr: o.geometry.attributes.color, idx: team, joint: isJoint });
+      o.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.FrontSide });
     });
-    const B = {}; model.traverse((b) => { if (b.isBone) B[b.name] = b; });
-    const clip = (n) => g.animations.find((a) => a.name === n);
-    const mixer = new THREE.AnimationMixer(model);
-    const idle = mixer.clipAction(clip("Idle")), walk = mixer.clipAction(clip("Walk")), sit = mixer.clipAction(clip("SitDown"));
-    // снимок позы: Idle и конец SitDown → «глубокий присед» (продолжаем движение ног дальше SitDown)
-    const snap = (act, t) => { mixer.stopAllAction(); act.reset().play(); act.setLoop(THREE.LoopOnce); act.clampWhenFinished = true; mixer.setTime(t); model.updateMatrixWorld(true);
-      const q = {}; for (const n in B) q[n] = { q: B[n].quaternion.clone(), p: B[n].position.clone() }; return q; };
-    const I = snap(idle, 0.3), S = snap(sit, sit.getClip().duration - 0.001);
-    const crouchQ = {};
-    for (const [n, k] of [["UpperLegL", 1.85], ["UpperLegR", 1.75], ["LowerLegL", 2.7], ["LowerLegR", 2.6]]) {
-      const d = I[n].q.clone().invert().multiply(S[n].q), q = I[n].q.clone(); let r = k;
-      while (r >= 1) { q.multiply(d); r--; } q.multiply(new THREE.Quaternion().slerp(d, r)); crouchQ[n] = q;
-    }
-    // где окажутся стопы в приседе (стопы — отдельные IK-кости, их надо переставить)
-    mixer.stopAllAction(); idle.reset().play(); idle.setLoop(THREE.LoopRepeat); mixer.setTime(0.3);
+    // каска и ботинки — отдельные меши на костях
     model.updateMatrixWorld(true);
-    const V = () => new THREE.Vector3(), Qt = () => new THREE.Quaternion();
-    const footOff = {}; for (const sd of ["L", "R"]) { const lp = B["LowerLeg" + sd].getWorldPosition(V()), fp = B["Foot" + sd].getWorldPosition(V()); footOff[sd] = fp.sub(lp).applyQuaternion(B["LowerLeg" + sd].getWorldQuaternion(Qt()).invert()); }
-    const ground = Math.min(B.FootL.getWorldPosition(V()).y, B.FootR.getWorldPosition(V()).y);
-    for (const n in crouchQ) B[n].quaternion.copy(crouchQ[n]); B.Abdomen.rotateX(0.3); model.updateMatrixWorld(true);
-    const crouchFoot = {}; let lo = 1e9;
-    for (const sd of ["L", "R"]) { const tip = B["LowerLeg" + sd].getWorldPosition(V()).add(footOff[sd].clone().applyQuaternion(B["LowerLeg" + sd].getWorldQuaternion(Qt()))); lo = Math.min(lo, tip.y); crouchFoot[sd] = tip; }
-    const drop = lo - ground - 2.5;                                    // на сколько опустить модель (в мировых единицах)
-    for (const sd of ["L", "R"]) { const f = B["Foot" + sd]; const w = crouchFoot[sd].clone(); f.parent.worldToLocal(w); crouchFoot[sd] = w; }
-    const abQ = B.Abdomen.quaternion.clone(); model.position.y = 0;
-    idle.reset().play(); walk.play(); walk.setEffectiveWeight(0); walk.paused = true;
-    root.userData = { hero: true, mixer, idle, walk, B, crouchQ, crouchFoot, abQ, drop, main, vest, cr: 0, mv: 0, lastWalk: 0, rot: 0 };
-    onReady(root);
+    const attach = (bone, mesh, worldPos) => { const w = worldPos.clone(); bone.worldToLocal(w); mesh.position.copy(w); const q = bone.getWorldQuaternion(new THREE.Quaternion()).invert(); mesh.quaternion.copy(q); mesh.scale.setScalar(1 / bone.getWorldScale(new THREE.Vector3()).x); bone.add(mesh); };
+    const S = HERO_SCALE, olive = new THREE.MeshStandardMaterial({ color: "#4f5a35", roughness: 0.7 });
+    const helm = new THREE.Group();
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.135 * S, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), olive); dome.scale.set(1, 0.9, 1.08); helm.add(dome);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * S, 0.155 * S, 0.02 * S, 20), olive); brim.position.y = -0.02 * S; brim.scale.z = 1.08; helm.add(brim);
+    helm.traverse((m) => { if (m.isMesh) m.castShadow = true; });
+    attach(B.Head, helm, new THREE.Vector3(0, 1.70 * S, 0.005 * S));
+    const bootMat = new THREE.MeshStandardMaterial({ color: HC.boot, roughness: 0.85 });
+    for (const sd of ["l", "r"]) {
+      const f = B["foot_" + sd], fp = f.getWorldPosition(new THREE.Vector3());
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.115 * S, 0.095 * S, 0.25 * S), bootMat); boot.castShadow = true;
+      attach(f, boot, new THREE.Vector3(fp.x, 0.047 * S, fp.z + 0.05 * S));
+    }
+    const mixer = new THREE.AnimationMixer(model);
+    const act = (n) => { const a = mixer.clipAction(g.animations.find((c) => c.name === n)); a.play(); a.setEffectiveWeight(0); return a; };
+    const A = { idle: act("Idle_Loop"), walk: act("Walk_Loop"), cidle: act("Crouch_Idle_Loop"), cfwd: act("Crouch_Fwd_Loop") };
+    A.idle.setEffectiveWeight(1); A.walk.timeScale = 1.25; A.cfwd.timeScale = 1.15;
+    const u = { hero: true, mixer, A, B, teamSlots, cr: 0, mv: 0, rot: 0, sq: 1, col: null };
+    u.setColor = (hex) => {
+      const c = C(hex), v = c.clone().multiplyScalar(0.45);
+      for (const t of u.teamSlots) { const arr = t.attr.array; for (const i of t.idx) { const k = t.joint ? v : c; arr[i * 3] = k.r; arr[i * 3 + 1] = k.g; arr[i * 3 + 2] = k.b; } t.attr.needsUpdate = true; }
+    };
+    root.userData = u; onReady(root);
   }, undefined, () => {});
 }
 export function poseHero(s, p, dt) {
-  const u = s.userData, B = u.B;
-  u.cr += ((p.st ? 1 : 0) - u.cr) * Math.min(1, dt * 14);
-  const moving = (p.walk || 0) !== u.lastWalk && (p.walk || 0) !== 0; u.lastWalk = p.walk || 0;
+  const u = s.userData, A = u.A, B = u.B;
+  const moving = !!p.moving;
+  u.cr += ((p.st ? 1 : 0) - u.cr) * Math.min(1, dt * 12);
   u.mv += ((moving ? 1 : 0) - u.mv) * Math.min(1, dt * 10);
-  const c = u.cr, wd = u.walk.getClip().duration;
-  u.walk.time = (((p.walk || 0) / (Math.PI * 2)) % 1 + 1) % 1 * wd;
-  u.walk.setEffectiveWeight(u.mv * (1 - c * 0.85)); u.idle.setEffectiveWeight(1 - u.mv * (1 - c * 0.85));
+  const c = u.cr, m = u.mv;
+  A.idle.setEffectiveWeight((1 - c) * (1 - m)); A.walk.setEffectiveWeight((1 - c) * m);
+  A.cidle.setEffectiveWeight(c * (1 - m)); A.cfwd.setEffectiveWeight(c * m);
   u.mixer.update(dt);
-  if (c > 0.001) {
-    for (const n in u.crouchQ) B[n].quaternion.slerp(u.crouchQ[n], c);
-    B.Abdomen.quaternion.slerp(u.abQ, c);
-    for (const sd of ["L", "R"]) B["Foot" + sd].position.lerp(u.crouchFoot[sd], c);
-    s.children[0].position.y = -u.drop * c;
-  } else s.children[0].position.y = 0;
-  const want = (p.dir || 1) * Math.PI / 2 * (0.35 + 0.65 * u.mv);   // идёт — боком, стоит — вполоборота к морю
-  u.rot += (want - u.rot) * Math.min(1, dt * 10); s.rotation.y = u.rot;
+  if (B.root) { B.root.position.x = 0; B.root.position.z = 0; }      // без root motion — двигает игра
+  if (B.pelvis) { B.pelvis.position.x *= 0.3; }
+  // куда смотрит: идёт — по ходу; стоит — вполоборота к морю; сидит — лицом к укрытию (узкий силуэт)
+  const want = moving ? (p.dir || 1) * Math.PI / 2 : (p.dir || 1) * 0.5 * (1 - c);
+  let d = want - u.rot; d = Math.atan2(Math.sin(d), Math.cos(d)); u.rot += d * Math.min(1, dt * 12); s.rotation.y = u.rot;
+  // сидя чуть сжимаем по ширине, чтобы колени и локти не вылезали за край укрытия
+  u.sq += ((c > 0.5 && !moving ? 0.86 : 1) - u.sq) * Math.min(1, dt * 10); s.children[0].scale.x = HERO_SCALE * u.sq;
 }
 
 export function createR3D(glCanvas) {
@@ -441,7 +449,7 @@ export function createR3D(glCanvas) {
     // человечек
     if (o.hider) { soldier.visible = true; soldier.position.set(o.hider.x, 0, ZH);
       const col = o.hiderColor || "#ef4444", u = soldier.userData;
-      if (u.hero) { poseHero(soldier, o.hider, dt); if (u.col !== col) { u.col = col; if (u.main) u.main.color.set(col); if (u.vest) u.vest.color.set(col).multiplyScalar(0.28); } }
+      if (u.hero) { poseHero(soldier, o.hider, dt); if (u.col !== col) { u.col = col; u.setColor(col); } }
       else { poseSoldier(soldier, o.hider, dt); if (u.col !== col) { u.col = col; u.chest.material.color.set(col); u.arms.forEach((a) => a.children[0].material.color.set(col)); } } }
     else soldier.visible = false;
     ring.visible = !!(o.ring && o.hider); if (ring.visible) { ring.position.set(o.hider.x, 0.6, ZH); ringMat.color.set(o.ring); ringMat.opacity = 0.6 + 0.3 * Math.sin(t * 6); }
@@ -478,5 +486,5 @@ export function createR3D(glCanvas) {
     } else renderer.render(scene, active);
   }
 
-  return { draw, project, setSize, muzzle() { muzzleT = 0.18; }, get ZH() { return ZH; } };
+  return { draw, project, setSize, muzzle() { muzzleT = 0.18; }, glintScreen() { glint.getWorldPosition(tmp); tmp.project(active); return { x: (tmp.x + 1) / 2 * W, y: (1 - tmp.y) / 2 * H, behind: tmp.z > 1 }; }, get ZH() { return ZH; } };
 }

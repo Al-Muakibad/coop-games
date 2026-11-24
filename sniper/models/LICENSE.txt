@@ -1,0 +1,2 @@
+hero.glb — Universal Animation Library (Standard), Quaternius — https://quaternius.com
+License: CC0 1.0 Universal (public domain). Recoloured and trimmed (7 animations kept).
